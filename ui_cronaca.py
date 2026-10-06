@@ -39,6 +39,7 @@ from cronaca_manager import (
     trascrivi,
 )
 from cronaca_pdf import genera_pdf_resoconto
+from pdf_immagini import immagini_jpeg
 
 SQUADRE = {"": "—", "casa": "Casa", "ospite": "Ospite"}
 
@@ -89,14 +90,15 @@ def _pulsanti_tempo(cronaca):
 def _referto(cronaca):
     st.subheader("📄 Referto dell'arbitro")
     n = st.session_state.setdefault("cronaca_referto_n", 0)
-    foto = st.file_uploader("Carica o scatta la foto del referto", type=["jpg", "jpeg", "png"],
+    foto = st.file_uploader("Carica o scatta la foto del referto (anche PDF)", type=["jpg", "jpeg", "png", "pdf"],
                             accept_multiple_files=True, key=f"cronaca_referto_{n}")
     if foto:
         for f in foto:
             try:
-                aggiungi_foto_referto(cronaca, f.getvalue())
+                for pagina in immagini_jpeg(f.getvalue()):  # un PDF diventa una foto per pagina
+                    aggiungi_foto_referto(cronaca, pagina)
             except Exception as e:
-                st.error(f"{f.name}: immagine non leggibile ({e})")
+                st.error(f"{f.name}: file non leggibile ({e})")
         st.session_state["cronaca_referto_n"] = n + 1  # svuota il caricatore
         st.rerun()
     nomi = cronaca.get("referto") or []

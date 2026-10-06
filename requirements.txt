@@ -5,3 +5,4 @@ pillow
 openai>=1.0
 reportlab
 requests
+pypdfium2
