@@ -47,6 +47,8 @@ def cronaca_vuota(casa="", ospite="", campionato="", data=""):
         "tempi": {},          # chiave fase -> {"inizio": ts, "fine": ts | None}
         "note": [],
         "resoconto": None,
+        "distinta": None,     # distinta pubblicata (info_gara, casa, ospite)
+        "referto": [],        # nomi dei file delle foto del referto
     }
 
 
@@ -309,3 +311,58 @@ def testo_semplice(cronaca):
     if r.get("note_tabellino"):
         righe.append("Note: " + r["note_tabellino"])
     return "\n".join(righe).strip() + "\n"
+
+
+# --- Distinta e referto -------------------------------------------------------
+
+def giocatori_da_distinta(distinta):
+    """{"casa": [nomi riga 1-20], "ospite": [...]} dalla distinta pubblicata."""
+    giocatori = {}
+    for lato in ("casa", "ospite"):
+        elenco = ((distinta or {}).get(lato) or {}).get("giocatori") or []
+        giocatori[lato] = [str(g.get("GIOCATORE") or "").strip() for g in elenco]
+    return giocatori
+
+
+def imposta_distinta(cronaca, distinta):
+    """Collega alla cronaca la distinta della partita e ne riprende squadre, campionato e data."""
+    cronaca["distinta"] = distinta
+    info = distinta.get("info_gara") or {}
+    p = cronaca["partita"]
+    # I dati della distinta pubblicata valgono più di quelli scritti a mano
+    p["casa"] = (distinta.get("casa") or {}).get("squadra") or p.get("casa", "")
+    p["ospite"] = (distinta.get("ospite") or {}).get("squadra") or p.get("ospite", "")
+    p["campionato"] = info.get("campionato") or p.get("campionato", "")
+    p["data"] = info.get("data") or p.get("data", "")
+    salva_cronaca(cronaca)
+
+
+def _cartella_referto():
+    cartella = os.path.join(_cartella_dati(), "referto")
+    os.makedirs(cartella, exist_ok=True)
+    return cartella
+
+
+def aggiungi_foto_referto(cronaca, dati_immagine):
+    """Salva la foto del referto ridotta (max 1800 px, orientamento corretto) in JPEG."""
+    from PIL import Image, ImageOps
+
+    img = ImageOps.exif_transpose(Image.open(io.BytesIO(dati_immagine)))
+    if img.mode != "RGB":
+        img = img.convert("RGB")
+    img.thumbnail((1800, 1800))
+    nome = f"{uuid.uuid4().hex[:10]}.jpg"
+    img.save(os.path.join(_cartella_referto(), nome), format="JPEG", quality=85)
+    cronaca.setdefault("referto", []).append(nome)
+    salva_cronaca(cronaca)
+    return nome
+
+
+def leggi_foto_referto(nome):
+    with open(os.path.join(_cartella_referto(), nome), "rb") as f:
+        return f.read()
+
+
+def togli_foto_referto(cronaca, nome):
+    cronaca["referto"] = [n for n in cronaca.get("referto", []) if n != nome]
+    salva_cronaca(cronaca)
