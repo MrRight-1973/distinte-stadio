@@ -8,7 +8,7 @@ import qrcode
 import streamlit as st
 
 from estrattore import analizza_distinta, unisci_scansioni
-from github_publisher import PubblicazioneErrore, pubblica_su_github, url_pagina_da_repo
+from github_publisher import PubblicazioneErrore, leggi_file, pubblica_su_github, url_pagina_da_repo
 from pdf_manager import genera_pdf, loghi_da_cartella_locale, numero_sponsor
 from squadra_manager import (
     giocatori_da_griglia,
@@ -94,6 +94,7 @@ def pubblica_distinta(info_gara, dati_c, dati_o):
         "ospite": dati_o,
         "aggiornato": datetime.now(timezone.utc).isoformat(timespec="seconds"),
     }
+    st.session_state["ultima_distinta"] = pacchetto  # la usa anche la cronaca della partita
     file_da_pubblicare = {
         "distinta.json": json.dumps(pacchetto, ensure_ascii=False, indent=2).encode("utf-8"),
         "distinta.pdf": pdf_bytes,
@@ -122,6 +123,16 @@ def loghi_sponsor_pdf():
     """Loghi sponsor per i PDF: quelli pubblicati, o la cartella locale di riserva."""
     loghi, _ = loghi_per_pdf(leggi_secret("GITHUB_TOKEN"), leggi_secret("GITHUB_REPO"), leggi_secret("GITHUB_BRANCH"))
     return loghi if loghi is not None else loghi_da_cartella_locale()
+
+
+def distinta_pubblicata():
+    """Ultima distinta pubblicata: quella di questa sessione, altrimenti distinta.json dal repository della pagina."""
+    if st.session_state.get("ultima_distinta"):
+        return st.session_state["ultima_distinta"]
+    if not (leggi_secret("GITHUB_TOKEN") and leggi_secret("GITHUB_REPO")):
+        return None
+    dati = leggi_file(leggi_secret("GITHUB_TOKEN"), leggi_secret("GITHUB_REPO"), "distinta.json", leggi_secret("GITHUB_BRANCH"))
+    return json.loads(dati) if dati else None
 
 
 def render_login():
@@ -157,7 +168,8 @@ def render_segreteria():
         key="sezione_segreteria",
     )
     if sezione == "🎙️ Cronaca partita":
-        render_cronaca(leggi_secret("OPENAI_API_KEY"), st.session_state.get("macro_info"), loghi_sponsor_pdf)
+        render_cronaca(leggi_secret("OPENAI_API_KEY"), st.session_state.get("macro_info"), loghi_sponsor_pdf,
+                       distinta_pubblicata)
         return
 
     link = link_pagina_spettatori()

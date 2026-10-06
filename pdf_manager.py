@@ -111,6 +111,30 @@ def genera_pdf(casa, ospite, info_gara, qr_code_bytes=None, sponsor_loghi=None):
     """sponsor_loghi: lista di loghi (bytes) nell'ordine voluto; None = usa la cartella locale."""
     buffer = io.BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=A4, rightMargin=20, leftMargin=20, topMargin=20, bottomMargin=20)
+    story = elementi_distinta(casa, ospite, info_gara, qr_code_bytes)
+
+    if sponsor_loghi is None:
+        sponsor_loghi = loghi_da_cartella_locale()
+    sponsor = _blocco_sponsor(_stile_didascalia(), sponsor_loghi)
+    if sponsor is not None:
+        story.append(Spacer(1, 14))
+        story.append(sponsor)
+
+    doc.build(story)
+    buffer.seek(0)
+    return buffer.getvalue()
+
+
+def _stile_didascalia():
+    return ParagraphStyle('QrText', parent=getSampleStyleSheet()['Normal'], fontSize=7.5, leading=10,
+                          textColor=colors.HexColor("#4A5568"), fontName="Helvetica-Bold", alignment=1)
+
+
+def elementi_distinta(casa, ospite, info_gara, qr_code_bytes=None):
+    """Intestazione gara e liste delle due squadre (con QR code se passato), come elementi del PDF.
+
+    Serve sia al PDF della distinta sia al resoconto della cronaca, che la riporta senza QR.
+    """
     story = []
     styles = getSampleStyleSheet()
 
@@ -119,7 +143,7 @@ def genera_pdf(casa, ospite, info_gara, qr_code_bytes=None, sponsor_loghi=None):
     team_title_style = ParagraphStyle('TeamTitle', parent=styles['Heading2'], fontSize=11, leading=13, textColor=colors.HexColor("#2B6CB0"), spaceBefore=2, spaceAfter=4)
     normal_style = ParagraphStyle('NormalStyle', parent=styles['Normal'], fontSize=8, leading=9.5)
     bold_style = ParagraphStyle('BoldStyle', parent=styles['Normal'], fontSize=8, leading=9.5, fontName="Helvetica-Bold")
-    qr_text_style = ParagraphStyle('QrText', parent=styles['Normal'], fontSize=7.5, leading=10, textColor=colors.HexColor("#4A5568"), fontName="Helvetica-Bold", alignment=1)
+    qr_text_style = _stile_didascalia()
 
     elementi_sinistra = [
         Paragraph("<b>DISTINTE DI GARA UFFICIALI</b>", title_style),
@@ -212,13 +236,4 @@ def genera_pdf(casa, ospite, info_gara, qr_code_bytes=None, sponsor_loghi=None):
         ]))
         story.append(t_qr_footer)
 
-    if sponsor_loghi is None:
-        sponsor_loghi = loghi_da_cartella_locale()
-    sponsor = _blocco_sponsor(qr_text_style, sponsor_loghi)
-    if sponsor is not None:
-        story.append(Spacer(1, 14))
-        story.append(sponsor)
-
-    doc.build(story)
-    buffer.seek(0)
-    return buffer.getvalue()
+    return story
