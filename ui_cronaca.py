@@ -284,6 +284,12 @@ def _eventi(cronaca):
     if (gol["casa"], gol["ospite"]) != gol_note:
         st.warning(f"Il risultato dei marcatori ({gol['casa']}-{gol['ospite']}) è diverso da quello delle note "
                    f"({gol_note[0]}-{gol_note[1]}): controlla.")
+    senza_squadra = [n for n in cronaca["note"] if n.get("tipo") in ("Gol", "Rigore", "Ammonizione", "Espulsione")
+                     and n.get("squadra") not in ("casa", "ospite")]
+    if senza_squadra:
+        st.warning("Queste note non sono nell'elenco perché manca la squadra: "
+                   + ", ".join(f"{n.get('minuto', '')} {n.get('tipo')}" for n in senza_squadra)
+                   + ". Scegli la squadra nella tabella delle note e premi «Ricalcola dalle note».")
     if st.button("🔄 Ricalcola dalle note", help="Rifà l'elenco dalle note attuali; le correzioni fatte qui sopra si perdono"):
         ricalcola_eventi(cronaca)
         st.session_state["cronaca_eventi_n"] += 1
