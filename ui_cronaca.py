@@ -34,6 +34,7 @@ from cronaca_manager import (
     minuto_di_gioco,
     orologio,
     punteggio,
+    ricalcola_eventi,
     rosa,
     salva_audio,
     salva_cronaca,
@@ -283,6 +284,10 @@ def _eventi(cronaca):
     if (gol["casa"], gol["ospite"]) != gol_note:
         st.warning(f"Il risultato dei marcatori ({gol['casa']}-{gol['ospite']}) è diverso da quello delle note "
                    f"({gol_note[0]}-{gol_note[1]}): controlla.")
+    if st.button("🔄 Ricalcola dalle note", help="Rifà l'elenco dalle note attuali; le correzioni fatte qui sopra si perdono"):
+        ricalcola_eventi(cronaca)
+        st.session_state["cronaca_eventi_n"] += 1
+        st.rerun()
 
 
 def _resoconto(cronaca, api_key, giocatori, loghi_sponsor, leggi_distinta):
