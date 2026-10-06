@@ -225,8 +225,61 @@ def _note_per_prompt(cronaca):
     return "\n".join(righe)
 
 
+TIPI_EVENTO = ["gol", "ammonizione", "espulsione"]
+_TIPO_DA_NOTA = {"Gol": "gol", "Ammonizione": "ammonizione", "Espulsione": "espulsione"}
+
+
+def _minuti(minuto):
+    """Chiave d'ordine per 23', 45+2', Pre-gara..."""
+    numeri = [int(x) for x in "".join(c if c.isdigit() else " " for c in str(minuto)).split()]
+    return (numeri[0] if numeri else 999, numeri[1] if len(numeri) > 1 else 0)
+
+
+def pulisci_eventi(eventi):
+    """Eventi validi (gol, ammonizioni, espulsioni), ordinati per tipo e minuto."""
+    puliti = []
+    for e in eventi or []:
+        if not isinstance(e, dict):
+            continue
+        tipo = str(e.get("tipo") or "").strip().lower()
+        squadra = str(e.get("squadra") or "").strip().lower()
+        if tipo not in TIPI_EVENTO or squadra not in ("casa", "ospite"):
+            continue
+        puliti.append({
+            "tipo": tipo,
+            "squadra": squadra,
+            "minuto": str(e.get("minuto") or "").strip(),
+            "giocatore": str(e.get("giocatore") or "").strip().upper(),
+            "nota": str(e.get("nota") or "").strip(),
+        })
+    return sorted(puliti, key=lambda e: (TIPI_EVENTO.index(e["tipo"]), _minuti(e["minuto"])))
+
+
+def eventi_da_note(cronaca):
+    """Eventi ricavati direttamente dalle note (il giocatore è il testo della nota): bozza da correggere."""
+    return pulisci_eventi([
+        {"tipo": _TIPO_DA_NOTA[n["tipo"]], "squadra": n.get("squadra"), "minuto": n.get("minuto"),
+         "giocatore": (n.get("testo") or "")[:40]}
+        for n in cronaca.get("note") or [] if n.get("tipo") in _TIPO_DA_NOTA
+    ])
+
+
+def eventi_correnti(cronaca):
+    """Gli eventi da stampare: quelli del resoconto (corretti a mano), altrimenti quelli delle note."""
+    r = cronaca.get("resoconto") or {}
+    return r["eventi"] if "eventi" in r else eventi_da_note(cronaca)
+
+
+def gol_da_eventi(eventi):
+    gol = {"casa": 0, "ospite": 0}
+    for e in eventi:
+        if e["tipo"] == "gol":
+            gol[e["squadra"]] += 1
+    return gol
+
+
 def genera_resoconto(api_key, cronaca, giocatori=None, battute=3000):
-    """Articolo e tabellino in stile giornalistico, scritti a partire dalle note."""
+    """Articolo in stile giornalistico ed elenco di gol e cartellini, scritti a partire dalle note."""
     p = cronaca["partita"]
     gol_casa, gol_ospite = punteggio(cronaca)
     formazioni = ""
@@ -254,14 +307,16 @@ def genera_resoconto(api_key, cronaca, giocatori=None, battute=3000):
         "Rispondi SOLO con questo JSON:\n"
         "{\n"
         '  "titolo": "titolo breve e incisivo",\n'
-        '  "sommario": "una o due frasi sotto il titolo",\n'
         '  "articolo": "testo dell\'articolo, paragrafi separati da una riga vuota",\n'
-        '  "marcatori": ["23\' Rossi (C)", "..."],\n'
-        '  "ammoniti": ["Bianchi (O)"],\n'
-        '  "espulsi": [],\n'
-        '  "note_tabellino": "altre informazioni utili (recupero, spettatori, rigori parati...) o stringa vuota"\n'
+        '  "eventi": [\n'
+        '    {"tipo": "gol", "squadra": "casa", "minuto": "23\'", "giocatore": "ROSSI ANDREA", "nota": ""},\n'
+        '    {"tipo": "ammonizione", "squadra": "ospite", "minuto": "40\'", "giocatore": "BIANCHI LUCA", "nota": ""}\n'
+        "  ]\n"
         "}\n"
-        "Nel tabellino usa (C) per la squadra di casa e (O) per l'ospite."
+        "In eventi metti SOLO gol, ammonizioni ed espulsioni presenti negli appunti. tipo è gol, ammonizione o "
+        "espulsione; squadra è casa o ospite (per un autogol: la squadra che ne beneficia, con nota 'aut.'); "
+        "giocatore scritto come nelle formazioni (COGNOME NOME) o \"\" se non si sa; nota per 'rig.', 'aut.' "
+        "o doppia ammonizione, altrimenti \"\"."
     )
 
     client = OpenAI(api_key=api_key, timeout=120.0, max_retries=2)
@@ -274,12 +329,8 @@ def genera_resoconto(api_key, cronaca, giocatori=None, battute=3000):
     dati = json.loads(risposta.choices[0].message.content or "{}")
     resoconto = {
         "titolo": str(dati.get("titolo") or "").strip(),
-        "sommario": str(dati.get("sommario") or "").strip(),
         "articolo": str(dati.get("articolo") or "").strip(),
-        "marcatori": [str(x) for x in dati.get("marcatori") or []],
-        "ammoniti": [str(x) for x in dati.get("ammoniti") or []],
-        "espulsi": [str(x) for x in dati.get("espulsi") or []],
-        "note_tabellino": str(dati.get("note_tabellino") or "").strip(),
+        "eventi": pulisci_eventi(dati.get("eventi")) or eventi_da_note(cronaca),
         "risultato": f"{gol_casa}-{gol_ospite}",
         "generato": time.time(),
     }
@@ -292,24 +343,20 @@ def testo_semplice(cronaca):
     """Il resoconto come testo da copiare in una mail ai giornalisti."""
     r = cronaca.get("resoconto") or {}
     p = cronaca["partita"]
+    eventi = eventi_correnti(cronaca)
+    gol = gol_da_eventi(eventi)
+    nomi = {"casa": p.get("casa") or "Casa", "ospite": p.get("ospite") or "Ospite"}
     righe = [
-        f"{p.get('casa', '')} - {p.get('ospite', '')} {r.get('risultato', '')}".strip(),
+        f"{nomi['casa']} - {nomi['ospite']} {gol['casa']}-{gol['ospite']}",
         " · ".join(x for x in (p.get("campionato"), p.get("data")) if x),
         "",
-        r.get("titolo", "").upper(),
-        r.get("sommario", ""),
-        "",
-        r.get("articolo", ""),
-        "",
     ]
-    if r.get("marcatori"):
-        righe.append("Marcatori: " + ", ".join(r["marcatori"]))
-    if r.get("ammoniti"):
-        righe.append("Ammoniti: " + ", ".join(r["ammoniti"]))
-    if r.get("espulsi"):
-        righe.append("Espulsi: " + ", ".join(r["espulsi"]))
-    if r.get("note_tabellino"):
-        righe.append("Note: " + r["note_tabellino"])
+    for tipo, etichetta in (("gol", "Marcatori"), ("ammonizione", "Ammoniti"), ("espulsione", "Espulsi")):
+        voci = [f"{e['minuto']} {e['giocatore']}{' (' + e['nota'] + ')' if e['nota'] else ''} ({nomi[e['squadra']]})".strip()
+                for e in eventi if e["tipo"] == tipo]
+        if voci:
+            righe.append(f"{etichetta}: " + ", ".join(voci))
+    righe += ["", r.get("titolo", "").upper(), "", r.get("articolo", "")]
     return "\n".join(righe).strip() + "\n"
 
 

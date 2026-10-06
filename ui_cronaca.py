@@ -15,8 +15,12 @@ from cronaca_manager import (
     TIPI_NOTA,
     aggiungi_foto_referto,
     aggiungi_nota,
+    TIPI_EVENTO,
     archivia_e_azzera,
     avvia_tempo,
+    eventi_correnti,
+    gol_da_eventi,
+    pulisci_eventi,
     carica_cronaca,
     chiudi_tempo,
     genera_resoconto,
@@ -204,6 +208,38 @@ def _elenco_note(cronaca, api_key, giocatori):
         st.rerun()
 
 
+ICONE_EVENTO = {"gol": "⚽ gol", "ammonizione": "🟨 ammonizione", "espulsione": "🟥 espulsione"}
+
+
+def _eventi(cronaca):
+    """Marcatori e cartellini come andranno nel PDF, correggibili a mano."""
+    st.markdown("**⚽ Marcatori e cartellini** (correggi qui nomi e minuti prima di scaricare il PDF)")
+    eventi = eventi_correnti(cronaca)
+    df = pd.DataFrame(eventi, columns=["tipo", "squadra", "minuto", "giocatore", "nota"])
+    chiave = f"cronaca_eventi_{st.session_state.setdefault('cronaca_eventi_n', 0)}"
+    modificato = st.data_editor(
+        df, key=chiave, hide_index=True, num_rows="dynamic", use_container_width=True,
+        column_config={
+            "tipo": st.column_config.SelectboxColumn("Tipo", options=TIPI_EVENTO, format_func=ICONE_EVENTO.get,
+                                                     required=True),
+            "squadra": st.column_config.SelectboxColumn("Squadra", options=["casa", "ospite"], required=True),
+            "minuto": st.column_config.TextColumn("Min."),
+            "giocatore": st.column_config.TextColumn("Giocatore"),
+            "nota": st.column_config.TextColumn("Nota (rig., aut.)"),
+        },
+    )
+    if not modificato.reset_index(drop=True).equals(df):
+        cronaca["resoconto"]["eventi"] = pulisci_eventi(modificato.fillna("").to_dict("records"))
+        salva_cronaca(cronaca)
+        st.session_state["cronaca_eventi_n"] += 1
+        st.rerun()
+    gol = gol_da_eventi(eventi)
+    gol_note = punteggio(cronaca)
+    if (gol["casa"], gol["ospite"]) != gol_note:
+        st.warning(f"Il risultato dei marcatori ({gol['casa']}-{gol['ospite']}) è diverso da quello delle note "
+                   f"({gol_note[0]}-{gol_note[1]}): controlla.")
+
+
 def _resoconto(cronaca, api_key, giocatori, loghi_sponsor, leggi_distinta):
     st.subheader("📰 Resoconto per i giornalisti")
     lunghezza = st.selectbox("Lunghezza dell'articolo", list(LUNGHEZZE), index=1)
@@ -225,6 +261,7 @@ def _resoconto(cronaca, api_key, giocatori, loghi_sponsor, leggi_distinta):
     if not cronaca.get("resoconto"):
         return
 
+    _eventi(cronaca)
     st.text_area("Testo da copiare (mail o sito)", testo_semplice(cronaca), height=320)
     # Il PDF si rifà solo se note, resoconto o formazioni sono cambiati
     impronta = hashlib.sha1(json.dumps([cronaca, giocatori], sort_keys=True, default=str).encode()).hexdigest()
