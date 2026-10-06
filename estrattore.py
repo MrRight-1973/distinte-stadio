@@ -7,6 +7,8 @@ from datetime import datetime
 from openai import OpenAI
 from PIL import Image, ImageOps
 
+from pdf_immagini import e_pdf, pagine_pdf
+
 MODELLO = "gpt-4o"
 VALORI_VUOTI = {"", "N.D.", "ND", "N/A", "NONE", "NULL", "NON INDICATO"}
 ETA_MINIMA_GIOCATORE = 5
@@ -154,8 +156,12 @@ def _to_int(valore, default=0):
 def encode_image(uploaded_file):
     """Mantiene alta la risoluzione per l'OCR e corregge l'orientamento EXIF"""
     uploaded_file.seek(0)
-    img = Image.open(uploaded_file)
-    img = ImageOps.exif_transpose(img)  # foto da smartphone spesso ruotate nei metadati
+    dati = uploaded_file.read()
+    if e_pdf(dati):
+        img = pagine_pdf(dati, max_pagine=1)[0]  # la distinta sta nella prima pagina
+    else:
+        img = Image.open(io.BytesIO(dati))
+        img = ImageOps.exif_transpose(img)  # foto da smartphone spesso ruotate nei metadati
     if img.mode in ("RGBA", "P", "LA"):
         img = img.convert("RGB")
     img.thumbnail((2000, 2000))

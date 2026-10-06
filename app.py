@@ -190,8 +190,8 @@ def render_segreteria():
         st.session_state["griglia_ospite"] = griglia_vuota()
 
     col_f1, col_f2 = st.columns(2)
-    file_casa = col_f1.file_uploader("Carica distinta LOCALE", type=["png", "jpg", "jpeg"], key="uploader_file_casa")
-    file_ospite = col_f2.file_uploader("Carica distinta OSPITE", type=["png", "jpg", "jpeg"], key="uploader_file_ospite")
+    file_casa = col_f1.file_uploader("Carica distinta LOCALE (foto o PDF)", type=["png", "jpg", "jpeg", "pdf"], key="uploader_file_casa")
+    file_ospite = col_f2.file_uploader("Carica distinta OSPITE (foto o PDF)", type=["png", "jpg", "jpeg", "pdf"], key="uploader_file_ospite")
 
     c_scan, c_reset = st.columns(2)
     with c_reset:
