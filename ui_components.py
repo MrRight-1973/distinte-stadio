@@ -8,11 +8,11 @@ def render_info_match(info):
     with c_g1:
         campionato = st.text_input("🏆 Campionato / Categoria", value=info["campionato"])
         arbitro = st.text_input("🏁 Arbitro (Nome e Cognome)", value="")
-        ass1 = st.text_input("🚩 Assistente Arbitrale 1", value="")
+        ass1 = st.text_input("🚩 Assistente Arbitrale 1", value=info.get("ass_casa", ""))
     with c_g2:
         data = st.text_input("📅 Data Partita", value=info["data"])
         st.write("")
-        ass2 = st.text_input("🚩 Assistente Arbitrale 2", value="")
+        ass2 = st.text_input("🚩 Assistente Arbitrale 2", value=info.get("ass_ospite", ""))
     return {"campionato": campionato, "data": data, "arbitro": arbitro, "assistente1": ass1, "assistente2": ass2}
 
 
