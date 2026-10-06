@@ -9,7 +9,7 @@ import streamlit as st
 
 from estrattore import analizza_distinta, unisci_scansioni
 from github_publisher import PubblicazioneErrore, pubblica_su_github, url_pagina_da_repo
-from pdf_manager import genera_pdf, numero_sponsor
+from pdf_manager import genera_pdf, loghi_da_cartella_locale, numero_sponsor
 from squadra_manager import (
     giocatori_da_griglia,
     griglia_vuota,
@@ -18,6 +18,7 @@ from squadra_manager import (
     reset_stato_squadra,
 )
 from ui_components import render_download_buttons, render_info_match
+from ui_cronaca import render_cronaca
 from ui_sponsor import loghi_per_pdf, render_gestione_sponsor
 
 # Deve essere il PRIMO comando Streamlit
@@ -117,6 +118,12 @@ def pubblica_distinta(info_gara, dati_c, dati_o):
     )
 
 
+def loghi_sponsor_pdf():
+    """Loghi sponsor per i PDF: quelli pubblicati, o la cartella locale di riserva."""
+    loghi, _ = loghi_per_pdf(leggi_secret("GITHUB_TOKEN"), leggi_secret("GITHUB_REPO"), leggi_secret("GITHUB_BRANCH"))
+    return loghi if loghi is not None else loghi_da_cartella_locale()
+
+
 def render_login():
     _, centro, _ = st.columns([1, 2, 1])
     with centro:
@@ -144,6 +151,14 @@ def render_segreteria():
         if st.button("Esci", type="secondary", use_container_width=True):
             st.session_state["autenticato"] = False
             st.rerun()
+
+    sezione = st.radio(
+        "Sezione", ["📋 Distinta", "🎙️ Cronaca partita"], horizontal=True, label_visibility="collapsed",
+        key="sezione_segreteria",
+    )
+    if sezione == "🎙️ Cronaca partita":
+        render_cronaca(leggi_secret("OPENAI_API_KEY"), st.session_state.get("macro_info"), loghi_sponsor_pdf)
+        return
 
     link = link_pagina_spettatori()
     st.write(
