@@ -215,6 +215,8 @@ def render_segreteria():
                                    ("nome squadra ospite", inf.get("nome_ospite"))) if not v]
         if mancanti:
             st.info("Non sono riuscito a leggere dalle distinte: " + ", ".join(mancanti) + ". Compilali a mano prima di pubblicare.")
+        for avviso in inf.get("avvisi", []):
+            st.warning(avviso)
 
         st.markdown("---")
         if st.button("⚡ Fase 3: Pubblica su Web e Genera PDF A4", type="primary", use_container_width=True):
