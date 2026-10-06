@@ -1,4 +1,5 @@
 import io
+import math
 import os
 from xml.sax.saxutils import escape
 
@@ -7,7 +8,7 @@ from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.lib.utils import ImageReader
 from reportlab.platypus import Image as RLImage
-from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+from reportlab.platypus import Flowable, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
 from sponsor_manager import MAX_SPONSOR, distribuisci_righe
 
@@ -130,10 +131,52 @@ def _stile_didascalia():
                           textColor=colors.HexColor("#4A5568"), fontName="Helvetica-Bold", alignment=1)
 
 
-def elementi_distinta(casa, ospite, info_gara, qr_code_bytes=None):
+class IconaEvento(Flowable):
+    """Icona disegnata: pallone per il gol, cartellino giallo o rosso."""
+
+    def __init__(self, tipo, lato=9):
+        super().__init__()
+        self.tipo, self.lato = tipo, lato
+        self.width = self.height = lato
+
+    def draw(self):
+        c, l = self.canv, self.lato
+        if self.tipo == "gol":
+            c.setStrokeColor(colors.black)
+            c.setFillColor(colors.white)
+            c.setLineWidth(0.7)
+            c.circle(l / 2, l / 2, l / 2 - 0.4, stroke=1, fill=1)
+            # pentagono nero al centro e cuciture verso il bordo, come un pallone
+            cx = cy = l / 2
+            r_pent, r_bordo = l * 0.2, l / 2 - 0.4
+            punti = [(cx + r_pent * math.cos(math.radians(90 + 72 * i)), cy + r_pent * math.sin(math.radians(90 + 72 * i)))
+                     for i in range(5)]
+            percorso = c.beginPath()
+            percorso.moveTo(*punti[0])
+            for pt in punti[1:]:
+                percorso.lineTo(*pt)
+            percorso.close()
+            c.setFillColor(colors.black)
+            c.drawPath(percorso, stroke=0, fill=1)
+            c.setLineWidth(0.5)
+            for i, (px, py) in enumerate(punti):
+                ang = math.radians(90 + 72 * i)
+                c.line(px, py, cx + r_bordo * math.cos(ang), cy + r_bordo * math.sin(ang))
+        else:
+            colore = "#F6C700" if self.tipo == "ammonizione" else "#D62828"
+            c.setFillColor(colors.HexColor(colore))
+            c.setStrokeColor(colors.HexColor("#555555"))
+            c.setLineWidth(0.4)
+            c.roundRect(l * 0.18, 0, l * 0.64, l, 1, stroke=1, fill=1)
+
+
+def elementi_distinta(casa, ospite, info_gara, qr_code_bytes=None, titolo="DISTINTE DI GARA UFFICIALI",
+                      gol=None, eventi=None):
     """Intestazione gara e liste delle due squadre (con QR code se passato), come elementi del PDF.
 
-    Serve sia al PDF della distinta sia al resoconto della cronaca, che la riporta senza QR.
+    Serve sia al PDF della distinta sia al resoconto della cronaca, che la riporta senza QR,
+    col titolo del resoconto, i gol accanto ai nomi delle squadre (gol = {"casa": 1, "ospite": 0})
+    e sotto le liste marcatori e cartellini (eventi: dict con tipo, squadra, minuto, giocatore, nota).
     """
     story = []
     styles = getSampleStyleSheet()
@@ -146,7 +189,7 @@ def elementi_distinta(casa, ospite, info_gara, qr_code_bytes=None):
     qr_text_style = _stile_didascalia()
 
     elementi_sinistra = [
-        Paragraph("<b>DISTINTE DI GARA UFFICIALI</b>", title_style),
+        Paragraph(f"<b>{_esc(titolo)}</b>", title_style),
         Spacer(1, 4),
     ]
 
@@ -182,9 +225,23 @@ def elementi_distinta(casa, ospite, info_gara, qr_code_bytes=None):
     story.append(t_header)
     story.append(Spacer(1, 6))
 
-    def genera_tabella_squadra(dati):
+    score_style = ParagraphStyle('Score', parent=team_title_style, fontSize=16, leading=18, alignment=2)
+
+    def titolo_squadra(dati, lato):
+        nome = Paragraph(f"<b>{_esc(dati.get('squadra') or 'SQUADRA')}</b>", team_title_style)
+        if gol is None:
+            return nome
+        t = Table([[nome, Paragraph(f"<b>{int(gol.get(lato, 0))}</b>", score_style)]], colWidths=[215, 40])
+        t.setStyle(TableStyle([
+            ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+            ('LEFTPADDING', (0, 0), (-1, -1), 0),
+            ('RIGHTPADDING', (0, 0), (-1, -1), 0),
+        ]))
+        return t
+
+    def genera_tabella_squadra(dati, lato):
         elementi_squadra = [
-            Paragraph(f"<b>{_esc(dati.get('squadra') or 'SQUADRA')}</b>", team_title_style),
+            titolo_squadra(dati, lato),
             Paragraph(f"<b>ALLENATORE:</b> {_esc(dati.get('allenatore'))}", normal_style),
             Spacer(1, 5),
         ]
@@ -209,7 +266,7 @@ def elementi_distinta(casa, ospite, info_gara, qr_code_bytes=None):
         return elementi_squadra
 
     macro_tabella = Table(
-        [[genera_tabella_squadra(casa), Paragraph("", normal_style), genera_tabella_squadra(ospite)]],
+        [[genera_tabella_squadra(casa, "casa"), Paragraph("", normal_style), genera_tabella_squadra(ospite, "ospite")]],
         colWidths=[255, 10, 255],
     )
     macro_tabella.setStyle(TableStyle([
@@ -218,6 +275,39 @@ def elementi_distinta(casa, ospite, info_gara, qr_code_bytes=None):
         ('RIGHTPADDING', (0, 0), (-1, -1), 0),
     ]))
     story.append(macro_tabella)
+
+    if eventi is not None:
+        etichette = {"gol": "GOL", "ammonizione": "AMMONIZIONE", "espulsione": "ESPULSIONE"}
+
+        def tabella_eventi(lato):
+            righe = [[Paragraph("", bold_style), Paragraph("<b>MIN.</b>", bold_style),
+                      Paragraph("<b>MARCATORI E CARTELLINI</b>", bold_style)]]
+            for e in [e for e in eventi if e.get("squadra") == lato]:
+                nome = _esc(e.get("giocatore") or etichette.get(e.get("tipo"), ""))
+                if e.get("nota"):
+                    nome += f" ({_esc(e['nota'])})"
+                righe.append([IconaEvento(e.get("tipo")), Paragraph(_esc(e.get("minuto")), normal_style),
+                              Paragraph(nome, normal_style)])
+            if len(righe) == 1:
+                righe.append(["", Paragraph("", normal_style), Paragraph("—", normal_style)])
+            t = Table(righe, colWidths=[20, 35, 200])
+            t.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor("#E2E8F0")),
+                ('BOTTOMPADDING', (0, 0), (-1, -1), 2.2),
+                ('TOPPADDING', (0, 0), (-1, -1), 2.2),
+                ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor("#CBD5E0")),
+                ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+                ('ALIGN', (0, 0), (0, -1), 'CENTER'),
+            ]))
+            return t
+
+        t_eventi = Table([[tabella_eventi("casa"), "", tabella_eventi("ospite")]], colWidths=[255, 10, 255])
+        t_eventi.setStyle(TableStyle([
+            ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+            ('LEFTPADDING', (0, 0), (-1, -1), 0),
+            ('RIGHTPADDING', (0, 0), (-1, -1), 0),
+        ]))
+        story += [Spacer(1, 10), t_eventi]
 
     if qr_code_bytes:
         story.append(Spacer(1, 15))
