@@ -1,0 +1,311 @@
+"""Cronaca della partita: cronometro, note (vocali o scritte) e resoconto per i giornalisti.
+
+Il cronometro si basa sull'orario del server, non sul telefono: se lo schermo si
+spegne o la pagina si ricarica, il minuto resta giusto. Le note sono salvate su
+file a ogni modifica, così non si perdono se la connessione cade durante la gara.
+"""
+import io
+import json
+import os
+import tempfile
+import time
+import uuid
+from datetime import datetime
+
+from openai import OpenAI
+
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+MODELLO_TESTO = "gpt-4o"
+MODELLI_TRASCRIZIONE = ("gpt-4o-transcribe", "whisper-1")  # il secondo è la riserva
+
+TIPI_NOTA = ["Nota", "Gol", "Occasione", "Ammonizione", "Espulsione", "Sostituzione", "Infortunio", "Rigore"]
+FASI = [("primo", "1° tempo"), ("secondo", "2° tempo")]
+
+
+def _cartella_dati():
+    """Cartella dove salvare la cronaca (quella dell'app, oppure la temporanea se non scrivibile)."""
+    for base in (os.path.join(BASE_DIR, "cronaca_dati"), os.path.join(tempfile.gettempdir(), "cronaca_dati")):
+        try:
+            os.makedirs(os.path.join(base, "audio"), exist_ok=True)
+            prova = os.path.join(base, ".scrivibile")
+            with open(prova, "w") as f:
+                f.write("ok")
+            return base
+        except OSError:
+            continue
+    raise OSError("Nessuna cartella scrivibile per salvare la cronaca.")
+
+
+def _percorso_file():
+    return os.path.join(_cartella_dati(), "cronaca_corrente.json")
+
+
+def cronaca_vuota(casa="", ospite="", campionato="", data=""):
+    return {
+        "partita": {"casa": casa, "ospite": ospite, "campionato": campionato, "data": data},
+        "durata_tempo": 45,
+        "tempi": {},          # chiave fase -> {"inizio": ts, "fine": ts | None}
+        "note": [],
+        "resoconto": None,
+    }
+
+
+def carica_cronaca():
+    try:
+        with open(_percorso_file(), encoding="utf-8") as f:
+            dati = json.load(f)
+        base = cronaca_vuota()
+        base.update(dati)
+        return base
+    except (OSError, ValueError):
+        return cronaca_vuota()
+
+
+def salva_cronaca(cronaca):
+    percorso = _percorso_file()
+    temporaneo = percorso + ".tmp"
+    with open(temporaneo, "w", encoding="utf-8") as f:
+        json.dump(cronaca, f, ensure_ascii=False, indent=2)
+    os.replace(temporaneo, percorso)  # scrittura atomica: il file non resta mai a metà
+
+
+def archivia_e_azzera(cronaca, **partita):
+    """Conserva la cronaca attuale (se ha note) con data e ora nel nome, poi ne apre una nuova."""
+    if cronaca.get("note"):
+        nome = datetime.now().strftime("cronaca_%Y%m%d_%H%M%S.json")
+        with open(os.path.join(_cartella_dati(), nome), "w", encoding="utf-8") as f:
+            json.dump(cronaca, f, ensure_ascii=False, indent=2)
+    nuova = cronaca_vuota(**partita)
+    salva_cronaca(nuova)
+    return nuova
+
+
+# --- Cronometro ---------------------------------------------------------------
+
+def fase_in_corso(cronaca):
+    """(chiave, etichetta, inizio) del tempo in corso, oppure None."""
+    for chiave, etichetta in FASI:
+        t = cronaca["tempi"].get(chiave)
+        if t and t.get("inizio") and not t.get("fine"):
+            return chiave, etichetta, t["inizio"]
+    return None
+
+
+def stato_gara(cronaca):
+    """Una tra: prepartita, primo, intervallo, secondo, finita."""
+    tempi = cronaca["tempi"]
+    if "secondo" in tempi:
+        return "finita" if tempi["secondo"].get("fine") else "secondo"
+    if "primo" in tempi:
+        return "intervallo" if tempi["primo"].get("fine") else "primo"
+    return "prepartita"
+
+
+def minuto_di_gioco(cronaca, adesso=None):
+    """Minuto come si scrive nelle cronache: 23', 45+2', 90+4'; fuori dal gioco una parola."""
+    adesso = adesso or time.time()
+    fase = fase_in_corso(cronaca)
+    if not fase:
+        return {"prepartita": "Pre-gara", "intervallo": "Intervallo", "finita": "Fine gara"}[stato_gara(cronaca)]
+    chiave, _, inizio = fase
+    durata = int(cronaca.get("durata_tempo") or 45)
+    offset = 0 if chiave == "primo" else durata
+    trascorsi = max(0, int((adesso - inizio) // 60)) + 1
+    if trascorsi > durata:
+        return f"{offset + durata}+{trascorsi - durata}'"
+    return f"{offset + trascorsi}'"
+
+
+def orologio(cronaca, adesso=None):
+    """Tempo trascorso nel tempo in corso, mm:ss (per il display)."""
+    adesso = adesso or time.time()
+    fase = fase_in_corso(cronaca)
+    if not fase:
+        return "--:--"
+    secondi = max(0, int(adesso - fase[2]))
+    return f"{secondi // 60:02d}:{secondi % 60:02d}"
+
+
+def avvia_tempo(cronaca, chiave):
+    cronaca["tempi"][chiave] = {"inizio": time.time(), "fine": None}
+    salva_cronaca(cronaca)
+
+
+def chiudi_tempo(cronaca, chiave):
+    if chiave in cronaca["tempi"]:
+        cronaca["tempi"][chiave]["fine"] = time.time()
+        salva_cronaca(cronaca)
+
+
+def punteggio(cronaca):
+    """Gol contati dalle note di tipo Gol (squadra 'casa' o 'ospite')."""
+    gol = {"casa": 0, "ospite": 0}
+    for n in cronaca["note"]:
+        if n.get("tipo") == "Gol" and n.get("squadra") in gol:
+            gol[n["squadra"]] += 1
+    return gol["casa"], gol["ospite"]
+
+
+# --- Note ---------------------------------------------------------------------
+
+def aggiungi_nota(cronaca, testo, tipo="Nota", squadra="", origine="testo", audio=None, minuto=None):
+    nota = {
+        "id": uuid.uuid4().hex[:10],
+        "ts": time.time(),
+        "minuto": minuto or minuto_di_gioco(cronaca),
+        "tipo": tipo,
+        "squadra": squadra,
+        "testo": testo.strip(),
+        "origine": origine,
+        "audio": audio,  # nome del file audio, se la trascrizione va rifatta
+    }
+    cronaca["note"].append(nota)
+    salva_cronaca(cronaca)
+    return nota
+
+
+def salva_audio(dati_audio, estensione="wav"):
+    nome = f"{uuid.uuid4().hex[:10]}.{estensione}"
+    with open(os.path.join(_cartella_dati(), "audio", nome), "wb") as f:
+        f.write(dati_audio)
+    return nome
+
+
+def leggi_audio(nome):
+    with open(os.path.join(_cartella_dati(), "audio", nome), "rb") as f:
+        return f.read()
+
+
+def _suggerimento_nomi(cronaca, giocatori=None):
+    """Nomi utili al riconoscimento vocale (squadre e giocatori), così li scrive giusti."""
+    nomi = [cronaca["partita"].get("casa", ""), cronaca["partita"].get("ospite", "")]
+    for elenco in (giocatori or {}).values():
+        nomi += [g for g in elenco if g]
+    testo = ", ".join(n for n in nomi if n)
+    return ("Cronaca di una partita di calcio. Nomi: " + testo)[:800]
+
+
+def trascrivi(api_key, dati_audio, cronaca, giocatori=None, nome_file="nota.wav"):
+    """Testo della nota vocale. Prova il modello migliore, poi quello di riserva."""
+    client = OpenAI(api_key=api_key, timeout=60.0, max_retries=1)
+    ultimo_errore = None
+    for modello in MODELLI_TRASCRIZIONE:
+        try:
+            file_audio = io.BytesIO(dati_audio)
+            file_audio.name = nome_file
+            risposta = client.audio.transcriptions.create(
+                model=modello,
+                file=file_audio,
+                language="it",
+                prompt=_suggerimento_nomi(cronaca, giocatori),
+            )
+            return (risposta.text or "").strip()
+        except Exception as e:  # modello non disponibile, rete, ecc.: si prova il successivo
+            ultimo_errore = e
+    raise RuntimeError(f"Trascrizione non riuscita: {ultimo_errore}")
+
+
+# --- Resoconto per i giornalisti ----------------------------------------------
+
+LUNGHEZZE = {
+    "Breve (circa 1.500 battute)": 1500,
+    "Standard (circa 3.000 battute)": 3000,
+    "Lungo (circa 5.000 battute)": 5000,
+}
+
+
+def _note_per_prompt(cronaca):
+    nomi = {"casa": cronaca["partita"].get("casa") or "Casa", "ospite": cronaca["partita"].get("ospite") or "Ospite"}
+    righe = []
+    for n in sorted(cronaca["note"], key=lambda x: x.get("ts", 0)):
+        squadra = f" [{nomi[n['squadra']]}]" if n.get("squadra") in nomi else ""
+        righe.append(f"{n.get('minuto', '')} – {n.get('tipo', 'Nota')}{squadra}: {n.get('testo', '')}")
+    return "\n".join(righe)
+
+
+def genera_resoconto(api_key, cronaca, giocatori=None, battute=3000):
+    """Articolo e tabellino in stile giornalistico, scritti a partire dalle note."""
+    p = cronaca["partita"]
+    gol_casa, gol_ospite = punteggio(cronaca)
+    formazioni = ""
+    for lato, elenco in (giocatori or {}).items():
+        presenti = [g for g in elenco if g]
+        if presenti:
+            nome = p.get(lato) or lato
+            formazioni += (f"\n{nome} – titolari (righe 1-11): {', '.join(presenti[:11])}"
+                           f"; a disposizione: {', '.join(presenti[11:]) or '—'}")
+
+    prompt = (
+        "Sei un giornalista sportivo che scrive per i quotidiani locali e i siti di calcio dilettantistico veneto. "
+        "Scrivi il resoconto della partita usando SOLO i fatti presenti negli appunti presi a bordo campo dalla "
+        "società: non inventare gol, nomi, minuti o episodi. Gli appunti sono stati in parte dettati a voce e "
+        "trascritti in automatico: correggi gli errori evidenti di trascrizione e scrivi i nomi dei giocatori "
+        "come nelle formazioni, se presenti. Tono giornalistico, equilibrato e rispettoso degli avversari, in "
+        "italiano corretto; nessun commento offensivo verso arbitro o avversari. "
+        f"L'articolo deve essere di circa {battute} battute, con un attacco che dica risultato e chiave della gara, "
+        "poi lo sviluppo in ordine cronologico.\n\n"
+        f"Partita: {p.get('casa') or 'Casa'} - {p.get('ospite') or 'Ospite'}\n"
+        f"Campionato: {p.get('campionato') or '—'}\nData: {p.get('data') or '—'}\n"
+        f"Risultato secondo gli appunti: {gol_casa}-{gol_ospite}\n"
+        f"Formazioni dalla distinta:{formazioni or ' non disponibili'}\n\n"
+        f"APPUNTI (minuto – tipo – testo):\n{_note_per_prompt(cronaca) or '(nessuna nota)'}\n\n"
+        "Rispondi SOLO con questo JSON:\n"
+        "{\n"
+        '  "titolo": "titolo breve e incisivo",\n'
+        '  "sommario": "una o due frasi sotto il titolo",\n'
+        '  "articolo": "testo dell\'articolo, paragrafi separati da una riga vuota",\n'
+        '  "marcatori": ["23\' Rossi (C)", "..."],\n'
+        '  "ammoniti": ["Bianchi (O)"],\n'
+        '  "espulsi": [],\n'
+        '  "note_tabellino": "altre informazioni utili (recupero, spettatori, rigori parati...) o stringa vuota"\n'
+        "}\n"
+        "Nel tabellino usa (C) per la squadra di casa e (O) per l'ospite."
+    )
+
+    client = OpenAI(api_key=api_key, timeout=120.0, max_retries=2)
+    risposta = client.chat.completions.create(
+        model=MODELLO_TESTO,
+        response_format={"type": "json_object"},
+        messages=[{"role": "user", "content": prompt}],
+        temperature=0.4,
+    )
+    dati = json.loads(risposta.choices[0].message.content or "{}")
+    resoconto = {
+        "titolo": str(dati.get("titolo") or "").strip(),
+        "sommario": str(dati.get("sommario") or "").strip(),
+        "articolo": str(dati.get("articolo") or "").strip(),
+        "marcatori": [str(x) for x in dati.get("marcatori") or []],
+        "ammoniti": [str(x) for x in dati.get("ammoniti") or []],
+        "espulsi": [str(x) for x in dati.get("espulsi") or []],
+        "note_tabellino": str(dati.get("note_tabellino") or "").strip(),
+        "risultato": f"{gol_casa}-{gol_ospite}",
+        "generato": time.time(),
+    }
+    cronaca["resoconto"] = resoconto
+    salva_cronaca(cronaca)
+    return resoconto
+
+
+def testo_semplice(cronaca):
+    """Il resoconto come testo da copiare in una mail ai giornalisti."""
+    r = cronaca.get("resoconto") or {}
+    p = cronaca["partita"]
+    righe = [
+        f"{p.get('casa', '')} - {p.get('ospite', '')} {r.get('risultato', '')}".strip(),
+        " · ".join(x for x in (p.get("campionato"), p.get("data")) if x),
+        "",
+        r.get("titolo", "").upper(),
+        r.get("sommario", ""),
+        "",
+        r.get("articolo", ""),
+        "",
+    ]
+    if r.get("marcatori"):
+        righe.append("Marcatori: " + ", ".join(r["marcatori"]))
+    if r.get("ammoniti"):
+        righe.append("Ammoniti: " + ", ".join(r["ammoniti"]))
+    if r.get("espulsi"):
+        righe.append("Espulsi: " + ", ".join(r["espulsi"]))
+    if r.get("note_tabellino"):
+        righe.append("Note: " + r["note_tabellino"])
+    return "\n".join(righe).strip() + "\n"
