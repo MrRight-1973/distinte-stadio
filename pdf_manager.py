@@ -132,7 +132,7 @@ def _stile_didascalia():
 
 
 class IconaEvento(Flowable):
-    """Icona disegnata: pallone per il gol, cartellino giallo o rosso."""
+    """Icona disegnata: pallone per il gol, cartellino giallo o rosso, frecce per la sostituzione."""
 
     def __init__(self, tipo, lato=9):
         super().__init__()
@@ -162,6 +162,19 @@ class IconaEvento(Flowable):
             for i, (px, py) in enumerate(punti):
                 ang = math.radians(90 + 72 * i)
                 c.line(px, py, cx + r_bordo * math.cos(ang), cy + r_bordo * math.sin(ang))
+        elif self.tipo == "sostituzione":
+            # freccia verde in su (entra) e rossa in giù (esce)
+            for x0, verso, colore in ((0, 1, "#2F855A"), (l / 2 + 0.3, -1, "#D62828")):
+                c.setFillColor(colors.HexColor(colore))
+                base, punta = (l * 0.1, l * 0.9) if verso > 0 else (l * 0.9, l * 0.1)
+                w = l / 2 - 0.3
+                percorso = c.beginPath()
+                percorso.moveTo(x0, base + verso * l * 0.4)
+                percorso.lineTo(x0 + w / 2, punta)
+                percorso.lineTo(x0 + w, base + verso * l * 0.4)
+                percorso.close()
+                c.drawPath(percorso, stroke=0, fill=1)
+                c.rect(x0 + w * 0.3, min(base, base + verso * l * 0.4), w * 0.4, l * 0.4, stroke=0, fill=1)
         else:
             colore = "#F6C700" if self.tipo == "ammonizione" else "#D62828"
             c.setFillColor(colors.HexColor(colore))
@@ -176,7 +189,7 @@ def elementi_distinta(casa, ospite, info_gara, qr_code_bytes=None, titolo="DISTI
 
     Serve sia al PDF della distinta sia al resoconto della cronaca, che la riporta senza QR,
     col titolo del resoconto, i gol accanto ai nomi delle squadre (gol = {"casa": 1, "ospite": 0})
-    e sotto le liste marcatori e cartellini (eventi: dict con tipo, squadra, minuto, giocatore, nota).
+    e sotto il tabellino con marcatori, cartellini e sostituzioni (eventi: dict con tipo, squadra, minuto, giocatore, nota).
     """
     story = []
     styles = getSampleStyleSheet()
@@ -277,11 +290,11 @@ def elementi_distinta(casa, ospite, info_gara, qr_code_bytes=None, titolo="DISTI
     story.append(macro_tabella)
 
     if eventi is not None:
-        etichette = {"gol": "GOL", "ammonizione": "AMMONIZIONE", "espulsione": "ESPULSIONE"}
+        etichette = {"gol": "GOL", "ammonizione": "AMMONIZIONE", "espulsione": "ESPULSIONE", "sostituzione": "SOSTITUZIONE"}
 
         def tabella_eventi(lato):
             righe = [[Paragraph("", bold_style), Paragraph("<b>MIN.</b>", bold_style),
-                      Paragraph("<b>MARCATORI E CARTELLINI</b>", bold_style)]]
+                      Paragraph("<b>TABELLINO</b>", bold_style)]]
             for e in [e for e in eventi if e.get("squadra") == lato]:
                 nome = _esc(e.get("giocatore") or etichette.get(e.get("tipo"), ""))
                 if e.get("nota"):
