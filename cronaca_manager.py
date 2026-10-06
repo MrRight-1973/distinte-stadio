@@ -286,7 +286,7 @@ def _note_per_prompt(cronaca):
     return "\n".join(righe)
 
 
-TIPI_EVENTO = ["gol", "ammonizione", "espulsione"]
+TIPI_EVENTO = ["gol", "ammonizione", "espulsione", "sostituzione"]
 _TIPO_DA_NOTA = {"Gol": "gol", "Ammonizione": "ammonizione", "Espulsione": "espulsione"}
 
 
@@ -297,7 +297,7 @@ def _minuti(minuto):
 
 
 def pulisci_eventi(eventi):
-    """Eventi validi (gol, ammonizioni, espulsioni), ordinati per tipo e minuto."""
+    """Eventi validi (gol, ammonizioni, espulsioni, sostituzioni), ordinati per tipo e minuto."""
     puliti = []
     for e in eventi or []:
         if not isinstance(e, dict):
@@ -316,20 +316,32 @@ def pulisci_eventi(eventi):
     return sorted(puliti, key=lambda e: (TIPI_EVENTO.index(e["tipo"]), _minuti(e["minuto"])))
 
 
+def _sostituzione(n):
+    """"ENTRA LOZZI FILIPPO, ESCE ZONZIN SEBASTIANO" dai giocatori scelti nella nota."""
+    d = n.get("dettagli") or {}
+    parti = [f"entra {d['entra']}" if d.get("entra") else "", f"esce {d['esce']}" if d.get("esce") else ""]
+    return ", ".join(p for p in parti if p)
+
+
+def _tipo_evento(n):
+    if e_gol(n):
+        return "gol"
+    if n.get("tipo") == "Sostituzione":
+        return "sostituzione" if _sostituzione(n) else None
+    return _TIPO_DA_NOTA.get(n.get("tipo"))
+
+
 def eventi_da_note(cronaca):
     """Bozza degli eventi prima del resoconto. Il giocatore è quello scelto dal menu; se manca, il
     testo della nota (da correggere)."""
     eventi = []
     for n in cronaca.get("note") or []:
         d = n.get("dettagli") or {}
-        if e_gol(n):
-            tipo = "gol"
-        elif n.get("tipo") in _TIPO_DA_NOTA:
-            tipo = _TIPO_DA_NOTA[n["tipo"]]
-        else:
+        tipo = _tipo_evento(n)
+        if not tipo:
             continue
-        eventi.append({"tipo": tipo, "squadra": n.get("squadra"), "minuto": n.get("minuto"),
-                       "giocatore": d.get("giocatore") or (n.get("testo") or "")[:40],
+        giocatore = _sostituzione(n) if tipo == "sostituzione" else d.get("giocatore") or (n.get("testo") or "")[:40]
+        eventi.append({"tipo": tipo, "squadra": n.get("squadra"), "minuto": n.get("minuto"), "giocatore": giocatore,
                        "nota": "rig." if n.get("tipo") == "Rigore" else ""})
     return pulisci_eventi(eventi)
 
@@ -361,7 +373,7 @@ def _unisci_eventi(cronaca, letti_da_ai):
     ai = list(letti_da_ai or [])
     eventi = []
     for n in sorted(cronaca.get("note") or [], key=lambda x: x.get("ts", 0)):
-        tipo = "gol" if e_gol(n) else _TIPO_DA_NOTA.get(n.get("tipo"))
+        tipo = _tipo_evento(n)
         squadra = n.get("squadra")
         if not tipo or squadra not in ("casa", "ospite"):
             continue
@@ -371,10 +383,14 @@ def _unisci_eventi(cronaca, letti_da_ai):
         if letto:
             ai.remove(letto)
         d = n.get("dettagli") or {}
+        if tipo == "sostituzione":
+            eventi.append({"tipo": tipo, "squadra": squadra, "minuto": n.get("minuto"),
+                           "giocatore": _sostituzione(n), "nota": ""})
+            continue
         eventi.append({"tipo": tipo, "squadra": squadra, "minuto": n.get("minuto"),
                        "giocatore": d.get("giocatore") or letto.get("giocatore") or "",
                        "nota": "rig." if n.get("tipo") == "Rigore" else letto.get("nota", "")})
-    eventi += [e for e in ai if e["tipo"] != "gol"]
+    eventi += [e for e in ai if e["tipo"] in ("ammonizione", "espulsione")]
     return pulisci_eventi(eventi)
 
 
@@ -464,7 +480,8 @@ def testo_semplice(cronaca):
         " · ".join(x for x in (p.get("campionato"), p.get("data")) if x),
         "",
     ]
-    for tipo, etichetta in (("gol", "Marcatori"), ("ammonizione", "Ammoniti"), ("espulsione", "Espulsi")):
+    for tipo, etichetta in (("gol", "Marcatori"), ("ammonizione", "Ammoniti"), ("espulsione", "Espulsi"),
+                            ("sostituzione", "Sostituzioni")):
         voci = [f"{e['minuto']} {e['giocatore']}{' (' + e['nota'] + ')' if e['nota'] else ''} ({nomi[e['squadra']]})".strip()
                 for e in eventi if e["tipo"] == tipo]
         if voci:

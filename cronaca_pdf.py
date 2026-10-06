@@ -1,8 +1,8 @@
 """PDF del resoconto di gara per i giornalisti.
 
 Pagina 1: "Resoconto di gara ufficiale" con le liste della distinta (senza QR code), i gol
-accanto ai nomi delle squadre, marcatori e cartellini, gli sponsor. Poi le foto del referto
-dell'arbitro, la cronaca (titolo e articolo) e per ultima la cronologia degli appunti.
+accanto ai nomi delle squadre e il tabellino (gol, cartellini, sostituzioni). Poi le foto del
+referto dell'arbitro, la cronaca (titolo e articolo), la cronologia degli appunti e in fondo gli sponsor.
 """
 import io
 from datetime import datetime
@@ -12,7 +12,7 @@ from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.lib.utils import ImageReader
 from reportlab.platypus import Image as RLImage
-from reportlab.platypus import PageBreak, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+from reportlab.platypus import KeepTogether, PageBreak, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
 from cronaca_manager import descrizione_nota, eventi_correnti, gol_da_eventi, leggi_foto_referto
 from pdf_manager import _blocco_sponsor, _esc, _stile_didascalia, elementi_distinta
@@ -51,16 +51,12 @@ def genera_pdf_resoconto(cronaca, giocatori=None, sponsor_loghi=None):
     eventi = eventi_correnti(cronaca)
     story = []
 
-    # 1. Resoconto di gara: liste, gol accanto alle squadre, marcatori e cartellini, sponsor
+    # 1. Resoconto di gara: liste, gol accanto alle squadre, tabellino
     casa = distinta.get("casa") or {"squadra": p.get("casa"), "giocatori": []}
     ospite = distinta.get("ospite") or {"squadra": p.get("ospite"), "giocatori": []}
     info = distinta.get("info_gara") or {"campionato": p.get("campionato"), "data": p.get("data")}
     story += elementi_distinta(casa, ospite, info, titolo="RESOCONTO DI GARA UFFICIALE",
                                gol=gol_da_eventi(eventi), eventi=eventi)
-    if sponsor_loghi:
-        blocco = _blocco_sponsor(_stile_didascalia(), sponsor_loghi)
-        if blocco:
-            story += [Spacer(1, 14), blocco]
 
     # 2. Referto dell'arbitro: una foto per pagina
     for nome in cronaca.get("referto") or []:
@@ -102,6 +98,11 @@ def genera_pdf_resoconto(cronaca, giocatori=None, sponsor_loghi=None):
             ("BOTTOMPADDING", (0, 0), (-1, -1), 2.5),
         ]))
         story.append(t)
+
+    # 5. Sponsor in fondo all'ultima pagina, tutti insieme (la prima pagina serve al tabellino)
+    blocco = _blocco_sponsor(_stile_didascalia(), sponsor_loghi) if sponsor_loghi else None
+    if blocco:
+        story.append(KeepTogether([Spacer(1, 18), blocco]))
 
     story += [Spacer(1, 10),
               Paragraph(f"A cura dell'Ufficio Stampa A.S.D. Azzurra Due Carrare · {datetime.now():%d/%m/%Y}", s_info)]

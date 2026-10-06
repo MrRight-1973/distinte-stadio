@@ -254,12 +254,13 @@ def _elenco_note(cronaca, api_key, giocatori):
         st.rerun()
 
 
-ICONE_EVENTO = {"gol": "⚽ gol", "ammonizione": "🟨 ammonizione", "espulsione": "🟥 espulsione"}
+ICONE_EVENTO = {"gol": "⚽ gol", "ammonizione": "🟨 ammonizione", "espulsione": "🟥 espulsione",
+                "sostituzione": "🔄 sostituzione"}
 
 
 def _eventi(cronaca):
-    """Marcatori e cartellini come andranno nel PDF, correggibili a mano."""
-    st.markdown("**⚽ Marcatori e cartellini** (correggi qui nomi e minuti prima di scaricare il PDF)")
+    """Il tabellino (gol, cartellini, sostituzioni) come andrà nel PDF, correggibile a mano."""
+    st.markdown("**⚽ Tabellino: gol, cartellini e sostituzioni** (correggi qui nomi e minuti prima di scaricare il PDF)")
     eventi = eventi_correnti(cronaca)
     df = pd.DataFrame(eventi, columns=["tipo", "squadra", "minuto", "giocatore", "nota"])
     chiave = f"cronaca_eventi_{st.session_state.setdefault('cronaca_eventi_n', 0)}"
@@ -284,7 +285,7 @@ def _eventi(cronaca):
     if (gol["casa"], gol["ospite"]) != gol_note:
         st.warning(f"Il risultato dei marcatori ({gol['casa']}-{gol['ospite']}) è diverso da quello delle note "
                    f"({gol_note[0]}-{gol_note[1]}): controlla.")
-    senza_squadra = [n for n in cronaca["note"] if n.get("tipo") in ("Gol", "Rigore", "Ammonizione", "Espulsione")
+    senza_squadra = [n for n in cronaca["note"] if n.get("tipo") in ("Gol", "Rigore", "Ammonizione", "Espulsione", "Sostituzione")
                      and n.get("squadra") not in ("casa", "ospite")]
     if senza_squadra:
         st.warning("Queste note non sono nell'elenco perché manca la squadra: "
