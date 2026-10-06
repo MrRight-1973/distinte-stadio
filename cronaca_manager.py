@@ -316,9 +316,9 @@ def pulisci_eventi(eventi):
     return sorted(puliti, key=lambda e: (TIPI_EVENTO.index(e["tipo"]), _minuti(e["minuto"])))
 
 
-def eventi_da_note(cronaca, solo_con_giocatore=False):
-    """Eventi ricavati dalle note. Il giocatore è quello scelto dal menu; se manca, il testo della
-    nota (bozza da correggere). Con solo_con_giocatore=True restano solo quelli col giocatore scelto."""
+def eventi_da_note(cronaca):
+    """Bozza degli eventi prima del resoconto. Il giocatore è quello scelto dal menu; se manca, il
+    testo della nota (da correggere)."""
     eventi = []
     for n in cronaca.get("note") or []:
         d = n.get("dettagli") or {}
@@ -327,8 +327,6 @@ def eventi_da_note(cronaca, solo_con_giocatore=False):
         elif n.get("tipo") in _TIPO_DA_NOTA:
             tipo = _TIPO_DA_NOTA[n["tipo"]]
         else:
-            continue
-        if solo_con_giocatore and not d.get("giocatore"):
             continue
         eventi.append({"tipo": tipo, "squadra": n.get("squadra"), "minuto": n.get("minuto"),
                        "giocatore": d.get("giocatore") or (n.get("testo") or "")[:40],
@@ -350,11 +348,42 @@ def gol_da_eventi(eventi):
     return gol
 
 
-def _unisci_eventi(scelti, letti_da_ai, bozza):
-    """I giocatori scelti dai menu sono certi; l'AI completa solo gli eventi senza giocatore scelto."""
-    chiavi = {(e["tipo"], e["squadra"], e["minuto"]) for e in scelti}
-    altri = [e for e in (letti_da_ai or bozza) if (e["tipo"], e["squadra"], e["minuto"]) not in chiavi]
-    return pulisci_eventi(scelti + altri)
+def _distanza_minuti(a, b):
+    (m1, r1), (m2, r2) = _minuti(a), _minuti(b)
+    return abs(m1 - m2) * 100 + abs(r1 - r2)
+
+
+def _unisci_eventi(cronaca, letti_da_ai):
+    """Gli eventi sono quelli delle note, uno per nota: niente gol doppi, nessun cartellino perso.
+    L'AI dà solo il nome a quelli senza giocatore scelto dal menu (stessa squadra, minuto più vicino)
+    e aggiunge i cartellini citati in note generiche; i gol li decidono solo le note.
+    Un evento dell'AI va con una nota solo se il minuto è vicino (entro 5'), per non mangiarne un altro."""
+    ai = list(letti_da_ai or [])
+    eventi = []
+    for n in sorted(cronaca.get("note") or [], key=lambda x: x.get("ts", 0)):
+        tipo = "gol" if e_gol(n) else _TIPO_DA_NOTA.get(n.get("tipo"))
+        squadra = n.get("squadra")
+        if not tipo or squadra not in ("casa", "ospite"):
+            continue
+        candidati = [e for e in ai if e["tipo"] == tipo and e["squadra"] == squadra
+                     and _distanza_minuti(e["minuto"], n.get("minuto")) <= 500]
+        letto = min(candidati, key=lambda e: _distanza_minuti(e["minuto"], n.get("minuto"))) if candidati else {}
+        if letto:
+            ai.remove(letto)
+        d = n.get("dettagli") or {}
+        eventi.append({"tipo": tipo, "squadra": squadra, "minuto": n.get("minuto"),
+                       "giocatore": d.get("giocatore") or letto.get("giocatore") or "",
+                       "nota": "rig." if n.get("tipo") == "Rigore" else letto.get("nota", "")})
+    eventi += [e for e in ai if e["tipo"] != "gol"]
+    return pulisci_eventi(eventi)
+
+
+def ricalcola_eventi(cronaca):
+    """Rifà marcatori e cartellini dalle note attuali (es. dopo averle corrette), senza chiamare l'AI."""
+    r = cronaca.get("resoconto")
+    if r:
+        r["eventi"] = _unisci_eventi(cronaca, r.get("eventi_ai"))
+        salva_cronaca(cronaca)
 
 
 def genera_resoconto(api_key, cronaca, giocatori=None, battute=3000):
@@ -413,11 +442,11 @@ def genera_resoconto(api_key, cronaca, giocatori=None, battute=3000):
     resoconto = {
         "titolo": str(dati.get("titolo") or "").strip(),
         "articolo": str(dati.get("articolo") or "").strip(),
-        "eventi": _unisci_eventi(eventi_da_note(cronaca, solo_con_giocatore=True), pulisci_eventi(dati.get("eventi")),
-                                 eventi_da_note(cronaca)),
+        "eventi_ai": pulisci_eventi(dati.get("eventi")),
         "risultato": f"{gol_casa}-{gol_ospite}",
         "generato": time.time(),
     }
+    resoconto["eventi"] = _unisci_eventi(cronaca, resoconto["eventi_ai"])
     cronaca["resoconto"] = resoconto
     salva_cronaca(cronaca)
     return resoconto
