@@ -7,6 +7,7 @@ file a ogni modifica, così non si perdono se la connessione cade durante la gar
 import io
 import json
 import os
+import re
 import tempfile
 import time
 import uuid
@@ -139,18 +140,74 @@ def chiudi_tempo(cronaca, chiave):
         salva_cronaca(cronaca)
 
 
+# Per ogni tipo di nota, i giocatori da scegliere dai menu: (campo, etichetta)
+CAMPI_GIOCATORE = {
+    "Gol": [("giocatore", "Marcatore"), ("assist", "Assist (facoltativo)")],
+    "Rigore": [("giocatore", "Tiratore")],
+    "Sostituzione": [("esce", "Esce"), ("entra", "Entra")],
+    "Ammonizione": [("giocatore", "Giocatore")],
+    "Espulsione": [("giocatore", "Giocatore")],
+    "Occasione": [("giocatore", "Giocatore (facoltativo)")],
+    "Infortunio": [("giocatore", "Giocatore")],
+}
+ESITI_RIGORE = ["Segnato", "Parato", "Fuori / palo"]
+
+
+def pulisci_nome(nome):
+    """Nome del giocatore senza le sigle di capitano e vice: "AGGIO KEVIN (C)" -> "AGGIO KEVIN"."""
+    return re.sub(r"\s*\((C|VC)\)\s*$", "", str(nome or "")).strip()
+
+
+def rosa(cronaca, lato):
+    """[(numero, nome)] della squadra dalla distinta collegata, nell'ordine della distinta."""
+    elenco = (((cronaca.get("distinta") or {}).get(lato) or {}).get("giocatori")) or []
+    risultato = []
+    for i, g in enumerate(elenco, start=1):
+        nome = pulisci_nome(g.get("GIOCATORE"))
+        if nome:
+            risultato.append((g.get("N°") or i, nome))
+    return risultato
+
+
+def e_gol(nota):
+    d = nota.get("dettagli") or {}
+    return nota.get("tipo") == "Gol" or (nota.get("tipo") == "Rigore" and d.get("esito") == "Segnato")
+
+
+def _con_numero(d, campo):
+    if not d.get(campo):
+        return ""
+    numero = d.get(f"{campo}_n")
+    return f"{d[campo]} ({numero})" if numero else d[campo]
+
+
+def descrizione_nota(nota):
+    """I giocatori scelti dai menu, in parole: "ROSSI ANDREA (9), assist BIANCHI LUCA (7)"."""
+    d = nota.get("dettagli") or {}
+    tipo = nota.get("tipo")
+    if tipo == "Sostituzione":
+        parti = [f"esce {_con_numero(d, 'esce')}" if d.get("esce") else "",
+                 f"entra {_con_numero(d, 'entra')}" if d.get("entra") else ""]
+    elif tipo == "Rigore":
+        parti = [_con_numero(d, "giocatore"), (d.get("esito") or "").lower()]
+    else:
+        parti = [_con_numero(d, "giocatore"), f"assist {_con_numero(d, 'assist')}" if d.get("assist") else ""]
+    return ", ".join(p for p in parti if p)
+
+
 def punteggio(cronaca):
-    """Gol contati dalle note di tipo Gol (squadra 'casa' o 'ospite')."""
+    """Gol contati dalle note di tipo Gol o Rigore segnato (squadra 'casa' o 'ospite')."""
     gol = {"casa": 0, "ospite": 0}
     for n in cronaca["note"]:
-        if n.get("tipo") == "Gol" and n.get("squadra") in gol:
+        if e_gol(n) and n.get("squadra") in gol:
             gol[n["squadra"]] += 1
     return gol["casa"], gol["ospite"]
 
 
 # --- Note ---------------------------------------------------------------------
 
-def aggiungi_nota(cronaca, testo, tipo="Nota", squadra="", origine="testo", audio=None, minuto=None):
+def aggiungi_nota(cronaca, testo, tipo="Nota", squadra="", origine="testo", audio=None, minuto=None, dettagli=None):
+    """dettagli: giocatori scelti dai menu, es. {"giocatore": "ROSSI ANDREA", "giocatore_n": 9, "assist": ...}."""
     nota = {
         "id": uuid.uuid4().hex[:10],
         "ts": time.time(),
@@ -160,6 +217,7 @@ def aggiungi_nota(cronaca, testo, tipo="Nota", squadra="", origine="testo", audi
         "testo": testo.strip(),
         "origine": origine,
         "audio": audio,  # nome del file audio, se la trascrizione va rifatta
+        "dettagli": {k: v for k, v in (dettagli or {}).items() if v},
     }
     cronaca["note"].append(nota)
     salva_cronaca(cronaca)
@@ -221,7 +279,10 @@ def _note_per_prompt(cronaca):
     righe = []
     for n in sorted(cronaca["note"], key=lambda x: x.get("ts", 0)):
         squadra = f" [{nomi[n['squadra']]}]" if n.get("squadra") in nomi else ""
-        righe.append(f"{n.get('minuto', '')} – {n.get('tipo', 'Nota')}{squadra}: {n.get('testo', '')}")
+        dettagli = descrizione_nota(n)
+        commento = n.get("testo", "")
+        testo = f"{dettagli}. {commento}" if dettagli and commento else (dettagli or commento)
+        righe.append(f"{n.get('minuto', '')} – {n.get('tipo', 'Nota')}{squadra}: {testo}")
     return "\n".join(righe)
 
 
@@ -255,13 +316,24 @@ def pulisci_eventi(eventi):
     return sorted(puliti, key=lambda e: (TIPI_EVENTO.index(e["tipo"]), _minuti(e["minuto"])))
 
 
-def eventi_da_note(cronaca):
-    """Eventi ricavati direttamente dalle note (il giocatore è il testo della nota): bozza da correggere."""
-    return pulisci_eventi([
-        {"tipo": _TIPO_DA_NOTA[n["tipo"]], "squadra": n.get("squadra"), "minuto": n.get("minuto"),
-         "giocatore": (n.get("testo") or "")[:40]}
-        for n in cronaca.get("note") or [] if n.get("tipo") in _TIPO_DA_NOTA
-    ])
+def eventi_da_note(cronaca, solo_con_giocatore=False):
+    """Eventi ricavati dalle note. Il giocatore è quello scelto dal menu; se manca, il testo della
+    nota (bozza da correggere). Con solo_con_giocatore=True restano solo quelli col giocatore scelto."""
+    eventi = []
+    for n in cronaca.get("note") or []:
+        d = n.get("dettagli") or {}
+        if e_gol(n):
+            tipo = "gol"
+        elif n.get("tipo") in _TIPO_DA_NOTA:
+            tipo = _TIPO_DA_NOTA[n["tipo"]]
+        else:
+            continue
+        if solo_con_giocatore and not d.get("giocatore"):
+            continue
+        eventi.append({"tipo": tipo, "squadra": n.get("squadra"), "minuto": n.get("minuto"),
+                       "giocatore": d.get("giocatore") or (n.get("testo") or "")[:40],
+                       "nota": "rig." if n.get("tipo") == "Rigore" else ""})
+    return pulisci_eventi(eventi)
 
 
 def eventi_correnti(cronaca):
@@ -278,24 +350,35 @@ def gol_da_eventi(eventi):
     return gol
 
 
+def _unisci_eventi(scelti, letti_da_ai, bozza):
+    """I giocatori scelti dai menu sono certi; l'AI completa solo gli eventi senza giocatore scelto."""
+    chiavi = {(e["tipo"], e["squadra"], e["minuto"]) for e in scelti}
+    altri = [e for e in (letti_da_ai or bozza) if (e["tipo"], e["squadra"], e["minuto"]) not in chiavi]
+    return pulisci_eventi(scelti + altri)
+
+
 def genera_resoconto(api_key, cronaca, giocatori=None, battute=3000):
     """Articolo in stile giornalistico ed elenco di gol e cartellini, scritti a partire dalle note."""
     p = cronaca["partita"]
     gol_casa, gol_ospite = punteggio(cronaca)
     formazioni = ""
-    for lato, elenco in (giocatori or {}).items():
-        presenti = [g for g in elenco if g]
-        if presenti:
-            nome = p.get(lato) or lato
-            formazioni += (f"\n{nome} – titolari (righe 1-11): {', '.join(presenti[:11])}"
-                           f"; a disposizione: {', '.join(presenti[11:]) or '—'}")
+    for lato in ("casa", "ospite"):
+        giocatori_lato = rosa(cronaca, lato)
+        if not giocatori_lato:  # senza distinta collegata si usano i nomi passati
+            giocatori_lato = [(i, pulisci_nome(g)) for i, g in enumerate((giocatori or {}).get(lato, []), 1) if g]
+        if giocatori_lato:
+            elenco = [f"{num} {nome}" for num, nome in giocatori_lato]
+            formazioni += (f"\n{p.get(lato) or lato} – titolari: {', '.join(elenco[:11])}"
+                           f"; a disposizione: {', '.join(elenco[11:]) or '—'}")
 
     prompt = (
         "Sei un giornalista sportivo che scrive per i quotidiani locali e i siti di calcio dilettantistico veneto. "
         "Scrivi il resoconto della partita usando SOLO i fatti presenti negli appunti presi a bordo campo dalla "
         "società: non inventare gol, nomi, minuti o episodi. Gli appunti sono stati in parte dettati a voce e "
         "trascritti in automatico: correggi gli errori evidenti di trascrizione e scrivi i nomi dei giocatori "
-        "come nelle formazioni, se presenti. Tono giornalistico, equilibrato e rispettoso degli avversari, in "
+        "come nelle formazioni, se presenti. Nelle formazioni ogni nome è preceduto dal numero di maglia: se un "
+        "appunto cita un numero ('il 9', 'numero 9') usa il giocatore con quel numero della squadra indicata. "
+        "I giocatori scritti prima del punto negli appunti sono stati scelti da un menu e sono certi. Tono giornalistico, equilibrato e rispettoso degli avversari, in "
         "italiano corretto; nessun commento offensivo verso arbitro o avversari. "
         f"L'articolo deve essere di circa {battute} battute, con un attacco che dica risultato e chiave della gara, "
         "poi lo sviluppo in ordine cronologico.\n\n"
@@ -330,7 +413,8 @@ def genera_resoconto(api_key, cronaca, giocatori=None, battute=3000):
     resoconto = {
         "titolo": str(dati.get("titolo") or "").strip(),
         "articolo": str(dati.get("articolo") or "").strip(),
-        "eventi": pulisci_eventi(dati.get("eventi")) or eventi_da_note(cronaca),
+        "eventi": _unisci_eventi(eventi_da_note(cronaca, solo_con_giocatore=True), pulisci_eventi(dati.get("eventi")),
+                                 eventi_da_note(cronaca)),
         "risultato": f"{gol_casa}-{gol_ospite}",
         "generato": time.time(),
     }

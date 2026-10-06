@@ -11,6 +11,8 @@ import pandas as pd
 import streamlit as st
 
 from cronaca_manager import (
+    CAMPI_GIOCATORE,
+    ESITI_RIGORE,
     LUNGHEZZE,
     TIPI_NOTA,
     aggiungi_foto_referto,
@@ -23,6 +25,7 @@ from cronaca_manager import (
     pulisci_eventi,
     carica_cronaca,
     chiudi_tempo,
+    descrizione_nota,
     genera_resoconto,
     giocatori_da_distinta,
     imposta_distinta,
@@ -31,6 +34,7 @@ from cronaca_manager import (
     minuto_di_gioco,
     orologio,
     punteggio,
+    rosa,
     salva_audio,
     salva_cronaca,
     stato_gara,
@@ -115,14 +119,47 @@ def _referto(cronaca):
                     st.rerun()
 
 
+def _scelta_giocatori(cronaca, tipo, squadra, n_form):
+    """Menu per scegliere i giocatori dell'evento (marcatore, assist, chi entra e chi esce...).
+    Restituisce i dettagli da salvare nella nota, es. {"giocatore": "ROSSI ANDREA", "giocatore_n": 9}."""
+    campi = CAMPI_GIOCATORE.get(tipo)
+    dettagli = {}
+    if not campi:
+        return dettagli
+    if squadra not in ("casa", "ospite"):
+        st.caption("Scegli la squadra per vedere i giocatori.")
+        return dettagli
+    giocatori = rosa(cronaca, squadra)
+    if not giocatori:
+        st.caption("Nessuna distinta collegata: pubblicala nella sezione Distinta (o usa «Ricarica la distinta pubblicata») per scegliere i giocatori dai menu.")
+        return dettagli
+    opzioni = [None] + giocatori
+    colonne = st.columns(len(campi) + (1 if tipo == "Rigore" else 0))
+    for (campo, etichetta), col in zip(campi, colonne):
+        scelto = col.selectbox(etichetta, opzioni, key=f"cronaca_{campo}_{n_form}",
+                               format_func=lambda g: "—" if g is None else f"{g[0]} {g[1]}")
+        if scelto:
+            dettagli[campo], dettagli[f"{campo}_n"] = scelto[1], scelto[0]
+    if tipo == "Rigore":
+        dettagli["esito"] = colonne[-1].selectbox("Esito", ESITI_RIGORE, key=f"cronaca_esito_{n_form}")
+    return dettagli
+
+
 def _form_nota(cronaca, api_key, giocatori):
     c_tipo, c_squadra = st.columns(2)
     tipo = c_tipo.selectbox("Tipo", TIPI_NOTA, key="cronaca_tipo")
     squadra = c_squadra.selectbox("Squadra", list(SQUADRE), format_func=lambda k: SQUADRE[k], key="cronaca_squadra")
+    # I menu dei giocatori ripartono vuoti dopo ogni nota
+    n_form = st.session_state.setdefault("cronaca_form_n", 0)
+    dettagli = _scelta_giocatori(cronaca, tipo, squadra, n_form)
 
-    # Nota vocale: la chiave cambia dopo ogni registrazione, così il registratore si svuota
+    def registrata():
+        st.session_state["cronaca_form_n"] = n_form + 1
+        st.rerun()
+
+    # Commento vocale: la chiave cambia dopo ogni registrazione, così il registratore si svuota
     n_audio = st.session_state.setdefault("cronaca_audio_n", 0)
-    audio = st.audio_input("🎙️ Nota vocale", key=f"cronaca_audio_{n_audio}")
+    audio = st.audio_input("🎙️ Commento vocale", key=f"cronaca_audio_{n_audio}")
     if audio is not None:
         dati = audio.getvalue()
         impronta = hashlib.sha1(dati).hexdigest()
@@ -133,21 +170,24 @@ def _form_nota(cronaca, api_key, giocatori):
             try:
                 with st.spinner("Trascrizione in corso..."):
                     testo = trascrivi(api_key, dati, cronaca, giocatori)
-                aggiungi_nota(cronaca, testo or "(nota vocale vuota)", tipo, squadra, "voce", None, minuto)
-                st.session_state["cronaca_messaggio"] = ("success", f"{minuto} {testo}")
+                nota = aggiungi_nota(cronaca, testo or ("" if dettagli else "(nota vocale vuota)"), tipo, squadra,
+                                     "voce", None, minuto, dettagli)
+                st.session_state["cronaca_messaggio"] = ("success", f"{minuto} {descrizione_nota(nota)} {testo}".strip())
             except Exception as e:
                 # L'audio resta salvato: si può ritrascrivere più tardi
-                aggiungi_nota(cronaca, "(da trascrivere)", tipo, squadra, "voce", nome_file, minuto)
+                aggiungi_nota(cronaca, "(da trascrivere)", tipo, squadra, "voce", nome_file, minuto, dettagli)
                 st.session_state["cronaca_messaggio"] = ("warning", f"Nota salvata ma non trascritta: {e}")
             st.session_state["cronaca_audio_n"] = n_audio + 1
-            st.rerun()
+            registrata()
 
-    # Nota scritta
+    # Commento scritto (facoltativo se i giocatori sono già scelti dai menu)
     with st.form("cronaca_nota_testo", clear_on_submit=True):
-        testo = st.text_input("✏️ Nota scritta", placeholder="es. Rossi di testa su cross di Bianchi, 1-0")
-        if st.form_submit_button("Aggiungi nota", use_container_width=True) and testo.strip():
-            aggiungi_nota(cronaca, testo, tipo, squadra, "testo")
-            st.rerun()
+        testo = st.text_input("✏️ Commento scritto", placeholder="es. di testa su cross dalla destra")
+        etichetta = "Aggiungi evento" if dettagli else "Aggiungi nota"
+        if st.form_submit_button(etichetta, use_container_width=True) and (testo.strip() or dettagli):
+            nota = aggiungi_nota(cronaca, testo, tipo, squadra, "testo", dettagli=dettagli)
+            st.session_state["cronaca_messaggio"] = ("success", f"{nota['minuto']} {tipo} {descrizione_nota(nota)}".strip())
+            registrata()
 
     messaggio = st.session_state.pop("cronaca_messaggio", None)
     if messaggio:
@@ -174,7 +214,8 @@ def _elenco_note(cronaca, api_key, giocatori):
 
     # Le note si possono correggere o cancellare (selezionare la riga e premere Canc)
     df = pd.DataFrame(
-        [{"id": n["id"], "Minuto": n["minuto"], "Tipo": n["tipo"], "Squadra": n.get("squadra", ""), "Testo": n["testo"]}
+        [{"id": n["id"], "Minuto": n["minuto"], "Tipo": n["tipo"], "Squadra": n.get("squadra", ""),
+          "Giocatori": descrizione_nota(n), "Testo": n["testo"]}
          for n in note]
     )
     chiave_editor = f"cronaca_editor_{st.session_state.setdefault('cronaca_editor_n', 0)}"
@@ -184,11 +225,13 @@ def _elenco_note(cronaca, api_key, giocatori):
         hide_index=True,
         num_rows="dynamic",
         use_container_width=True,
-        column_order=["Minuto", "Tipo", "Squadra", "Testo"],
+        column_order=["Minuto", "Tipo", "Squadra", "Giocatori", "Testo"],
+        disabled=["Giocatori"],
         column_config={
             "Minuto": st.column_config.TextColumn(width="small"),
             "Tipo": st.column_config.SelectboxColumn(options=TIPI_NOTA, width="small"),
             "Squadra": st.column_config.SelectboxColumn(options=list(SQUADRE), width="small"),
+            "Giocatori": st.column_config.TextColumn(width="medium", help="Scelti dai menu quando si è aggiunta la nota"),
             "Testo": st.column_config.TextColumn(width="large"),
         },
     )
@@ -201,7 +244,7 @@ def _elenco_note(cronaca, api_key, giocatori):
             nuove.append({**base,
                           "minuto": str(riga["Minuto"] or ""), "tipo": riga["Tipo"] or "Nota",
                           "squadra": riga["Squadra"] or "", "testo": str(riga["Testo"] or "")})
-        cronaca["note"] = [n for n in nuove if n["testo"] or n["minuto"]]
+        cronaca["note"] = [n for n in nuove if n["testo"] or n["minuto"] or n.get("dettagli")]
         for n in cronaca["note"]:
             n["id"] = n["id"] or hashlib.sha1(str(n["ts"]).encode()).hexdigest()[:10]
         salva_cronaca(cronaca)

@@ -14,7 +14,7 @@ from reportlab.lib.utils import ImageReader
 from reportlab.platypus import Image as RLImage
 from reportlab.platypus import PageBreak, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
-from cronaca_manager import eventi_correnti, gol_da_eventi, leggi_foto_referto
+from cronaca_manager import descrizione_nota, eventi_correnti, gol_da_eventi, leggi_foto_referto
 from pdf_manager import _blocco_sponsor, _esc, _stile_didascalia, elementi_distinta
 
 BLU = colors.HexColor("#1A365D")
@@ -87,8 +87,12 @@ def genera_pdf_resoconto(cronaca, giocatori=None, sponsor_loghi=None):
             evento = n.get("tipo") or "Nota"
             if n.get("squadra") in nomi_squadre:
                 evento += f" – {nomi_squadre[n['squadra']]}"
+            giocatori = descrizione_nota(n)
+            nota = f"<b>{_esc(giocatori)}</b>" if giocatori else ""
+            if n.get("testo"):
+                nota += (" – " if nota else "") + _esc(n.get("testo"))
             dati.append([Paragraph(_esc(n.get("minuto")), s_piccolo), Paragraph(_esc(evento), s_piccolo),
-                         Paragraph(_esc(n.get("testo")), s_piccolo)])
+                         Paragraph(nota, s_piccolo)])
         t = Table(dati, colWidths=[55, 130, LARGHEZZA - 185], repeatRows=1)
         t.setStyle(TableStyle([
             ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#E2E8F0")),
