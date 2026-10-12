@@ -291,6 +291,34 @@ def _elenco_note(cronaca, api_key, giocatori):
     _modifica_nota(cronaca)
 
 
+def _importa_note(cronaca):
+    """Ricarica le note da un CSV scaricato dalla tabella delle note (icona ⬇️)."""
+    from import_csv import CsvErrore, note_da_csv, unisci_note
+
+    n = st.session_state.setdefault("cronaca_csv_n", 0)
+    with st.popover("📥 Carica note da CSV", use_container_width=True):
+        st.caption("Il CSV scaricato dall'icona ⬇️ della tabella delle note (Min., Tipo, Squadra, Giocatori, "
+                   "Commento). Le note si aggiungono a quelle presenti; quelle già uguali si saltano.")
+        f = st.file_uploader("CSV delle note", type=["csv"], key=f"cronaca_csv_{n}", label_visibility="collapsed")
+    messaggio = st.session_state.pop("cronaca_csv_messaggio", None)
+    if messaggio:
+        st.success(messaggio)
+    if f is None:
+        return
+    p = cronaca["partita"]
+    try:
+        nuove = note_da_csv(f.getvalue(), {"casa": p.get("casa"), "ospite": p.get("ospite")})
+    except CsvErrore as e:
+        st.error(str(e))
+        return
+    cronaca["note"], aggiunte = unisci_note(cronaca["note"], nuove)
+    salva_cronaca(cronaca)
+    st.session_state["cronaca_csv_n"] = n + 1
+    st.session_state["cronaca_csv_messaggio"] = (f"📥 Aggiunte {aggiunte} note dal CSV"
+                                                 + (f" ({len(nuove) - aggiunte} erano già presenti)." if aggiunte < len(nuove) else "."))
+    st.rerun()
+
+
 def _modifica_nota(cronaca):
     """Correggere, aggiungere a mano o togliere una nota, con gli stessi menu della presa note."""
     nomi = {"casa": cronaca["partita"].get("casa") or "Casa", "ospite": cronaca["partita"].get("ospite") or "Ospite"}
@@ -526,6 +554,7 @@ def render_cronaca(api_key, macro_info=None, loghi_sponsor=lambda: None, leggi_d
     st.markdown("---")
     st.subheader("🗒️ Note")
     _elenco_note(cronaca, api_key, giocatori)
+    _importa_note(cronaca)
     st.markdown("---")
     _referto(cronaca)
     st.markdown("---")

@@ -69,6 +69,28 @@ def applica_shift(chiave_griglia, direzione):
     st.session_state.pop(f"ed_{chiave_griglia}", None)
 
 
+def _importa_csv(chiave_griglia):
+    """Ricarica la lista da un CSV scaricato in precedenza (icona ⬇️ sopra la tabella)."""
+    from import_csv import CsvErrore, griglia_da_csv
+
+    n = st.session_state.setdefault(f"csv_n_{chiave_griglia}", 0)
+    with st.popover("📥 Carica lista da CSV", use_container_width=True):
+        st.caption("Il CSV scaricato dall'icona ⬇️ della tabella (colonne N°, GIOCATORE, ANNO). "
+                   "Sostituisce la lista di questa squadra.")
+        f = st.file_uploader("CSV della lista", type=["csv"], key=f"csv_{chiave_griglia}_{n}",
+                             label_visibility="collapsed")
+    if f is None:
+        return
+    try:
+        st.session_state[chiave_griglia] = griglia_da_csv(f.getvalue())
+    except CsvErrore as e:
+        st.error(str(e))
+        return
+    st.session_state.pop(f"ed_{chiave_griglia}", None)  # le modifiche dell'editor non vanno riapplicate
+    st.session_state[f"csv_n_{chiave_griglia}"] = n + 1  # uploader nuovo e vuoto: il file non si riapplica
+    st.rerun()
+
+
 def render_colonna_squadra(label_titolo, chiave_griglia, default_all, default_nome=""):
     """Rende la colonna squadra; nome società e allenatore sono precompilati dalla scansione
     ma restano modificabili dall'utente."""
@@ -86,6 +108,8 @@ def render_colonna_squadra(label_titolo, chiave_griglia, default_all, default_no
             "ANNO": st.column_config.TextColumn("ANNO", max_chars=4),
         },
     )
+
+    _importa_csv(chiave_griglia)
 
     avviso = st.session_state.pop(f"avviso_{chiave_griglia}", None)
     if avviso:
