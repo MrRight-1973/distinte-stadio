@@ -157,6 +157,7 @@ def _metti_in_archivio(cronaca):
 def archivia_e_azzera(cronaca, **partita):
     """Conserva la cronaca attuale (se ha note) nell'archivio, poi ne apre una nuova vuota."""
     _metti_in_archivio(cronaca)
+    togli_distinte_caricate()
     nuova = cronaca_vuota(**partita)
     salva_cronaca(nuova)
     _online(cloud.togli_corrente_alle_altre, nuova["id"])
@@ -183,6 +184,7 @@ def cancella_e_azzera(cronaca):
     for lato in ("casa", "ospite"):
         _da_caricare.pop(f"distinte_pubblicate/{lato}.jpg", None)
     _online(cloud.elimina_file, [f"distinte_pubblicate/{lato}.jpg" for lato in ("casa", "ospite")])
+    togli_distinte_caricate()
     nuova = cronaca_vuota()
     salva_cronaca(nuova)
     _online(cloud.togli_corrente_alle_altre, nuova["id"])
@@ -928,3 +930,49 @@ def _copia_foto_distinte(cronaca):
         cronaca["foto_distinte"] = []
         for dati in nuove:
             aggiungi_foto_referto(cronaca, dati, "foto_distinte")
+
+
+# --- Foto delle distinte caricate (partita in lavorazione) ---------------------
+# Le foto appena caricate nella sezione Distinta restano sul disco e su Supabase finché la
+# partita non si archivia o si cancella: si ritrovano dopo un riavvio o da un altro dispositivo.
+
+def _cartella_in_lavorazione():
+    cartella = os.path.join(_cartella_dati(), "in_lavorazione")
+    os.makedirs(cartella, exist_ok=True)
+    return cartella
+
+
+def salva_distinta_caricata(lato, nome, dati):
+    cartella = _cartella_in_lavorazione()
+    percorso = os.path.join(cartella, lato)
+    with open(percorso, "wb") as f:
+        f.write(dati)
+    with open(percorso + ".json", "w", encoding="utf-8") as f:
+        json.dump({"nome": nome}, f, ensure_ascii=False)
+    _carica_online(f"in_lavorazione/{lato}", percorso, "application/octet-stream")
+    _carica_online(f"in_lavorazione/{lato}.json", percorso + ".json", "application/json")
+
+
+def leggi_distinta_caricata(lato):
+    """{"nome", "dati"} della foto caricata per quel lato, oppure None."""
+    percorso = os.path.join(_cartella_in_lavorazione(), lato)
+    try:
+        info = json.loads(_leggi_file(percorso + ".json", f"in_lavorazione/{lato}.json"))
+        return {"nome": info.get("nome") or lato, "dati": _leggi_file(percorso, f"in_lavorazione/{lato}")}
+    except (OSError, ValueError):
+        return None
+
+
+def togli_distinte_caricate(lati=("casa", "ospite")):
+    cartella = _cartella_in_lavorazione()
+    percorsi = []
+    for lato in lati:
+        for nome in (lato, f"{lato}.json"):
+            try:
+                os.remove(os.path.join(cartella, nome))
+            except OSError:
+                pass
+            _da_caricare.pop(f"in_lavorazione/{nome}", None)
+            percorsi.append(f"in_lavorazione/{nome}")
+    _online(cloud.elimina_file, percorsi)
+

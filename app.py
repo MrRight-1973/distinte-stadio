@@ -1,3 +1,4 @@
+import hashlib
 import hmac
 import io
 import json
@@ -9,7 +10,12 @@ import streamlit as st
 
 import archivio_cloud
 from ui_archivio import render_archivio
-from cronaca_manager import salva_foto_distinte_pubblicate
+from cronaca_manager import (
+    leggi_distinta_caricata,
+    salva_distinta_caricata,
+    salva_foto_distinte_pubblicate,
+    togli_distinte_caricate,
+)
 from estrattore import analizza_distinta, unisci_scansioni
 from github_publisher import PubblicazioneErrore, leggi_file, pubblica_su_github, url_pagina_da_repo
 from pdf_manager import genera_pdf, loghi_da_cartella_locale, numero_sponsor
@@ -75,22 +81,29 @@ class FileCaricato(io.BytesIO):
 
 
 def carica_distinta(colonna, etichetta, lato):
-    """Uploader che ricorda la foto fino alla prossima partita: cambiando sezione o dopo la
-    scansione il file resta, finché non si preme "Cambia" o si archivia/cancella la partita."""
+    """Uploader che ricorda la foto fino alla prossima partita: resta salvata (disco e Supabase) anche
+    cambiando sezione, dopo un riavvio o da un altro dispositivo, finché non si preme "Cambia" o si
+    archivia/cancella la partita."""
     chiave = f"distinta_caricata_{lato}"
+    if chiave not in st.session_state:  # prima volta in questa sessione: quella salvata (anche da un altro dispositivo)
+        st.session_state[chiave] = leggi_distinta_caricata(lato)
+        if st.session_state[chiave]:
+            st.session_state[chiave]["id"] = hashlib.md5(st.session_state[chiave]["dati"]).hexdigest()
     salvato = st.session_state.get(chiave)
     if salvato:
         colonna.markdown(f"**{etichetta}**")
         c_nome, c_cambia = colonna.columns([3, 1])
         c_nome.success(f"📎 {salvato['nome']}")
         if c_cambia.button("Cambia", key=f"cambia_{lato}", use_container_width=True):
-            st.session_state.pop(chiave, None)
+            st.session_state[chiave] = None
             st.session_state.pop(f"uploader_file_{lato}", None)
+            togli_distinte_caricate([lato])
             st.rerun()
         return FileCaricato(salvato)
     f = colonna.file_uploader(etichetta, type=["png", "jpg", "jpeg", "pdf"], key=f"uploader_file_{lato}")
     if f is not None:
-        st.session_state[chiave] = {"nome": f.name, "dati": f.getvalue(), "id": firma_file(f)}
+        st.session_state[chiave] = {"nome": f.name, "dati": f.getvalue(), "id": hashlib.md5(f.getvalue()).hexdigest()}
+        salva_distinta_caricata(lato, f.name, f.getvalue())
     return f
 
 
