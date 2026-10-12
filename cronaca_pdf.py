@@ -6,6 +6,7 @@ referto dell'arbitro e delle distinte, la cronaca (titolo e articolo), le foto d
 """
 import io
 from datetime import datetime
+from zoneinfo import ZoneInfo
 
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
@@ -21,6 +22,7 @@ BLU = colors.HexColor("#1A365D")
 GRIGIO = colors.HexColor("#4A5568")
 LINEA = colors.HexColor("#CBD5E0")
 LARGHEZZA = 555  # A4 meno i margini
+ORA_ITALIANA = ZoneInfo("Europe/Rome")  # il server dell'app è in UTC
 
 
 def _foto_referto(nome, larghezza_max, altezza_max):
@@ -119,6 +121,7 @@ def genera_pdf_resoconto(cronaca, giocatori=None, sponsor_loghi=None):
         story.append(KeepTogether([Spacer(1, 18), blocco]))
 
     story += [Spacer(1, 10),
-              Paragraph(f"A cura dell'Ufficio Stampa A.S.D. Azzurra Due Carrare · {datetime.now():%d/%m/%Y}", s_info)]
+              Paragraph("A cura dell'Ufficio Stampa A.S.D. Azzurra Due Carrare · "
+                        f"versione del {datetime.now(ORA_ITALIANA):%d/%m/%Y alle %H:%M}", s_info)]
     doc.build(story)
     return buffer.getvalue()

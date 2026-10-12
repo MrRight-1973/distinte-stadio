@@ -1,0 +1,28 @@
+# Tiene sveglio l'archivio Supabase: nel piano gratuito il progetto va in pausa
+# dopo 7 giorni senza richieste. Tre controlli a settimana bastano, anche d'estate.
+# Servono i secrets del repository SUPABASE_URL e SUPABASE_KEY (Settings > Secrets and variables > Actions).
+name: Sveglia archivio Supabase
+
+on:
+  schedule:
+    - cron: "17 6 * * 1,3,5"  # lunedì, mercoledì e venerdì alle 6:17 UTC
+  workflow_dispatch: {}
+
+jobs:
+  sveglia:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Interroga il database
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+        run: |
+          if [ -z "$SUPABASE_URL" ] || [ -z "$SUPABASE_KEY" ]; then
+            echo "Secrets SUPABASE_URL / SUPABASE_KEY non configurati: niente da fare."
+            exit 0
+          fi
+          AUTH=()
+          case "$SUPABASE_KEY" in sb_*) ;; *) AUTH=(-H "Authorization: Bearer $SUPABASE_KEY") ;; esac
+          curl -fsS -o /dev/null -w "Supabase risponde: HTTP %{http_code}\n" \
+            -H "apikey: $SUPABASE_KEY" "${AUTH[@]}" \
+            "${SUPABASE_URL%/}/rest/v1/partite?select=id&limit=1"

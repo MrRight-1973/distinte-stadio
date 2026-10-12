@@ -3,6 +3,8 @@
 Il cronometro si basa sull'orario del server, non sul telefono: se lo schermo si
 spegne o la pagina si ricarica, il minuto resta giusto. Le note sono salvate su
 file a ogni modifica, così non si perdono se la connessione cade durante la gara.
+Con Supabase configurato (archivio_cloud) ogni salvataggio va anche nell'archivio online,
+che sopravvive ai riavvii dell'app e conserva lo storico delle partite.
 """
 import io
 import json
@@ -11,9 +13,11 @@ import re
 import tempfile
 import time
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 
 from openai import OpenAI
+
+import archivio_cloud as cloud
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 MODELLO_TESTO = "gpt-4o"
@@ -43,6 +47,7 @@ def _percorso_file():
 
 def cronaca_vuota(casa="", ospite="", campionato="", data=""):
     return {
+        "id": uuid.uuid4().hex,
         "partita": {"casa": casa, "ospite": ospite, "campionato": campionato, "data": data},
         "durata_tempo": 45,
         "tempi": {},          # chiave fase -> {"inizio": ts, "fine": ts | None}
@@ -53,18 +58,18 @@ def cronaca_vuota(casa="", ospite="", campionato="", data=""):
     }
 
 
-def carica_cronaca():
-    try:
-        with open(_percorso_file(), encoding="utf-8") as f:
-            dati = json.load(f)
-        base = cronaca_vuota()
-        base.update(dati)
-        return base
-    except (OSError, ValueError):
-        return cronaca_vuota()
+ELENCHI_FOTO = ("referto", "foto_distinte", "foto_partita")
+_ultimo_tentativo_cloud = {"t": 0.0}
+_da_caricare = {}  # percorso online -> (percorso locale, tipo): file da riprovare a caricare
 
 
-def salva_cronaca(cronaca):
+def _completa(dati):
+    base = cronaca_vuota()
+    base.update(dati or {})
+    return base
+
+
+def _scrivi_locale(cronaca):
     percorso = _percorso_file()
     temporaneo = percorso + ".tmp"
     with open(temporaneo, "w", encoding="utf-8") as f:
@@ -72,15 +77,137 @@ def salva_cronaca(cronaca):
     os.replace(temporaneo, percorso)  # scrittura atomica: il file non resta mai a metà
 
 
-def archivia_e_azzera(cronaca, **partita):
-    """Conserva la cronaca attuale (se ha note) con data e ora nel nome, poi ne apre una nuova."""
+def _online(funzione, *argomenti):
+    """Prova un'operazione sull'archivio online; se non va, l'app continua sul disco."""
+    if not cloud.attivo():
+        return False
+    try:
+        funzione(*argomenti)
+        return True
+    except cloud.ArchivioErrore:
+        return False
+
+
+def carica_cronaca():
+    """La cronaca aperta: dal disco dell'app; dopo un riavvio (disco vuoto) dall'archivio online."""
+    try:
+        with open(_percorso_file(), encoding="utf-8") as f:
+            return _completa(json.load(f))
+    except (OSError, ValueError):
+        pass
+    if not cloud.attivo():
+        return cronaca_vuota()
+    if time.time() - _ultimo_tentativo_cloud["t"] < 30:
+        return cronaca_vuota()  # Supabase non ha risposto da poco: non bloccare il cronometro
+    try:
+        dati = cloud.partita_corrente()
+    except cloud.ArchivioErrore:
+        _ultimo_tentativo_cloud["t"] = time.time()
+        return cronaca_vuota()
+    cronaca = _completa(dati) if dati else cronaca_vuota()
+    _scrivi_locale(cronaca)
+    return cronaca
+
+
+def salva_cronaca(cronaca):
+    cronaca.setdefault("id", uuid.uuid4().hex)
+    cronaca["aggiornato"] = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    _scrivi_locale(cronaca)
+    if _online(cloud.salva_partita, cronaca, True, punteggio(cronaca)):
+        _riprova_caricamenti()
+
+
+def stato_archivio_online():
+    """None se non configurato, altrimenti (ok, messaggio)."""
+    if not cloud.attivo():
+        return None
+    errore = cloud.ultimo_errore()
+    return (errore is None, errore or "Archivio online attivo: le partite restano salvate anche se l'app si riavvia.")
+
+
+def _ha_contenuto(cronaca):
+    return bool(cronaca.get("note") or any(cronaca.get(e) for e in ELENCHI_FOTO) or cronaca.get("resoconto"))
+
+
+def _metti_in_archivio(cronaca):
+    """La cronaca aperta passa in archivio (se ha qualcosa); quella vuota si scarta."""
     if cronaca.get("note"):
         nome = datetime.now().strftime("cronaca_%Y%m%d_%H%M%S.json")
         with open(os.path.join(_cartella_dati(), nome), "w", encoding="utf-8") as f:
             json.dump(cronaca, f, ensure_ascii=False, indent=2)
+    if _ha_contenuto(cronaca):
+        _online(cloud.salva_partita, cronaca, False, punteggio(cronaca))
+    elif cronaca.get("id"):
+        _online(cloud.elimina_partita, cronaca["id"])
+
+
+def archivia_e_azzera(cronaca, **partita):
+    """Conserva la cronaca attuale (se ha note) nell'archivio, poi ne apre una nuova."""
+    _metti_in_archivio(cronaca)
     nuova = cronaca_vuota(**partita)
     salva_cronaca(nuova)
+    _online(cloud.togli_corrente_alle_altre, nuova["id"])
     return nuova
+
+
+# --- Archivio delle partite (solo con Supabase) ---------------------------------
+
+def partite_archiviate(cronaca_aperta):
+    """Elenco per l'archivio: tutte le partite salvate online tranne quella aperta."""
+    return cloud.elenco_partite(cronaca_aperta.get("id", ""))
+
+
+def riapri_partita(cronaca_aperta, id_partita):
+    """Riapre una partita dell'archivio; quella aperta finisce in archivio, non si perde."""
+    dati = cloud.leggi_partita(id_partita)
+    if not dati:
+        raise cloud.ArchivioErrore("Partita non trovata nell'archivio.")
+    _metti_in_archivio(cronaca_aperta)
+    cronaca = _completa(dati)
+    salva_cronaca(cronaca)
+    cloud.togli_corrente_alle_altre(cronaca["id"])
+    return cronaca
+
+
+def elimina_partita_archiviata(id_partita):
+    """Elimina definitivamente una partita dell'archivio con le sue foto e note vocali."""
+    dati = cloud.leggi_partita(id_partita) or {}
+    file = [f"foto/{n}" for e in ELENCHI_FOTO for n in dati.get(e) or []]
+    file += [f"audio/{n['audio']}" for n in dati.get("note") or [] if n.get("audio")]
+    cloud.elimina_file(file)
+    cloud.elimina_partita(id_partita)
+
+
+# --- File: copia sul disco dell'app e copia online ------------------------------
+
+def _carica_online(percorso_online, percorso_locale, tipo):
+    def carica():
+        with open(percorso_locale, "rb") as f:
+            cloud.carica_file(percorso_online, f.read(), tipo)
+    if cloud.attivo() and not _online(carica):
+        _da_caricare[percorso_online] = (percorso_locale, tipo)  # riprova al prossimo salvataggio
+
+
+def _riprova_caricamenti():
+    for percorso_online, (percorso_locale, tipo) in list(_da_caricare.items()):
+        _da_caricare.pop(percorso_online)
+        if os.path.exists(percorso_locale):
+            _carica_online(percorso_online, percorso_locale, tipo)
+
+
+def _leggi_file(percorso_locale, percorso_online):
+    """Il file dal disco; se manca (app riavviata) lo riprende dall'archivio online."""
+    if not os.path.exists(percorso_locale) and cloud.attivo():
+        try:
+            dati = cloud.scarica_file(percorso_online)
+        except cloud.ArchivioErrore:
+            dati = None
+        if dati is not None:
+            with open(percorso_locale, "wb") as f:
+                f.write(dati)
+            return dati
+    with open(percorso_locale, "rb") as f:
+        return f.read()
 
 
 # --- Cronometro ---------------------------------------------------------------
@@ -248,14 +375,15 @@ def aggiungi_nota(cronaca, testo, tipo="Nota", squadra="", origine="testo", audi
 
 def salva_audio(dati_audio, estensione="wav"):
     nome = f"{uuid.uuid4().hex[:10]}.{estensione}"
-    with open(os.path.join(_cartella_dati(), "audio", nome), "wb") as f:
+    percorso = os.path.join(_cartella_dati(), "audio", nome)
+    with open(percorso, "wb") as f:
         f.write(dati_audio)
+    _carica_online(f"audio/{nome}", percorso, f"audio/{estensione}")
     return nome
 
 
 def leggi_audio(nome):
-    with open(os.path.join(_cartella_dati(), "audio", nome), "rb") as f:
-        return f.read()
+    return _leggi_file(os.path.join(_cartella_dati(), "audio", nome), f"audio/{nome}")
 
 
 def _suggerimento_nomi(cronaca, giocatori=None):
@@ -582,15 +710,16 @@ def aggiungi_foto_referto(cronaca, dati_immagine, elenco="referto"):
         img = img.convert("RGB")
     img.thumbnail((1800, 1800))
     nome = f"{uuid.uuid4().hex[:10]}.jpg"
-    img.save(os.path.join(_cartella_referto(), nome), format="JPEG", quality=85)
+    percorso = os.path.join(_cartella_referto(), nome)
+    img.save(percorso, format="JPEG", quality=85)
+    _carica_online(f"foto/{nome}", percorso, "image/jpeg")
     cronaca.setdefault(elenco, []).append(nome)
     salva_cronaca(cronaca)
     return nome
 
 
 def leggi_foto_referto(nome):
-    with open(os.path.join(_cartella_referto(), nome), "rb") as f:
-        return f.read()
+    return _leggi_file(os.path.join(_cartella_referto(), nome), f"foto/{nome}")
 
 
 def togli_foto_referto(cronaca, nome, elenco="referto"):
@@ -617,18 +746,22 @@ def salva_foto_distinte_pubblicate(foto):
         os.remove(os.path.join(cartella, vecchio))
     for lato in ("casa", "ospite"):
         if foto.get(lato):
-            with open(os.path.join(cartella, f"{lato}.jpg"), "wb") as f:
+            percorso = os.path.join(cartella, f"{lato}.jpg")
+            with open(percorso, "wb") as f:
                 f.write(immagini_jpeg(foto[lato])[0])
+            _carica_online(f"distinte_pubblicate/{lato}.jpg", percorso, "image/jpeg")
+        else:
+            _online(cloud.elimina_file, [f"distinte_pubblicate/{lato}.jpg"])
 
 
 def _copia_foto_distinte(cronaca):
     cartella = _cartella_distinte_pubblicate()
     nuove = []
     for lato in ("casa", "ospite"):
-        percorso = os.path.join(cartella, f"{lato}.jpg")
-        if os.path.exists(percorso):
-            with open(percorso, "rb") as f:
-                nuove.append(f.read())
+        try:
+            nuove.append(_leggi_file(os.path.join(cartella, f"{lato}.jpg"), f"distinte_pubblicate/{lato}.jpg"))
+        except OSError:
+            pass  # foto di quella squadra non caricata
     if nuove:
         cronaca["foto_distinte"] = []
         for dati in nuove:
