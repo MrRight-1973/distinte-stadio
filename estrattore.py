@@ -10,6 +10,13 @@ from PIL import Image, ImageOps
 from pdf_immagini import e_pdf, pagine_pdf
 
 MODELLO = "gpt-4o"
+# Modelli tra cui scegliere nella sezione Distinta (per confrontare le letture)
+MODELLI_LETTURA = {
+    "gpt-4o": "GPT-4o (quello di sempre)",
+    "gpt-4.1": "GPT-4.1 (più preciso sui testi)",
+    "gpt-5": "GPT-5 (il più accurato, più lento)",
+}
+STRISCE = 3  # lettura ingrandita: la foto si manda anche in strisce orizzontali sovrapposte
 VALORI_VUOTI = {"", "N.D.", "ND", "N/A", "NONE", "NULL", "NON INDICATO"}
 ETA_MINIMA_GIOCATORE = 5
 ANNO_MINIMO = 1940
@@ -172,6 +179,43 @@ def _to_int(valore, default=0):
         return default
 
 
+def _jpeg_base64(img):
+    buffer_img = io.BytesIO()
+    img.save(buffer_img, format="JPEG", quality=92)
+    return base64.b64encode(buffer_img.getvalue()).decode("utf-8")
+
+
+def strisce_ingrandite(img, n=STRISCE, larghezza=2400, sovrapposizione=0.12):
+    """La foto in n strisce orizzontali che si sovrappongono un po' (nessuna riga tagliata a metà).
+
+    OpenAI riduce ogni immagine finché il lato corto è 768 pixel: un A4 intero diventa
+    ~540x768 e le scritte piccole si perdono. Una striscia larga e bassa arriva invece
+    a ~1680 pixel di larghezza: più del doppio dei dettagli per nomi, anni e sigle.
+    """
+    img = img.copy()
+    img.thumbnail((larghezza, larghezza * 2))
+    larg, alt = img.size
+    passo = alt / n
+    margine = int(passo * sovrapposizione)
+    return [_jpeg_base64(img.crop((0, max(0, int(i * passo) - margine), larg,
+                                   min(alt, int((i + 1) * passo) + margine))))
+            for i in range(n)]
+
+
+def immagine_distinta(uploaded_file):
+    """La foto (o la prima pagina del PDF) dritta e in RGB."""
+    uploaded_file.seek(0)
+    dati = uploaded_file.read()
+    if e_pdf(dati):
+        img = pagine_pdf(dati, max_pagine=1)[0]  # la distinta sta nella prima pagina
+    else:
+        img = Image.open(io.BytesIO(dati))
+        img = ImageOps.exif_transpose(img)  # foto da smartphone spesso ruotate nei metadati
+    if img.mode in ("RGBA", "P", "LA"):
+        img = img.convert("RGB")
+    return img
+
+
 def encode_image(uploaded_file):
     """Mantiene alta la risoluzione per l'OCR e corregge l'orientamento EXIF"""
     uploaded_file.seek(0)
@@ -189,13 +233,18 @@ def encode_image(uploaded_file):
     return base64.b64encode(buffer_img.getvalue()).decode("utf-8")
 
 
-def analizza_distinta(uploaded_file, ruolo_squadra, api_key):
-    """Estrae società, data, campionato, allenatore e giocatori per la specifica squadra"""
+def analizza_distinta(uploaded_file, ruolo_squadra, api_key, modello=MODELLO, ingrandita=False):
+    """Estrae società, data, campionato, allenatore e giocatori per la specifica squadra.
+
+    modello: uno di MODELLI_LETTURA. ingrandita: oltre alla foto intera manda la foto
+    in strisce sovrapposte, per leggere meglio le scritte piccole.
+    """
     if not api_key:
         raise ValueError("Chiave OPENAI_API_KEY non configurata nei secrets.")
 
-    client = OpenAI(api_key=api_key, timeout=90.0, max_retries=2)
+    client = OpenAI(api_key=api_key, timeout=180.0, max_retries=2)
     base64_image = encode_image(uploaded_file)
+    strisce = strisce_ingrandite(immagine_distinta(uploaded_file)) if ingrandita else []
 
     focus_ruolo = (
         "Questa foto è la distinta della squadra OSPITE della gara."
@@ -269,23 +318,26 @@ def analizza_distinta(uploaded_file, ruolo_squadra, api_key):
         "}"
     )
 
+    contenuto = [
+        {"type": "text", "text": f"Esegui l'estrazione OCR della distinta {ruolo_squadra}."},
+        {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{base64_image}", "detail": "high"}},
+    ]
+    if strisce:
+        contenuto.append({"type": "text", "text": (
+            f"Le {len(strisce)} immagini seguenti sono la STESSA distinta tagliata in strisce orizzontali "
+            "ingrandite, dall'alto in basso; strisce vicine si sovrappongono un po'. Usale per leggere con "
+            "precisione nomi, numeri di maglia, anni di nascita e sigle C/VC; la foto intera serve per capire "
+            "la struttura. Ogni giocatore va riportato UNA sola volta, anche se compare in due strisce.")})
+        contenuto += [{"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{b}", "detail": "high"}}
+                      for b in strisce]
+    parametri = {}
+    if modello.startswith("gpt-4"):  # i modelli GPT-5 accettano solo la temperatura predefinita
+        parametri["temperature"] = 0.0
     response = client.chat.completions.create(
-        model=MODELLO,
+        model=modello,
         response_format={"type": "json_object"},
-        messages=[
-            {"role": "system", "content": prompt_sistema},
-            {
-                "role": "user",
-                "content": [
-                    {"type": "text", "text": f"Esegui l'estrazione OCR della distinta {ruolo_squadra}."},
-                    {
-                        "type": "image_url",
-                        "image_url": {"url": f"data:image/jpeg;base64,{base64_image}", "detail": "high"},
-                    },
-                ],
-            },
-        ],
-        temperature=0.0,
+        messages=[{"role": "system", "content": prompt_sistema}, {"role": "user", "content": contenuto}],
+        **parametri,
     )
 
     risultato_grezzo = response.choices[0].message.content

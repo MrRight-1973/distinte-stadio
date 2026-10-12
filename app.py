@@ -19,7 +19,7 @@ from cronaca_manager import (
     togli_distinte_caricate,
     togli_liste_in_lavorazione,
 )
-from estrattore import analizza_distinta, unisci_scansioni
+from estrattore import MODELLI_LETTURA, analizza_distinta, unisci_scansioni
 from github_publisher import PubblicazioneErrore, leggi_file, pubblica_su_github, url_pagina_da_repo
 from pdf_manager import genera_pdf, loghi_da_cartella_locale, numero_sponsor
 from squadra_manager import (
@@ -108,6 +108,18 @@ def carica_distinta(colonna, etichetta, lato):
         st.session_state[chiave] = {"nome": f.name, "dati": f.getvalue(), "id": hashlib.md5(f.getvalue()).hexdigest()}
         salva_distinta_caricata(lato, f.name, f.getvalue())
     return f
+
+
+def scelta_lettura_ai():
+    """Modello e lettura ingrandita per la scansione: si possono cambiare per confrontare i risultati."""
+    with st.expander("⚙️ Lettura AI (per fare prove)"):
+        modello = st.selectbox("Modello", list(MODELLI_LETTURA), format_func=MODELLI_LETTURA.get, key="lettura_modello")
+        ingrandita = st.checkbox("Lettura ingrandita: manda la foto anche in strisce, per le scritte piccole",
+                                 key="lettura_ingrandita")
+        st.caption("Per confrontare: fai la scansione, poi «🗑️ Svuota Liste e Ripristina Scansione», cambia "
+                   "impostazioni e rifai la scansione con le stesse foto. I modelli più nuovi e la lettura "
+                   "ingrandita costano un po' di più e impiegano qualche secondo in più.")
+    return modello, ingrandita
 
 
 def ripristina_liste_salvate():
@@ -367,12 +379,14 @@ def render_segreteria():
             st.session_state.pop("pdf_interattivo_pronto", None)
 
         if "dati_mappati" not in st.session_state:
+            modello, ingrandita = scelta_lettura_ai()
             with c_scan:
                 if st.button("🔍 Fase 1: Esegui Scansione AI delle Liste", type="primary", use_container_width=True):
-                    with st.spinner("Estrazione giocatori e date in corso con GPT-4o..."):
+                    with st.spinner(f"Estrazione giocatori e date in corso con {MODELLI_LETTURA[modello].split(' (')[0]}"
+                                    + (" (lettura ingrandita)" if ingrandita else "") + "..."):
                         try:
-                            casa_raw = analizza_distinta(file_casa, "CASA", api_key_openai)
-                            ospite_raw = analizza_distinta(file_ospite, "OSPITE", api_key_openai)
+                            casa_raw = analizza_distinta(file_casa, "CASA", api_key_openai, modello, ingrandita)
+                            ospite_raw = analizza_distinta(file_ospite, "OSPITE", api_key_openai, modello, ingrandita)
                         except Exception as e:
                             st.error(f"Errore nell'estrazione: {e}")
                         else:
@@ -381,6 +395,8 @@ def render_segreteria():
                             pulisci_widget_squadra("griglia_casa")
                             pulisci_widget_squadra("griglia_ospite")
                             st.session_state["macro_info"] = unisci_scansioni(casa_raw, ospite_raw)
+                            st.session_state["macro_info"]["lettura"] = (
+                                MODELLI_LETTURA[modello].split(" (")[0] + (", lettura ingrandita" if ingrandita else ""))
                             st.session_state["firma_scansione_attiva"] = firma_correnti
                             st.session_state["dati_mappati"] = True
                             st.rerun()
@@ -394,6 +410,8 @@ def render_segreteria():
 
     if "dati_mappati" in st.session_state:
         st.markdown("---")
+        if st.session_state["macro_info"].get("lettura"):
+            st.caption(f"🤖 Liste lette con {st.session_state['macro_info']['lettura']}.")
         info_gara = render_info_match(st.session_state["macro_info"])
 
         st.markdown("---")
