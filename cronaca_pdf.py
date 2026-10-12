@@ -2,7 +2,7 @@
 
 Pagina 1: "Resoconto di gara ufficiale" con le liste della distinta (senza QR code), i gol
 accanto ai nomi delle squadre e il tabellino (gol, cartellini, sostituzioni). Poi le foto del
-referto dell'arbitro e delle distinte, la cronaca (titolo e articolo), la cronologia degli appunti e in fondo gli sponsor.
+referto dell'arbitro e delle distinte, la cronaca (titolo e articolo), le foto della partita, la cronologia degli appunti e in fondo gli sponsor.
 """
 import io
 from datetime import datetime
@@ -79,6 +79,13 @@ def genera_pdf_resoconto(cronaca, giocatori=None, sponsor_loghi=None):
         for paragrafo in (r.get("articolo") or "").split("\n\n"):
             if paragrafo.strip():
                 story.append(Paragraph(_esc(paragrafo.strip()).replace("\n", "<br/>"), s_corpo))
+
+    # 3b. Foto della partita, due per pagina
+    foto_partita = [f for f in (_foto_referto(n, LARGHEZZA, 360) for n in cronaca.get("foto_partita") or []) if f]
+    if foto_partita:
+        story += [PageBreak(), Paragraph("FOTO DELLA PARTITA", s_sezione)]
+        for foto in foto_partita:
+            story += [foto, Spacer(1, 8)]
 
     # 4. Cronologia: tutte le note originali, utili al giornalista per verificare
     note = note_in_ordine(cronaca)

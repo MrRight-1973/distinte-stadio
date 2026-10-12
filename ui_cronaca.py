@@ -124,6 +124,9 @@ def _galleria_foto(cronaca, elenco, etichetta_caricatore):
 def _referto(cronaca):
     st.subheader("📄 Referto dell'arbitro")
     _galleria_foto(cronaca, "referto", "Carica o scatta la foto del referto (anche PDF)")
+    st.subheader("📸 Foto della partita")
+    st.caption("Vanno nel PDF del resoconto, dopo la cronaca.")
+    _galleria_foto(cronaca, "foto_partita", "Carica o scatta le foto della partita")
     st.subheader("📋 Foto delle distinte")
     st.caption("Si prendono da sole quando pubblichi la distinta; qui puoi aggiungerne o toglierne.")
     _galleria_foto(cronaca, "foto_distinte", "Aggiungi la foto di una distinta (anche PDF)")
@@ -257,7 +260,11 @@ def _modifica_nota(cronaca):
     nomi = {"casa": cronaca["partita"].get("casa") or "Casa", "ospite": cronaca["partita"].get("ospite") or "Ospite"}
     per_id = {n["id"]: n for n in cronaca["note"]}
     n_mod = st.session_state.setdefault("cronaca_mod_n", 0)
-    with st.expander("✏️ Correggi, aggiungi o togli una nota", expanded=False):
+    # Un interruttore invece di un riquadro richiudibile: il suo stato è salvato sul server, quindi il
+    # pannello resta aperto finché non lo si spegne (anche se il telefono perde un attimo la connessione)
+    if not st.toggle("✏️ Correggi, aggiungi o togli una nota", key="cronaca_mod_aperto"):
+        return
+    with st.container(border=True):
         scelta = st.selectbox(
             "Nota", [None] + [n["id"] for n in note_in_ordine(cronaca)], key=f"cronaca_mod_scelta_{n_mod}",
             format_func=lambda i: "➕ Nuova nota (a mano)" if i is None else _etichetta_nota(per_id[i], nomi),
