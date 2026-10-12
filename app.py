@@ -1,7 +1,7 @@
 import hashlib
-import hmac
 import io
 import json
+import time
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 
@@ -11,6 +11,16 @@ import streamlit as st
 
 import archivio_cloud
 from ui_archivio import render_archivio
+from utenti import (
+    RUOLI,
+    UtentiErrore,
+    accedi,
+    aggiungi_utente,
+    cambia_password,
+    cambia_ruolo,
+    elenco_utenti,
+    elimina_utente,
+)
 from cronaca_manager import (
     impostazioni_lettura,
     leggi_distinta_caricata,
@@ -346,17 +356,19 @@ def render_login():
     with centro:
         st.title("⚽ Segreteria - Distinta Digitale")
         st.caption("A.S.D. Azzurra Due Carrare")
-        password_corretta = leggi_secret("SEGRETERIA_PASSWORD")
-        if not password_corretta:
-            st.error("Password segreteria non configurata (SEGRETERIA_PASSWORD nei secrets).")
-            return
+        password_emergenza = leggi_secret("SEGRETERIA_PASSWORD")
+        nome = st.text_input("Utente", key="utente_segreteria",
+                             help="Lascia vuoto per entrare con la password della segreteria.")
         password_inserita = st.text_input("Password", type="password", key="pwd_segreteria")
         if st.button("Accedi", type="primary", use_container_width=True):
-            if hmac.compare_digest(password_inserita.encode(), str(password_corretta).encode()):
+            accesso = accedi(nome, password_inserita, password_emergenza)
+            if accesso:
                 st.session_state["autenticato"] = True
+                st.session_state["utente"], st.session_state["ruolo"] = accesso
                 st.rerun()
             else:
-                st.error("❌ Password errata. Accesso negato.")
+                time.sleep(1)  # rallenta chi prova password a raffica
+                st.error("❌ Utente o password errati. Accesso negato.")
 
 
 def azzera_sezione_distinta():
@@ -370,7 +382,56 @@ def azzera_sezione_distinta():
 
 
 SEZIONI = ["📋 Distinta", "🎙️ Cronaca partita", "📚 Archivio", "⚙️ Opzioni"]
-SOTTOSEZIONI_OPZIONI = ["🤖 Lettura AI", "🏷️ Sponsor"]  # per una nuova impostazione basta aggiungerla qui
+SOTTOSEZIONI_OPZIONI = ["🤖 Lettura AI", "🏷️ Sponsor", "👥 Utenti"]  # per una nuova impostazione basta aggiungerla qui
+SEZIONI_PER_RUOLO = {"admin": SEZIONI, "user": SEZIONI[:2]}
+
+
+def render_gestione_utenti():
+    st.subheader("👥 Utenti")
+    st.caption("Gli amministratori vedono tutte le sezioni; gli utenti solo Distinta e Cronaca partita. "
+               "Le password sono salvate cifrate. Con utente vuoto e la password della segreteria "
+               "(nei secrets) si entra sempre come amministratore.")
+    for tipo, testo in st.session_state.pop("utenti_messaggi", []):
+        getattr(st, tipo)(testo)
+    utenti = elenco_utenti()
+    if not utenti:
+        st.info("Nessun utente creato: per ora si entra solo con la password della segreteria.")
+    for nome, dati in sorted(utenti.items()):
+        with st.expander(f"{'🛡️' if dati.get('ruolo') == 'admin' else '👤'} {nome} · {RUOLI.get(dati.get('ruolo'), '')}"):
+            ruolo = st.selectbox("Ruolo", list(RUOLI), format_func=RUOLI.get, key=f"ruolo_{nome}",
+                                 index=list(RUOLI).index(dati.get("ruolo", "user")))
+            if ruolo != dati.get("ruolo"):
+                cambia_ruolo(nome, ruolo)
+                st.success("Ruolo aggiornato.")
+            nuova = st.text_input("Nuova password", type="password", key=f"nuova_pwd_{nome}")
+            c1, c2 = st.columns(2)
+            if c1.button("🔑 Cambia password", key=f"cambia_pwd_{nome}", use_container_width=True):
+                try:
+                    cambia_password(nome, nuova)
+                    st.session_state["utenti_messaggi"] = [("success", f"Password di {nome} cambiata.")]
+                    st.session_state.pop(f"nuova_pwd_{nome}", None)
+                    st.rerun()
+                except UtentiErrore as e:
+                    st.error(str(e))
+            if c2.button("🗑️ Elimina utente", key=f"elimina_{nome}", use_container_width=True,
+                         disabled=nome == st.session_state.get("utente")):
+                elimina_utente(nome)
+                st.session_state["utenti_messaggi"] = [("success", f"Utente {nome} eliminato.")]
+                st.rerun()
+
+    with st.form("nuovo_utente", clear_on_submit=True):
+        st.markdown("**➕ Nuovo utente**")
+        c1, c2, c3 = st.columns(3)
+        nome = c1.text_input("Nome utente")
+        password = c2.text_input("Password", type="password")
+        ruolo = c3.selectbox("Ruolo", list(RUOLI), format_func=RUOLI.get, index=1)
+        if st.form_submit_button("Crea utente", type="primary"):
+            try:
+                creato = aggiungi_utente(nome, password, ruolo)
+                st.session_state["utenti_messaggi"] = [("success", f"Utente {creato} creato.")]
+                st.rerun()
+            except UtentiErrore as e:
+                st.error(str(e))
 
 
 def render_segreteria():
@@ -380,23 +441,31 @@ def render_segreteria():
             pubblica_attesa()
     if "vai_a_sezione" in st.session_state:  # es. "Riapri" dall'archivio porta alla Cronaca
         st.session_state["sezione_segreteria"] = st.session_state.pop("vai_a_sezione")
-    sezione_attuale = st.session_state.get("sezione_segreteria") or SEZIONI[0]
+    sezioni = SEZIONI_PER_RUOLO.get(st.session_state.get("ruolo"), SEZIONI_PER_RUOLO["user"])
+    if st.session_state.get("sezione_segreteria") not in sezioni:
+        st.session_state["sezione_segreteria"] = sezioni[0]
+    sezione_attuale = st.session_state["sezione_segreteria"]
     col_titolo, col_esci = st.columns([5, 1])
     with col_titolo:
         st.title(f"⚽ Centro Gestione Gara - {sezione_attuale.split(' ', 1)[1]}")
     with col_esci:
         st.write("")
         if st.button("Esci", type="secondary", use_container_width=True):
-            st.session_state["autenticato"] = False
+            for chiave in ("autenticato", "utente", "ruolo", "sezione_segreteria"):
+                st.session_state.pop(chiave, None)
             st.rerun()
 
-    sezione = st.radio("Sezione", SEZIONI, horizontal=True, label_visibility="collapsed", key="sezione_segreteria")
+    sezione = st.radio("Sezione", sezioni, horizontal=True, label_visibility="collapsed", key="sezione_segreteria")
+    st.caption(f"👤 {st.session_state.get('utente', '')}")
     if sezione == "⚙️ Opzioni":
         sotto = st.segmented_control("Opzioni", SOTTOSEZIONI_OPZIONI, key="sottosezione_opzioni",
                                      default=SOTTOSEZIONI_OPZIONI[0], label_visibility="collapsed")
         sotto = sotto or SOTTOSEZIONI_OPZIONI[0]  # un secondo clic sul pulsante scelto lo deseleziona
         if sotto == "🤖 Lettura AI":
             render_opzioni_lettura()
+            return
+        if sotto == "👥 Utenti":
+            render_gestione_utenti()
             return
         st.subheader("🏷️ Sponsor")
         render_gestione_sponsor(leggi_secret("GITHUB_TOKEN"), leggi_secret("GITHUB_REPO"), leggi_secret("GITHUB_BRANCH"))
