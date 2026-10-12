@@ -218,9 +218,15 @@ def analizza_distinta(uploaded_file, ruolo_squadra, api_key):
         "più su della data di nascita e della matricola della STESSA riga: abbina ogni nome alla data e al numero "
         "della riga in cui si trova, senza slittare di una riga.\n"
         "   - anno_nascita: l'anno di nascita così come appare (es. '05', \"'05\", '2005'). Se c'è la data completa "
-        "(es. '19/08/2004' o '17 10 05' nelle colonne G M A) riporta solo l'anno.\n"
-        "8. Capitano e vice: cerca nella colonna 'Cap.', 'V.C.', 'Capitano V. Cap.' le sigle C o CAP. (capitano) "
-        "e V, VC, V.C., V.CAP. o VICE (vice capitano), e riporta il NUMERO DI MAGLIA di quei giocatori.\n"
+        "(es. '19/08/2004' o '17 10 05' nelle colonne G M A) riporta solo l'anno. Se le celle della data di nascita "
+        "di quella riga sono VUOTE usa \"\": non dedurre né copiare l'anno da un'altra riga.\n"
+        "   - capitano: \"C\" se nella colonna Capitano/Cap. di QUESTA riga c'è C o CAP., \"VC\" se c'è V, VC, V.C. "
+        "o VICE, altrimenti \"\". Le sigle sono piccole e spesso stampate un po' più in alto o più in basso del "
+        "nome: assegnale alla riga del nome che hanno alla stessa altezza, seguendo le righe orizzontali della "
+        "tabella fino al nome. Ricontrolla: chi ha la C e chi la V sono quasi sempre due righe vicine, non "
+        "spostarle di una riga.\n"
+        "8. Capitano e vice: oltre al campo capitano di ogni giocatore, riporta in capitano_num e vice_capitano_num "
+        "il NUMERO DI MAGLIA dei giocatori con la C e con la V (o 0 se non ci sono).\n"
         "9. Correzioni a mano: un nome barrato va ignorato; vale il nome o il numero scritto a mano accanto. "
         "Le righe vuote non vanno riportate.\n"
         "10. Ignora tutto il resto: matricole FIGC, documenti di identità, tessere, dirigenti, massaggiatori, sponsor.\n\n"
@@ -236,7 +242,7 @@ def analizza_distinta(uploaded_file, ruolo_squadra, api_key):
         "  \"data\": \"DD/MM/YYYY\",\n"
         "  \"campionato\": \"NOME CAMPIONATO\",\n"
         "  \"giocatori\": [\n"
-        "    {\"numero\": 1, \"cognome_nome\": \"ROSSI ANDREA\", \"anno_nascita\": \"04\"}\n"
+        "    {\"numero\": 1, \"cognome_nome\": \"ROSSI ANDREA\", \"anno_nascita\": \"04\", \"capitano\": \"\"}\n"
         "  ]\n"
         "}"
     )
@@ -284,6 +290,12 @@ def normalizza_risposta(dati, ruolo_squadra):
 
     cap_num = _to_int(dati.get("capitano_num"))
     vice_num = _to_int(dati.get("vice_capitano_num"))
+    # La sigla letta riga per riga è più affidabile dei numeri riportati a parte
+    sigle = {_to_int(g.get("numero")): str(g.get("capitano") or "").upper().replace(".", "").strip()
+             for g in dati.get("giocatori") or [] if isinstance(g, dict)}
+    if any(v in ("C", "CAP", "VC", "V", "VICE") for v in sigle.values()):
+        cap_num = next((n for n, v in sigle.items() if v in ("C", "CAP")), 0)
+        vice_num = next((n for n, v in sigle.items() if v in ("VC", "V", "VICE")), 0)
 
     # Ogni giocatore va nella riga del suo numero di maglia. Chi ha un numero
     # oltre il 20 (o ripetuto, o illeggibile) non viene perso: finisce nella

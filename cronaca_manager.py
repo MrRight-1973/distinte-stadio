@@ -277,7 +277,7 @@ LUNGHEZZE = {
 def _note_per_prompt(cronaca):
     nomi = {"casa": cronaca["partita"].get("casa") or "Casa", "ospite": cronaca["partita"].get("ospite") or "Ospite"}
     righe = []
-    for n in sorted(cronaca["note"], key=lambda x: x.get("ts", 0)):
+    for n in note_in_ordine(cronaca):
         squadra = f" [{nomi[n['squadra']]}]" if n.get("squadra") in nomi else ""
         dettagli = descrizione_nota(n)
         commento = n.get("testo", "")
@@ -290,10 +290,22 @@ TIPI_EVENTO = ["gol", "ammonizione", "espulsione", "sostituzione"]
 _TIPO_DA_NOTA = {"Gol": "gol", "Ammonizione": "ammonizione", "Espulsione": "espulsione"}
 
 
+_MINUTI_A_PAROLE = {"pre": (-1, 0), "inter": (45, 99), "fine": (999, 0)}
+
+
 def _minuti(minuto):
-    """Chiave d'ordine per 23', 45+2', Pre-gara..."""
+    """Chiave d'ordine per 23', 45+2', Pre-gara, Intervallo, Fine gara."""
     numeri = [int(x) for x in "".join(c if c.isdigit() else " " for c in str(minuto)).split()]
-    return (numeri[0] if numeri else 999, numeri[1] if len(numeri) > 1 else 0)
+    if numeri:
+        return (numeri[0], numeri[1] if len(numeri) > 1 else 0)
+    testo = str(minuto or "").strip().lower()
+    return next((v for k, v in _MINUTI_A_PAROLE.items() if testo.startswith(k)), (999, 0))
+
+
+def note_in_ordine(cronaca):
+    """Le note in ordine di minuto di gioco (a parità di minuto, nell'ordine in cui sono state prese),
+    non nell'ordine in cui sono state scritte o corrette."""
+    return sorted(cronaca.get("note") or [], key=lambda n: (_minuti(n.get("minuto")), n.get("ts", 0)))
 
 
 def pulisci_eventi(eventi):
@@ -372,7 +384,7 @@ def _unisci_eventi(cronaca, letti_da_ai):
     Un evento dell'AI va con una nota solo se il minuto è vicino (entro 5'), per non mangiarne un altro."""
     ai = list(letti_da_ai or [])
     eventi = []
-    for n in sorted(cronaca.get("note") or [], key=lambda x: x.get("ts", 0)):
+    for n in note_in_ordine(cronaca):
         tipo = _tipo_evento(n)
         squadra = n.get("squadra")
         if not tipo or squadra not in ("casa", "ospite"):
@@ -502,7 +514,11 @@ def giocatori_da_distinta(distinta):
 
 
 def imposta_distinta(cronaca, distinta):
-    """Collega alla cronaca la distinta della partita e ne riprende squadre, campionato e data."""
+    """Collega alla cronaca la distinta della partita e ne riprende squadre, campionato e data.
+    Le foto delle distinte si copiano la prima volta o se la distinta è cambiata (non si rimettono
+    quelle tolte a mano)."""
+    nuova = ((cronaca.get("distinta") or {}).get("aggiornato") != distinta.get("aggiornato")
+             or "foto_distinte" not in cronaca)
     cronaca["distinta"] = distinta
     info = distinta.get("info_gara") or {}
     p = cronaca["partita"]
@@ -511,6 +527,8 @@ def imposta_distinta(cronaca, distinta):
     p["ospite"] = (distinta.get("ospite") or {}).get("squadra") or p.get("ospite", "")
     p["campionato"] = info.get("campionato") or p.get("campionato", "")
     p["data"] = info.get("data") or p.get("data", "")
+    if nuova:
+        _copia_foto_distinte(cronaca)
     salva_cronaca(cronaca)
 
 
@@ -520,8 +538,9 @@ def _cartella_referto():
     return cartella
 
 
-def aggiungi_foto_referto(cronaca, dati_immagine):
-    """Salva la foto del referto ridotta (max 1800 px, orientamento corretto) in JPEG."""
+def aggiungi_foto_referto(cronaca, dati_immagine, elenco="referto"):
+    """Salva la foto ridotta (max 1800 px, orientamento corretto) in JPEG e la aggiunge all'elenco
+    della cronaca: "referto" (referto dell'arbitro) o "foto_distinte"."""
     from PIL import Image, ImageOps
 
     img = ImageOps.exif_transpose(Image.open(io.BytesIO(dati_immagine)))
@@ -530,7 +549,7 @@ def aggiungi_foto_referto(cronaca, dati_immagine):
     img.thumbnail((1800, 1800))
     nome = f"{uuid.uuid4().hex[:10]}.jpg"
     img.save(os.path.join(_cartella_referto(), nome), format="JPEG", quality=85)
-    cronaca.setdefault("referto", []).append(nome)
+    cronaca.setdefault(elenco, []).append(nome)
     salva_cronaca(cronaca)
     return nome
 
@@ -540,6 +559,43 @@ def leggi_foto_referto(nome):
         return f.read()
 
 
-def togli_foto_referto(cronaca, nome):
-    cronaca["referto"] = [n for n in cronaca.get("referto", []) if n != nome]
+def togli_foto_referto(cronaca, nome, elenco="referto"):
+    cronaca[elenco] = [n for n in cronaca.get(elenco, []) if n != nome]
     salva_cronaca(cronaca)
+
+
+# --- Foto delle distinte pubblicate --------------------------------------------
+# Restano solo sul disco dell'app (mai sul repository pubblico: contengono documenti
+# e date di nascita) e passano alla cronaca quando questa si collega alla distinta.
+
+def _cartella_distinte_pubblicate():
+    cartella = os.path.join(_cartella_dati(), "distinte_pubblicate")
+    os.makedirs(cartella, exist_ok=True)
+    return cartella
+
+
+def salva_foto_distinte_pubblicate(foto):
+    """foto: {"casa": bytes, "ospite": bytes} come caricati (foto o PDF: vale la prima pagina)."""
+    from pdf_immagini import immagini_jpeg
+
+    cartella = _cartella_distinte_pubblicate()
+    for vecchio in os.listdir(cartella):
+        os.remove(os.path.join(cartella, vecchio))
+    for lato in ("casa", "ospite"):
+        if foto.get(lato):
+            with open(os.path.join(cartella, f"{lato}.jpg"), "wb") as f:
+                f.write(immagini_jpeg(foto[lato])[0])
+
+
+def _copia_foto_distinte(cronaca):
+    cartella = _cartella_distinte_pubblicate()
+    nuove = []
+    for lato in ("casa", "ospite"):
+        percorso = os.path.join(cartella, f"{lato}.jpg")
+        if os.path.exists(percorso):
+            with open(percorso, "rb") as f:
+                nuove.append(f.read())
+    if nuove:
+        cronaca["foto_distinte"] = []
+        for dati in nuove:
+            aggiungi_foto_referto(cronaca, dati, "foto_distinte")

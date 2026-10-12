@@ -2,7 +2,7 @@
 
 Pagina 1: "Resoconto di gara ufficiale" con le liste della distinta (senza QR code), i gol
 accanto ai nomi delle squadre e il tabellino (gol, cartellini, sostituzioni). Poi le foto del
-referto dell'arbitro, la cronaca (titolo e articolo), la cronologia degli appunti e in fondo gli sponsor.
+referto dell'arbitro e delle distinte, la cronaca (titolo e articolo), la cronologia degli appunti e in fondo gli sponsor.
 """
 import io
 from datetime import datetime
@@ -14,7 +14,7 @@ from reportlab.lib.utils import ImageReader
 from reportlab.platypus import Image as RLImage
 from reportlab.platypus import KeepTogether, PageBreak, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
-from cronaca_manager import descrizione_nota, eventi_correnti, gol_da_eventi, leggi_foto_referto
+from cronaca_manager import descrizione_nota, eventi_correnti, note_in_ordine, gol_da_eventi, leggi_foto_referto
 from pdf_manager import _blocco_sponsor, _esc, _stile_didascalia, elementi_distinta
 
 BLU = colors.HexColor("#1A365D")
@@ -64,6 +64,13 @@ def genera_pdf_resoconto(cronaca, giocatori=None, sponsor_loghi=None):
         if foto:
             story += [PageBreak(), Paragraph("REFERTO DI GARA", s_sezione), foto]
 
+    # 2b. Foto delle distinte, una per pagina (se non escluse)
+    if cronaca.get("pdf_foto_distinte", True):
+        for nome in cronaca.get("foto_distinte") or []:
+            foto = _foto_referto(nome, LARGHEZZA, 760)
+            if foto:
+                story += [PageBreak(), Paragraph("DISTINTA DI GARA", s_sezione), foto]
+
     # 3. Cronaca: solo titolo e articolo
     if r.get("titolo") or r.get("articolo"):
         story += [PageBreak(), Paragraph("CRONACA DELLA PARTITA", s_sezione)]
@@ -74,7 +81,7 @@ def genera_pdf_resoconto(cronaca, giocatori=None, sponsor_loghi=None):
                 story.append(Paragraph(_esc(paragrafo.strip()).replace("\n", "<br/>"), s_corpo))
 
     # 4. Cronologia: tutte le note originali, utili al giornalista per verificare
-    note = sorted(cronaca.get("note") or [], key=lambda n: n.get("ts", 0))
+    note = note_in_ordine(cronaca)
     if note:
         nomi_squadre = {"casa": p.get("casa") or "Casa", "ospite": p.get("ospite") or "Ospite"}
         story += [PageBreak(), Paragraph("CRONOLOGIA DAGLI APPUNTI A BORDO CAMPO", s_sezione)]
