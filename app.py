@@ -3,6 +3,7 @@ import hmac
 import io
 import json
 from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
 
 import pandas as pd
 import qrcode
@@ -13,9 +14,11 @@ from ui_archivio import render_archivio
 from cronaca_manager import (
     leggi_distinta_caricata,
     leggi_liste_in_lavorazione,
+    registra_costo_lettura,
     salva_distinta_caricata,
     salva_foto_distinte_pubblicate,
     salva_liste_in_lavorazione,
+    storico_costi,
     togli_distinte_caricate,
     togli_liste_in_lavorazione,
 )
@@ -119,7 +122,33 @@ def scelta_lettura_ai():
         st.caption("Per confrontare: fai la scansione, poi «🗑️ Svuota Liste e Ripristina Scansione», cambia "
                    "impostazioni e rifai la scansione con le stesse foto. I modelli più nuovi e la lettura "
                    "ingrandita costano un po' di più e impiegano qualche secondo in più.")
+        render_costi_letture()
     return modello, ingrandita
+
+
+def formatta_dollari(valore):
+    return f"{valore:.3f} $".replace(".", ",")
+
+
+def render_costi_letture():
+    """Quanto sono costate le scansioni fatte finora (stima dai token dichiarati da OpenAI)."""
+    storico = storico_costi()
+    if not storico:
+        st.caption("💵 Il costo di ogni scansione comparirà qui dopo la prima lettura.")
+        return
+    mese = datetime.now(ZoneInfo("Europe/Rome")).strftime("/%m/%Y")
+    del_mese = [v for v in storico if v.get("quando", "")[2:10] == mese]
+    def quante(n):
+        return f"{n} scansion{'e' if n == 1 else 'i'}"
+    st.markdown(f"**💵 Costo delle scansioni** (stima): questo mese {formatta_dollari(sum(v['costo'] for v in del_mese))} "
+                f"({quante(len(del_mese))}), in totale {formatta_dollari(sum(v['costo'] for v in storico))} "
+                f"({quante(len(storico))}).")
+    ultime = [{"Quando": v["quando"], "Gara": v.get("gara", ""),
+               "Lettura": MODELLI_LETTURA.get(v["modello"], v["modello"]).split(" (")[0]
+                          + (" ingrandita" if v.get("ingrandita") else ""),
+               "Costo": formatta_dollari(v["costo"])} for v in reversed(storico[-10:])]
+    st.dataframe(pd.DataFrame(ultime), hide_index=True, use_container_width=True)
+    st.caption("Calcolato sui prezzi di listino OpenAI; il credito residuo si vede solo su platform.openai.com.")
 
 
 def ripristina_liste_salvate():
@@ -397,6 +426,14 @@ def render_segreteria():
                             st.session_state["macro_info"] = unisci_scansioni(casa_raw, ospite_raw)
                             st.session_state["macro_info"]["lettura"] = (
                                 MODELLI_LETTURA[modello].split(" (")[0] + (", lettura ingrandita" if ingrandita else ""))
+                            costo = sum(r.get("consumo", {}).get("costo", 0) for r in (casa_raw, ospite_raw))
+                            st.session_state["macro_info"]["costo_lettura"] = costo
+                            info = st.session_state["macro_info"]
+                            try:
+                                registra_costo_lettura(f"{info.get('nome_casa', '')} - {info.get('nome_ospite', '')}",
+                                                       modello, ingrandita, costo)
+                            except OSError:
+                                pass  # il costo è solo informativo: non deve bloccare la scansione
                             st.session_state["firma_scansione_attiva"] = firma_correnti
                             st.session_state["dati_mappati"] = True
                             st.rerun()
@@ -411,7 +448,9 @@ def render_segreteria():
     if "dati_mappati" in st.session_state:
         st.markdown("---")
         if st.session_state["macro_info"].get("lettura"):
-            st.caption(f"🤖 Liste lette con {st.session_state['macro_info']['lettura']}.")
+            costo = st.session_state["macro_info"].get("costo_lettura")
+            st.caption(f"🤖 Liste lette con {st.session_state['macro_info']['lettura']}."
+                       + (f" 💵 Costo della scansione: circa {formatta_dollari(costo)}." if costo else ""))
         info_gara = render_info_match(st.session_state["macro_info"])
 
         st.markdown("---")
