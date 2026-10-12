@@ -1033,3 +1033,25 @@ def registra_costo_lettura(gara, modello, ingrandita, costo):
         json.dump(storico, f, ensure_ascii=False)
     _carica_online("costi/letture.json", _percorso_costi(), "application/json")
     return storico
+
+
+# --- Impostazioni della lettura AI -----------------------------------------------
+# Valgono per tutti i dispositivi: si scelgono nella sezione Opzioni.
+
+LETTURA_PREDEFINITA = {"modello": "gpt-4.1", "ingrandita": True}
+
+
+def impostazioni_lettura():
+    try:
+        salvate = json.loads(_leggi_file(os.path.join(_cartella_dati(), "impostazioni.json"),
+                                         "impostazioni/impostazioni.json"))
+    except (OSError, ValueError):
+        salvate = {}
+    return {**LETTURA_PREDEFINITA, **{k: v for k, v in salvate.items() if k in LETTURA_PREDEFINITA}}
+
+
+def salva_impostazioni_lettura(modello, ingrandita):
+    percorso = os.path.join(_cartella_dati(), "impostazioni.json")
+    with open(percorso, "w", encoding="utf-8") as f:
+        json.dump({"modello": modello, "ingrandita": bool(ingrandita)}, f, ensure_ascii=False)
+    _carica_online("impostazioni/impostazioni.json", percorso, "application/json")

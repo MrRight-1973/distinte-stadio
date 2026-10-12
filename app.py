@@ -12,11 +12,13 @@ import streamlit as st
 import archivio_cloud
 from ui_archivio import render_archivio
 from cronaca_manager import (
+    impostazioni_lettura,
     leggi_distinta_caricata,
     leggi_liste_in_lavorazione,
     registra_costo_lettura,
     salva_distinta_caricata,
     salva_foto_distinte_pubblicate,
+    salva_impostazioni_lettura,
     salva_liste_in_lavorazione,
     storico_costi,
     togli_distinte_caricate,
@@ -113,28 +115,39 @@ def carica_distinta(colonna, etichetta, lato):
     return f
 
 
-def scelta_lettura_ai():
-    """Modello e lettura ingrandita per la scansione: si possono cambiare per confrontare i risultati."""
-    with st.expander("⚙️ Lettura AI (per fare prove)"):
-        modello = st.selectbox("Modello", list(MODELLI_LETTURA), format_func=MODELLI_LETTURA.get, key="lettura_modello")
-        ingrandita = st.checkbox("Lettura ingrandita: manda la foto anche in strisce, per le scritte piccole",
-                                 key="lettura_ingrandita")
-        st.caption("Per confrontare: fai la scansione, poi «🗑️ Svuota Liste e Ripristina Scansione», cambia "
-                   "impostazioni e rifai la scansione con le stesse foto. I modelli più nuovi e la lettura "
-                   "ingrandita costano un po' di più e impiegano qualche secondo in più.")
-        render_costi_letture()
-    return modello, ingrandita
+def render_opzioni_lettura():
+    """Modello e lettura ingrandita usati dalla scansione, per tutti i dispositivi."""
+    st.subheader("🤖 Lettura AI delle distinte")
+    attuali = impostazioni_lettura()
+    modelli = list(MODELLI_LETTURA)
+    modello = st.selectbox("Modello", modelli, format_func=MODELLI_LETTURA.get, key="opzioni_modello",
+                           index=modelli.index(attuali["modello"]) if attuali["modello"] in modelli else 0)
+    ingrandita = st.checkbox("Lettura ingrandita: manda la foto anche in strisce, per le scritte piccole",
+                             value=attuali["ingrandita"], key="opzioni_ingrandita")
+    if (modello, ingrandita) != (attuali["modello"], attuali["ingrandita"]):
+        salva_impostazioni_lettura(modello, ingrandita)
+        st.success("Impostazione salvata: vale dalla prossima scansione, anche dagli altri dispositivi.")
+    st.caption("Per confrontare: fai la scansione, poi «🗑️ Svuota Liste e Ripristina Scansione», cambia qui "
+               "l'impostazione e rifai la scansione con le stesse foto. La lettura ingrandita e i modelli più "
+               "nuovi costano un po' di più; GPT-5 impiega molto più tempo.")
+    render_costi_letture(dettaglio=True)
+
+
+def descrizione_lettura(modello, ingrandita):
+    return MODELLI_LETTURA.get(modello, modello).split(" (")[0] + (", lettura ingrandita" if ingrandita else "")
 
 
 def formatta_dollari(valore):
     return f"{valore:.3f} $".replace(".", ",")
 
 
-def render_costi_letture():
-    """Quanto sono costate le scansioni fatte finora (stima dai token dichiarati da OpenAI)."""
+def render_costi_letture(dettaglio=False):
+    """Quanto sono costate le scansioni fatte finora (stima dai token dichiarati da OpenAI);
+    con dettaglio anche le ultime 10 scansioni."""
     storico = storico_costi()
     if not storico:
-        st.caption("💵 Il costo di ogni scansione comparirà qui dopo la prima lettura.")
+        if dettaglio:
+            st.caption("💵 Il costo di ogni scansione comparirà qui dopo la prima lettura.")
         return
     mese = datetime.now(ZoneInfo("Europe/Rome")).strftime("/%m/%Y")
     del_mese = [v for v in storico if v.get("quando", "")[2:10] == mese]
@@ -143,6 +156,8 @@ def render_costi_letture():
     st.markdown(f"**💵 Costo delle scansioni** (stima): questo mese {formatta_dollari(sum(v['costo'] for v in del_mese))} "
                 f"({quante(len(del_mese))}), in totale {formatta_dollari(sum(v['costo'] for v in storico))} "
                 f"({quante(len(storico))}).")
+    if not dettaglio:
+        return
     ultime = [{"Quando": v["quando"], "Gara": v.get("gara", ""),
                "Lettura": MODELLI_LETTURA.get(v["modello"], v["modello"]).split(" (")[0]
                           + (" ingrandita" if v.get("ingrandita") else ""),
@@ -213,7 +228,7 @@ def pubblica_distinta(info_gara, dati_c, dati_o):
         st.warning(avviso_sponsor)
     n_sponsor = len(loghi) if loghi is not None else numero_sponsor()
     if n_sponsor == 0:
-        st.info("Il PDF è senza sponsor: caricali dalla sezione 🏷️ Gestione Sponsor in alto.")
+        st.info("Il PDF è senza sponsor: caricali dalla sezione ⚙️ Opzioni in alto.")
 
     pdf_bytes = genera_pdf(dati_c, dati_o, info_gara, qr_bytes, sponsor_loghi=loghi)
     st.session_state["pdf_interattivo_pronto"] = pdf_bytes  # il PDF resta scaricabile anche se GitHub non risponde
@@ -340,7 +355,7 @@ def azzera_sezione_distinta():
     reset_stato_squadra("griglia_ospite")
 
 
-SEZIONI = ["📋 Distinta", "🎙️ Cronaca partita", "📚 Archivio", "🏷️ Gestione Sponsor"]
+SEZIONI = ["📋 Distinta", "🎙️ Cronaca partita", "📚 Archivio", "⚙️ Opzioni"]
 
 
 def render_segreteria():
@@ -361,7 +376,10 @@ def render_segreteria():
             st.rerun()
 
     sezione = st.radio("Sezione", SEZIONI, horizontal=True, label_visibility="collapsed", key="sezione_segreteria")
-    if sezione == "🏷️ Gestione Sponsor":
+    if sezione == "⚙️ Opzioni":
+        render_opzioni_lettura()
+        st.divider()
+        st.subheader("🏷️ Sponsor")
         render_gestione_sponsor(leggi_secret("GITHUB_TOKEN"), leggi_secret("GITHUB_REPO"), leggi_secret("GITHUB_BRANCH"))
         return
     if sezione == "📚 Archivio":
@@ -408,7 +426,10 @@ def render_segreteria():
             st.session_state.pop("pdf_interattivo_pronto", None)
 
         if "dati_mappati" not in st.session_state:
-            modello, ingrandita = scelta_lettura_ai()
+            lettura = impostazioni_lettura()
+            modello, ingrandita = lettura["modello"], lettura["ingrandita"]
+            st.caption(f"🤖 Lettura con {descrizione_lettura(modello, ingrandita)} (si cambia in ⚙️ Opzioni).")
+            render_costi_letture()
             with c_scan:
                 if st.button("🔍 Fase 1: Esegui Scansione AI delle Liste", type="primary", use_container_width=True):
                     with st.spinner(f"Estrazione giocatori e date in corso con {MODELLI_LETTURA[modello].split(' (')[0]}"
@@ -424,8 +445,7 @@ def render_segreteria():
                             pulisci_widget_squadra("griglia_casa")
                             pulisci_widget_squadra("griglia_ospite")
                             st.session_state["macro_info"] = unisci_scansioni(casa_raw, ospite_raw)
-                            st.session_state["macro_info"]["lettura"] = (
-                                MODELLI_LETTURA[modello].split(" (")[0] + (", lettura ingrandita" if ingrandita else ""))
+                            st.session_state["macro_info"]["lettura"] = descrizione_lettura(modello, ingrandita)
                             costo = sum(r.get("consumo", {}).get("costo", 0) for r in (casa_raw, ospite_raw))
                             st.session_state["macro_info"]["costo_lettura"] = costo
                             info = st.session_state["macro_info"]

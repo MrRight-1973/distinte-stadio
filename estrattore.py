@@ -9,11 +9,11 @@ from PIL import Image, ImageOps
 
 from pdf_immagini import e_pdf, pagine_pdf
 
-MODELLO = "gpt-4o"
-# Modelli tra cui scegliere nella sezione Distinta (per confrontare le letture)
+MODELLO = "gpt-4.1"
+# Modelli tra cui scegliere nella sezione Opzioni (per confrontare le letture)
 MODELLI_LETTURA = {
-    "gpt-4o": "GPT-4o (quello di sempre)",
-    "gpt-4.1": "GPT-4.1 (più preciso sui testi)",
+    "gpt-4.1": "GPT-4.1 (consigliato: il migliore nelle prove)",
+    "gpt-4o": "GPT-4o (quello usato prima)",
     "gpt-5": "GPT-5 (il più accurato, molto più lento)",
 }
 # Prezzi OpenAI in dollari per milione di token (ingresso, uscita), per stimare il costo di ogni lettura.
