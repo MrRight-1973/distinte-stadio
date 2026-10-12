@@ -7,6 +7,7 @@ import pandas as pd
 import qrcode
 import streamlit as st
 
+from cronaca_manager import salva_foto_distinte_pubblicate
 from estrattore import analizza_distinta, unisci_scansioni
 from github_publisher import PubblicazioneErrore, leggi_file, pubblica_su_github, url_pagina_da_repo
 from pdf_manager import genera_pdf, loghi_da_cartella_locale, numero_sponsor
@@ -251,6 +252,11 @@ def render_segreteria():
                 dati_c = {**dati_c, "giocatori": giocatori_da_griglia("griglia_casa")}
                 dati_o = {**dati_o, "giocatori": giocatori_da_griglia("griglia_ospite")}
                 pubblica_distinta(info_gara, dati_c, dati_o)
+                try:  # per il PDF del resoconto; restano solo sul disco dell'app
+                    salva_foto_distinte_pubblicate({"casa": file_casa.getvalue() if file_casa else None,
+                                                    "ospite": file_ospite.getvalue() if file_ospite else None})
+                except Exception as e:
+                    st.warning(f"Foto delle distinte non salvate per il resoconto: {e}")
 
     render_download_buttons()
 
