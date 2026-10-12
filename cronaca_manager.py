@@ -152,6 +152,25 @@ CAMPI_GIOCATORE = {
 }
 ESITI_RIGORE = ["Segnato", "Parato", "Fuori / palo"]
 
+# Per ogni tipo, una scelta a tocco che descrive l'evento senza doverlo scrivere: (campo, domanda, opzioni)
+SCELTE_DETTAGLIO = {
+    "Gol": ("come", "Come?", ["Azione", "Tiro da fuori", "Colpo di testa", "Punizione", "Calcio d'angolo",
+                              "Rigore", "Contropiede", "Autogol"]),
+    "Rigore": ("esito", "Esito", ESITI_RIGORE),
+    "Ammonizione": ("motivo", "Motivo", ["Fallo", "Proteste", "Simulazione", "Perdita di tempo", "Comportamento"]),
+    "Espulsione": ("motivo", "Motivo", ["Doppia ammonizione", "Fallo grave", "Chiara occasione da gol",
+                                        "Condotta violenta", "Proteste"]),
+    "Occasione": ("esito", "Com'è finita?", ["Parata", "Palo", "Traversa", "Fuori di poco", "Salvataggio sulla linea",
+                                             "Fuorigioco"]),
+    "Infortunio": ("esito", "Esito", ["Rientra in campo", "Esce dal campo"]),
+}
+ICONE_TIPO = {"Gol": "⚽", "Rigore": "🎯", "Ammonizione": "🟨", "Espulsione": "🟥", "Sostituzione": "🔄",
+              "Occasione": "💥", "Infortunio": "🚑", "Nota": "📝"}
+
+
+def e_autogol(nota):
+    return nota.get("tipo") == "Gol" and (nota.get("dettagli") or {}).get("come") == "Autogol"
+
 
 def pulisci_nome(nome):
     """Nome del giocatore senza le sigle di capitano e vice: "AGGIO KEVIN (C)" -> "AGGIO KEVIN"."""
@@ -182,16 +201,19 @@ def _con_numero(d, campo):
 
 
 def descrizione_nota(nota):
-    """I giocatori scelti dai menu, in parole: "ROSSI ANDREA (9), assist BIANCHI LUCA (7)"."""
+    """I giocatori e le scelte dei menu, in parole: "ROSSI ANDREA (9), punizione, assist BIANCHI LUCA (7)"."""
     d = nota.get("dettagli") or {}
     tipo = nota.get("tipo")
+    scelta = SCELTE_DETTAGLIO.get(tipo)
+    dettaglio = (d.get(scelta[0]) or "").lower() if scelta else ""
     if tipo == "Sostituzione":
         parti = [f"esce {_con_numero(d, 'esce')}" if d.get("esce") else "",
                  f"entra {_con_numero(d, 'entra')}" if d.get("entra") else ""]
-    elif tipo == "Rigore":
-        parti = [_con_numero(d, "giocatore"), (d.get("esito") or "").lower()]
+    elif e_autogol(nota):
+        parti = [f"autogol di {_con_numero(d, 'giocatore')}" if d.get("giocatore") else "autogol"]
     else:
-        parti = [_con_numero(d, "giocatore"), f"assist {_con_numero(d, 'assist')}" if d.get("assist") else ""]
+        parti = [_con_numero(d, "giocatore"), dettaglio,
+                 f"assist {_con_numero(d, 'assist')}" if d.get("assist") else ""]
     return ", ".join(p for p in parti if p)
 
 
@@ -335,6 +357,18 @@ def _sostituzione(n):
     return ", ".join(p for p in parti if p)
 
 
+def _sigla_evento(n):
+    """La sigla del tabellino: rig., aut., 2ª amm."""
+    d = n.get("dettagli") or {}
+    if n.get("tipo") == "Rigore" or (n.get("tipo") == "Gol" and d.get("come") == "Rigore"):
+        return "rig."
+    if e_autogol(n):
+        return "aut."
+    if n.get("tipo") == "Espulsione" and d.get("motivo") == "Doppia ammonizione":
+        return "2ª amm."
+    return ""
+
+
 def _tipo_evento(n):
     if e_gol(n):
         return "gol"
@@ -354,7 +388,7 @@ def eventi_da_note(cronaca):
             continue
         giocatore = _sostituzione(n) if tipo == "sostituzione" else d.get("giocatore") or (n.get("testo") or "")[:40]
         eventi.append({"tipo": tipo, "squadra": n.get("squadra"), "minuto": n.get("minuto"), "giocatore": giocatore,
-                       "nota": "rig." if n.get("tipo") == "Rigore" else ""})
+                       "nota": _sigla_evento(n)})
     return pulisci_eventi(eventi)
 
 
@@ -401,7 +435,7 @@ def _unisci_eventi(cronaca, letti_da_ai):
             continue
         eventi.append({"tipo": tipo, "squadra": squadra, "minuto": n.get("minuto"),
                        "giocatore": d.get("giocatore") or letto.get("giocatore") or "",
-                       "nota": "rig." if n.get("tipo") == "Rigore" else letto.get("nota", "")})
+                       "nota": _sigla_evento(n) or letto.get("nota", "")})
     eventi += [e for e in ai if e["tipo"] in ("ammonizione", "espulsione")]
     return pulisci_eventi(eventi)
 

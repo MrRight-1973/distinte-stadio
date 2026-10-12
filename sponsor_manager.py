@@ -21,7 +21,7 @@ from PIL import Image, ImageChops, ImageOps
 
 from github_publisher import PubblicazioneErrore, elenca_cartella, leggi_file, pubblica_su_github
 
-MAX_SPONSOR = 10
+MAX_SPONSOR = 15
 MAX_BYTE_UPLOAD = 8 * 1024 * 1024        # un logo più pesante di così non serve
 LOGO_MAX_LARGHEZZA = 600                 # px: abbondante per pagina web e stampa A4
 LOGO_MAX_ALTEZZA = 300
@@ -93,7 +93,7 @@ def nome_file(indice, nome, png):
 
 
 def distribuisci_righe(n, max_colonne):
-    """Quanti loghi per riga, con righe equilibrate: 10 -> [5, 5]; 9 -> [5, 4]; 7 -> [4, 3]."""
+    """Quanti loghi per riga, con righe equilibrate: 15 -> [5, 5, 5]; 10 -> [5, 5]; 9 -> [5, 4]; 7 -> [4, 3]."""
     if n <= 0:
         return []
     righe = math.ceil(n / max_colonne)
