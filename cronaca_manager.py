@@ -136,7 +136,7 @@ def stato_archivio_online():
     return (errore is None, errore or "Archivio online attivo: le partite restano salvate anche se l'app si riavvia.")
 
 
-def _ha_contenuto(cronaca):
+def ha_contenuto(cronaca):
     """Note, foto aggiunte a mano o resoconto (le foto delle distinte si copiano da sole: non contano)."""
     return bool(cronaca.get("note") or cronaca.get("referto") or cronaca.get("foto_partita") or cronaca.get("resoconto"))
 
@@ -147,7 +147,7 @@ def _metti_in_archivio(cronaca):
         nome = datetime.now().strftime("cronaca_%Y%m%d_%H%M%S.json")
         with open(os.path.join(_cartella_dati(), nome), "w", encoding="utf-8") as f:
             json.dump(cronaca, f, ensure_ascii=False, indent=2)
-    if _ha_contenuto(cronaca):
+    if ha_contenuto(cronaca):
         _online(cloud.salva_partita, cronaca, False, punteggio(cronaca))
     elif cronaca.get("id"):
         _online(cloud.elimina_partita, cronaca["id"])
@@ -158,6 +158,32 @@ def archivia_e_azzera(cronaca, **partita):
     """Conserva la cronaca attuale (se ha note) nell'archivio, poi ne apre una nuova vuota."""
     _metti_in_archivio(cronaca)
     nuova = cronaca_vuota(**partita)
+    salva_cronaca(nuova)
+    _online(cloud.togli_corrente_alle_altre, nuova["id"])
+    return nuova
+
+
+def cancella_e_azzera(cronaca):
+    """Butta via la partita aperta senza archiviarla (note, foto, note vocali, foto delle
+    distinte caricate) e ne apre una nuova vuota, in attesa delle nuove distinte."""
+    _cancella_foto([n for e in ELENCHI_FOTO for n in cronaca.get(e) or []])
+    audio = [n["audio"] for n in cronaca.get("note") or [] if n.get("audio")]
+    for nome in audio:
+        try:
+            os.remove(os.path.join(_cartella_dati(), "audio", nome))
+        except OSError:
+            pass
+        _da_caricare.pop(f"audio/{nome}", None)
+    _online(cloud.elimina_file, [f"audio/{n}" for n in audio])
+    if cronaca.get("id"):
+        _online(cloud.elimina_partita, cronaca["id"])
+    cartella = _cartella_distinte_pubblicate()
+    for vecchio in os.listdir(cartella):
+        os.remove(os.path.join(cartella, vecchio))
+    for lato in ("casa", "ospite"):
+        _da_caricare.pop(f"distinte_pubblicate/{lato}.jpg", None)
+    _online(cloud.elimina_file, [f"distinte_pubblicate/{lato}.jpg" for lato in ("casa", "ospite")])
+    nuova = cronaca_vuota()
     salva_cronaca(nuova)
     _online(cloud.togli_corrente_alle_altre, nuova["id"])
     return nuova

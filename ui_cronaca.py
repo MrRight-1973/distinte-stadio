@@ -20,6 +20,7 @@ from cronaca_manager import (
     aggiungi_nota,
     TIPI_EVENTO,
     archivia_e_azzera,
+    cancella_e_azzera,
     avvia_tempo,
     eventi_correnti,
     gol_da_eventi,
@@ -30,6 +31,7 @@ from cronaca_manager import (
     distinta_per_cronaca,
     genera_resoconto,
     giocatori_da_distinta,
+    ha_contenuto,
     imposta_distinta,
     leggi_audio,
     leggi_foto_referto,
@@ -424,6 +426,42 @@ def _resoconto(cronaca, api_key, giocatori, loghi_sponsor, leggi_distinta):
     )
 
 
+def _gestione_partita(cronaca):
+    """Ricarica della distinta, archiviazione e cancellazione della partita aperta."""
+    b1, b2, b3 = st.columns(3)
+    if b1.button("🔄 Ricarica la distinta pubblicata", use_container_width=True):
+        st.session_state["cronaca_ricarica_distinta"] = True
+        cronaca["distinta"] = None
+        salva_cronaca(cronaca)
+        st.rerun()
+    if b2.button("🆕 Nuova partita (archivia questa)", use_container_width=True):
+        st.session_state["cronaca_conferma"] = "archivia"
+        st.rerun()
+    if b3.button("🗑️ Cancella tutto e ricomincia", use_container_width=True):
+        st.session_state["cronaca_conferma"] = "cancella"
+        st.rerun()
+    conferma = st.session_state.get("cronaca_conferma")
+    if not conferma:
+        return
+    if conferma == "archivia":
+        st.warning("Questa partita va nella sezione 📚 Archivio (da lì si può riaprire). Poi tutto riparte "
+                   "vuoto, anche la sezione Distinta: le liste arriveranno dalle nuove distinte pubblicate. Continuare?")
+        etichetta = "✅ Sì, archivia"
+    else:
+        st.error("Questa partita viene CANCELLATA senza archiviarla: note, note vocali, foto e foto delle distinte "
+                 "non si potranno recuperare. Poi tutto riparte vuoto, anche la sezione Distinta. Continuare?")
+        etichetta = "🗑️ Sì, cancella tutto"
+    c1, c2 = st.columns(2)
+    if c1.button(etichetta, type="primary", use_container_width=True):
+        st.session_state.pop("cronaca_conferma", None)
+        (archivia_e_azzera if conferma == "archivia" else cancella_e_azzera)(cronaca)
+        st.session_state["azzera_distinta"] = True  # anche la sezione Distinta riparte da zero
+        st.rerun()
+    if c2.button("Annulla", use_container_width=True):
+        st.session_state.pop("cronaca_conferma", None)
+        st.rerun()
+
+
 def render_cronaca(api_key, macro_info=None, loghi_sponsor=lambda: None, leggi_distinta=lambda: None):
     """loghi_sponsor: funzione che restituisce i loghi (bytes) da stampare nel PDF.
     leggi_distinta: funzione che restituisce l'ultima distinta pubblicata (info_gara, casa, ospite)."""
@@ -450,6 +488,16 @@ def render_cronaca(api_key, macro_info=None, loghi_sponsor=lambda: None, leggi_d
     if not api_key:
         st.warning("OPENAI_API_KEY non configurata: si possono scrivere note, ma non trascrivere né generare il resoconto.")
 
+    if not cronaca.get("distinta") and not ha_contenuto(cronaca):
+        # Senza liste dei giocatori la cronaca non serve ancora: si apre quando arrivano le distinte
+        st.info("📋 In attesa delle distinte di questa partita: carica le foto nella sezione 📋 Distinta, "
+                "esegui la scansione e pubblica. La cronaca si apre da sola appena la distinta è pubblicata.")
+        if st.button("🔄 Ricarica la distinta pubblicata", use_container_width=True,
+                     help="Se le distinte di questa partita erano già state pubblicate prima dell'archiviazione"):
+            st.session_state["cronaca_ricarica_distinta"] = True
+            st.rerun()
+        return
+
     with st.expander("⚙️ Partita", expanded=stato_gara(cronaca) == "prepartita"):
         p = cronaca["partita"]
         c1, c2 = st.columns(2)
@@ -467,30 +515,7 @@ def render_cronaca(api_key, macro_info=None, loghi_sponsor=lambda: None, leggi_d
         if d:
             st.caption(f"Liste giocatori dalla distinta pubblicata: {(d.get('casa') or {}).get('squadra', '')} – "
                        f"{(d.get('ospite') or {}).get('squadra', '')}")
-        else:
-            st.caption("In attesa delle distinte di questa partita: si collegano da sole appena le pubblichi "
-                       "(se le hai già pubblicate prima di archiviare, usa 🔄 Ricarica).")
-        b1, b2 = st.columns(2)
-        if b1.button("🔄 Ricarica la distinta pubblicata", use_container_width=True):
-            st.session_state["cronaca_ricarica_distinta"] = True
-            cronaca["distinta"] = None
-            salva_cronaca(cronaca)
-            st.rerun()
-        if b2.button("🆕 Nuova partita (archivia questa)", use_container_width=True):
-            st.session_state["cronaca_conferma_nuova"] = True
-            st.rerun()
-        if st.session_state.get("cronaca_conferma_nuova"):
-            st.warning("Questa partita va nella sezione 📚 Archivio (da lì si può riaprire). Poi tutto riparte "
-                       "vuoto, anche la sezione Distinta: le liste arriveranno dalle nuove distinte pubblicate. Continuare?")
-            c1, c2 = st.columns(2)
-            if c1.button("✅ Sì, archivia", type="primary", use_container_width=True):
-                st.session_state.pop("cronaca_conferma_nuova", None)
-                archivia_e_azzera(cronaca)
-                st.session_state["azzera_distinta"] = True  # anche la sezione Distinta riparte da zero
-                st.rerun()
-            if c2.button("Annulla", use_container_width=True):
-                st.session_state.pop("cronaca_conferma_nuova", None)
-                st.rerun()
+        _gestione_partita(cronaca)
         if stato_archivio_online() is not None:
             st.caption("Le partite chiuse si ritrovano nella sezione 📚 Archivio.")
 
