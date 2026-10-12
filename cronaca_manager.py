@@ -14,6 +14,7 @@ import tempfile
 import time
 import uuid
 from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
 
 from openai import OpenAI
 
@@ -1003,3 +1004,32 @@ def togli_liste_in_lavorazione():
     _da_caricare.pop("in_lavorazione/liste.json", None)
     _online(cloud.elimina_file, ["in_lavorazione/liste.json"])
 
+
+
+# --- Costo delle letture AI ----------------------------------------------------
+# Resta anche dopo archivio e cancellazione: serve a vedere quanto si spende nel tempo.
+
+MAX_LETTURE_IN_STORICO = 300
+
+
+def _percorso_costi():
+    return os.path.join(_cartella_dati(), "costi_letture.json")
+
+
+def storico_costi():
+    """Le scansioni fatte, dalla più vecchia: [{"quando", "gara", "modello", "ingrandita", "costo"}]."""
+    try:
+        return json.loads(_leggi_file(_percorso_costi(), "costi/letture.json"))
+    except (OSError, ValueError):
+        return []
+
+
+def registra_costo_lettura(gara, modello, ingrandita, costo):
+    storico = storico_costi()
+    storico.append({"quando": datetime.now(ZoneInfo("Europe/Rome")).strftime("%d/%m/%Y %H:%M"), "gara": gara, "modello": modello,
+                    "ingrandita": bool(ingrandita), "costo": round(costo, 5)})
+    storico = storico[-MAX_LETTURE_IN_STORICO:]
+    with open(_percorso_costi(), "w", encoding="utf-8") as f:
+        json.dump(storico, f, ensure_ascii=False)
+    _carica_online("costi/letture.json", _percorso_costi(), "application/json")
+    return storico

@@ -14,8 +14,22 @@ MODELLO = "gpt-4o"
 MODELLI_LETTURA = {
     "gpt-4o": "GPT-4o (quello di sempre)",
     "gpt-4.1": "GPT-4.1 (più preciso sui testi)",
-    "gpt-5": "GPT-5 (il più accurato, più lento)",
+    "gpt-5": "GPT-5 (il più accurato, molto più lento)",
 }
+# Prezzi OpenAI in dollari per milione di token (ingresso, uscita), per stimare il costo di ogni lettura.
+# Se OpenAI cambia i listini basta aggiornare qui: https://openai.com/api/pricing
+PREZZI_MODELLI = {
+    "gpt-4o": (2.50, 10.00),
+    "gpt-4.1": (2.00, 8.00),
+    "gpt-5": (1.25, 10.00),
+}
+
+
+def costo_lettura(modello, token_ingresso, token_uscita):
+    """Costo stimato in dollari di una chiamata, dai token che OpenAI dichiara di aver usato."""
+    prezzo_in, prezzo_out = PREZZI_MODELLI.get(modello, PREZZI_MODELLI[MODELLO])
+    return (token_ingresso * prezzo_in + token_uscita * prezzo_out) / 1_000_000
+
 STRISCE = 3  # lettura ingrandita: la foto si manda anche in strisce orizzontali sovrapposte
 VALORI_VUOTI = {"", "N.D.", "ND", "N/A", "NONE", "NULL", "NON INDICATO"}
 ETA_MINIMA_GIOCATORE = 5
@@ -333,6 +347,8 @@ def analizza_distinta(uploaded_file, ruolo_squadra, api_key, modello=MODELLO, in
     parametri = {}
     if modello.startswith("gpt-4"):  # i modelli GPT-5 accettano solo la temperatura predefinita
         parametri["temperature"] = 0.0
+    else:  # ragionamento breve: per leggere una tabella basta, e GPT-5 risponde molto prima
+        parametri["reasoning_effort"] = "low"
     response = client.chat.completions.create(
         model=modello,
         response_format={"type": "json_object"},
@@ -349,7 +365,13 @@ def analizza_distinta(uploaded_file, ruolo_squadra, api_key, modello=MODELLO, in
     except json.JSONDecodeError as e:
         raise ValueError(f"Risposta AI non valida per la distinta {ruolo_squadra}: {e}") from e
 
-    return normalizza_risposta(dati, ruolo_squadra)
+    dati = normalizza_risposta(dati, ruolo_squadra)
+    uso = getattr(response, "usage", None)
+    token_in = getattr(uso, "prompt_tokens", 0) or 0
+    token_out = getattr(uso, "completion_tokens", 0) or 0
+    dati["consumo"] = {"modello": modello, "token_ingresso": token_in, "token_uscita": token_out,
+                       "costo": costo_lettura(modello, token_in, token_out)}
+    return dati
 
 
 def normalizza_risposta(dati, ruolo_squadra):
