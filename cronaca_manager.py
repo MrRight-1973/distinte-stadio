@@ -158,6 +158,7 @@ def archivia_e_azzera(cronaca, **partita):
     """Conserva la cronaca attuale (se ha note) nell'archivio, poi ne apre una nuova vuota."""
     _metti_in_archivio(cronaca)
     togli_distinte_caricate()
+    togli_liste_in_lavorazione()
     nuova = cronaca_vuota(**partita)
     salva_cronaca(nuova)
     _online(cloud.togli_corrente_alle_altre, nuova["id"])
@@ -185,6 +186,7 @@ def cancella_e_azzera(cronaca):
         _da_caricare.pop(f"distinte_pubblicate/{lato}.jpg", None)
     _online(cloud.elimina_file, [f"distinte_pubblicate/{lato}.jpg" for lato in ("casa", "ospite")])
     togli_distinte_caricate()
+    togli_liste_in_lavorazione()
     nuova = cronaca_vuota()
     salva_cronaca(nuova)
     _online(cloud.togli_corrente_alle_altre, nuova["id"])
@@ -975,4 +977,29 @@ def togli_distinte_caricate(lati=("casa", "ospite")):
             _da_caricare.pop(f"in_lavorazione/{nome}", None)
             percorsi.append(f"in_lavorazione/{nome}")
     _online(cloud.elimina_file, percorsi)
+
+
+def salva_liste_in_lavorazione(dati):
+    """Le liste della sezione Distinta come sono adesso (lette dalle foto, da CSV o corrette a mano)."""
+    percorso = os.path.join(_cartella_in_lavorazione(), "liste.json")
+    with open(percorso, "w", encoding="utf-8") as f:
+        json.dump(dati, f, ensure_ascii=False)
+    _carica_online("in_lavorazione/liste.json", percorso, "application/json")
+
+
+def leggi_liste_in_lavorazione():
+    try:
+        return json.loads(_leggi_file(os.path.join(_cartella_in_lavorazione(), "liste.json"),
+                                      "in_lavorazione/liste.json"))
+    except (OSError, ValueError):
+        return None
+
+
+def togli_liste_in_lavorazione():
+    try:
+        os.remove(os.path.join(_cartella_in_lavorazione(), "liste.json"))
+    except OSError:
+        pass
+    _da_caricare.pop("in_lavorazione/liste.json", None)
+    _online(cloud.elimina_file, ["in_lavorazione/liste.json"])
 

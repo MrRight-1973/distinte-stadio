@@ -12,9 +12,12 @@ import archivio_cloud
 from ui_archivio import render_archivio
 from cronaca_manager import (
     leggi_distinta_caricata,
+    leggi_liste_in_lavorazione,
     salva_distinta_caricata,
     salva_foto_distinte_pubblicate,
+    salva_liste_in_lavorazione,
     togli_distinte_caricate,
+    togli_liste_in_lavorazione,
 )
 from estrattore import analizza_distinta, unisci_scansioni
 from github_publisher import PubblicazioneErrore, leggi_file, pubblica_su_github, url_pagina_da_repo
@@ -107,7 +110,49 @@ def carica_distinta(colonna, etichetta, lato):
     return f
 
 
+def ripristina_liste_salvate():
+    """Prima volta in questa sessione: le liste in lavorazione salvate (dopo un riavvio, da un altro
+    dispositivo o riaprendo la pagina) tornano nella sezione Distinta come erano state lasciate."""
+    if st.session_state.get("liste_controllate"):
+        return
+    st.session_state["liste_controllate"] = True
+    salvate = leggi_liste_in_lavorazione()
+    if not salvate or "dati_mappati" in st.session_state:
+        return
+    info, casa, ospite = salvate.get("info_gara") or {}, salvate.get("casa") or {}, salvate.get("ospite") or {}
+    st.session_state["macro_info"] = {
+        **unisci_scansioni({}, {}), **(salvate.get("macro_info") or {}),
+        "campionato": info.get("campionato", ""), "data": info.get("data", ""), "arbitro": info.get("arbitro", ""),
+        "ass_casa": info.get("assistente1", ""), "ass_ospite": info.get("assistente2", ""),
+        "nome_casa": casa.get("squadra", ""), "all_casa": casa.get("allenatore", ""),
+        "nome_ospite": ospite.get("squadra", ""), "all_ospite": ospite.get("allenatore", ""),
+    }
+    for chiave, squadra in (("griglia_casa", casa), ("griglia_ospite", ospite)):
+        if squadra.get("giocatori"):
+            st.session_state[chiave] = pd.DataFrame(squadra["giocatori"]).set_index("N°")
+        pulisci_widget_squadra(chiave)
+    st.session_state["firma_scansione_attiva"] = salvate.get("firma", "")
+    st.session_state["liste_salvate"] = salvate
+    st.session_state["dati_mappati"] = True
+
+
+def salva_liste_se_cambiate(info_gara, dati_c, dati_o):
+    """Salva (disco e Supabase) le liste ogni volta che cambiano: scansione, CSV o correzioni a mano."""
+    attuali = {
+        "info_gara": info_gara,
+        "casa": {**dati_c, "giocatori": giocatori_da_griglia("griglia_casa")},
+        "ospite": {**dati_o, "giocatori": giocatori_da_griglia("griglia_ospite")},
+        "macro_info": {k: v for k, v in st.session_state["macro_info"].items() if k == "avvisi"},
+        "firma": st.session_state.get("firma_scansione_attiva", ""),
+    }
+    if attuali != st.session_state.get("liste_salvate"):
+        salva_liste_in_lavorazione(attuali)
+        st.session_state["liste_salvate"] = attuali
+
+
 def reset_solo_dati_ai():
+    togli_liste_in_lavorazione()
+    st.session_state.pop("liste_salvate", None)
     for chiave in ["dati_mappati", "macro_info", "firma_scansione_attiva", "pdf_interattivo_pronto"]:
         st.session_state.pop(chiave, None)
     reset_stato_squadra("griglia_casa")
@@ -223,7 +268,7 @@ def azzera_sezione_distinta():
     """Dopo l'archiviazione di una partita: via foto caricate, dati letti, PDF e ultima distinta."""
     for chiave in ["dati_mappati", "macro_info", "firma_scansione_attiva", "pdf_interattivo_pronto",
                    "ultima_distinta", "uploader_file_casa", "uploader_file_ospite",
-                   "distinta_caricata_casa", "distinta_caricata_ospite"]:
+                   "distinta_caricata_casa", "distinta_caricata_ospite", "liste_salvate"]:
         st.session_state.pop(chiave, None)
     reset_stato_squadra("griglia_casa")
     reset_stato_squadra("griglia_ospite")
@@ -269,6 +314,7 @@ def render_segreteria():
     if not api_key_openai:
         st.warning("OPENAI_API_KEY non configurata nei secrets: la scansione AI non è disponibile.")
 
+    ripristina_liste_salvate()
     if "griglia_casa" not in st.session_state:
         st.session_state["griglia_casa"] = griglia_vuota()
     if "griglia_ospite" not in st.session_state:
@@ -329,6 +375,8 @@ def render_segreteria():
             dati_c = render_colonna_squadra("🏠 SQUADRA CASA", "griglia_casa", inf["all_casa"], inf.get("nome_casa", ""))
         with c_sq2:
             dati_o = render_colonna_squadra("🚀 SQUADRA OSPITE", "griglia_ospite", inf["all_ospite"], inf.get("nome_ospite", ""))
+
+        salva_liste_se_cambiate(info_gara, dati_c, dati_o)
 
         mancanti = [n for n, v in (("data", inf.get("data")), ("nome squadra casa", inf.get("nome_casa")),
                                    ("nome squadra ospite", inf.get("nome_ospite"))) if not v]
