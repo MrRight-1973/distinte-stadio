@@ -21,7 +21,11 @@ class ArchivioErrore(Exception):
 
 
 def configura(url, key):
-    _config["url"] = str(url or "").strip().rstrip("/")
+    url = str(url or "").strip().rstrip("/")
+    for coda in ("/rest/v1", "/storage/v1"):  # basta l'indirizzo del progetto, ma si accetta anche copiato con la coda
+        if url.endswith(coda):
+            url = url[: -len(coda)]
+    _config["url"] = url
     _config["key"] = str(key or "").strip()
 
 
@@ -54,6 +58,9 @@ def _chiama(metodo, percorso, ammetti_404=False, intestazioni=None, **kwargs):
         return r
     if r.status_code in (401, 403):
         _stato["errore"] = "Supabase rifiuta la chiave: controlla SUPABASE_KEY (serve la chiave segreta)."
+    elif r.status_code == 404 and "/rest/v1/" in percorso:
+        _stato["errore"] = ("Supabase non trova la tabella delle partite: esegui supabase/setup.sql nell'SQL Editor "
+                            "e controlla che SUPABASE_URL sia solo https://….supabase.co")
     elif r.status_code >= 400:
         _stato["errore"] = f"Archivio online: errore {r.status_code} ({r.text[:200]})"
     else:

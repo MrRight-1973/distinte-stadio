@@ -21,8 +21,16 @@ jobs:
             echo "Secrets SUPABASE_URL / SUPABASE_KEY non configurati: niente da fare."
             exit 0
           fi
+          URL="${SUPABASE_URL%/}"; URL="${URL%/rest/v1}"
           AUTH=()
           case "$SUPABASE_KEY" in sb_*) ;; *) AUTH=(-H "Authorization: Bearer $SUPABASE_KEY") ;; esac
-          curl -fsS -o /dev/null -w "Supabase risponde: HTTP %{http_code}\n" \
+          CODICE=$(curl -sS -o risposta.txt -w "%{http_code}" \
             -H "apikey: $SUPABASE_KEY" "${AUTH[@]}" \
-            "${SUPABASE_URL%/}/rest/v1/partite?select=id&limit=1"
+            "$URL/rest/v1/partite?select=id&limit=1")
+          echo "Supabase risponde: HTTP $CODICE"
+          if [ "$CODICE" != "200" ]; then
+            cat risposta.txt; echo
+            [ "$CODICE" = "404" ] && echo "Tabella 'partite' non trovata: esegui supabase/setup.sql nell'SQL Editor e controlla SUPABASE_URL (solo https://….supabase.co)."
+            [ "$CODICE" = "401" ] && echo "Chiave rifiutata: in SUPABASE_KEY serve la chiave segreta (sb_secret_… o service_role)."
+            exit 1
+          fi
