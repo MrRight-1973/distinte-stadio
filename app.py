@@ -172,7 +172,7 @@ def pubblica_distinta(info_gara, dati_c, dati_o):
         st.warning(avviso_sponsor)
     n_sponsor = len(loghi) if loghi is not None else numero_sponsor()
     if n_sponsor == 0:
-        st.info("Il PDF è senza sponsor: caricali dalla sezione 'Gestione Sponsor' in fondo alla pagina.")
+        st.info("Il PDF è senza sponsor: caricali dalla sezione 🏷️ Gestione Sponsor in alto.")
 
     pdf_bytes = genera_pdf(dati_c, dati_o, info_gara, qr_bytes, sponsor_loghi=loghi)
     st.session_state["pdf_interattivo_pronto"] = pdf_bytes  # il PDF resta scaricabile anche se GitHub non risponde
@@ -299,26 +299,30 @@ def azzera_sezione_distinta():
     reset_stato_squadra("griglia_ospite")
 
 
+SEZIONI = ["📋 Distinta", "🎙️ Cronaca partita", "📚 Archivio", "🏷️ Gestione Sponsor"]
+
+
 def render_segreteria():
     if st.session_state.pop("azzera_distinta", False):
         azzera_sezione_distinta()
         with st.spinner("Aggiorno la pagina spettatori: in attesa della prossima partita..."):
             pubblica_attesa()
+    if "vai_a_sezione" in st.session_state:  # es. "Riapri" dall'archivio porta alla Cronaca
+        st.session_state["sezione_segreteria"] = st.session_state.pop("vai_a_sezione")
+    sezione_attuale = st.session_state.get("sezione_segreteria") or SEZIONI[0]
     col_titolo, col_esci = st.columns([5, 1])
     with col_titolo:
-        st.title("⚽ Centro Gestione Gara - Pannello Segreteria")
+        st.title(f"⚽ Centro Gestione Gara - {sezione_attuale.split(' ', 1)[1]}")
     with col_esci:
         st.write("")
         if st.button("Esci", type="secondary", use_container_width=True):
             st.session_state["autenticato"] = False
             st.rerun()
 
-    if "vai_a_sezione" in st.session_state:  # es. "Riapri" dall'archivio porta alla Cronaca
-        st.session_state["sezione_segreteria"] = st.session_state.pop("vai_a_sezione")
-    sezione = st.radio(
-        "Sezione", ["📋 Distinta", "🎙️ Cronaca partita", "📚 Archivio"], horizontal=True,
-        label_visibility="collapsed", key="sezione_segreteria",
-    )
+    sezione = st.radio("Sezione", SEZIONI, horizontal=True, label_visibility="collapsed", key="sezione_segreteria")
+    if sezione == "🏷️ Gestione Sponsor":
+        render_gestione_sponsor(leggi_secret("GITHUB_TOKEN"), leggi_secret("GITHUB_REPO"), leggi_secret("GITHUB_BRANCH"))
+        return
     if sezione == "📚 Archivio":
         render_archivio(loghi_sponsor_pdf)
         return
@@ -426,10 +430,6 @@ def render_segreteria():
     if leggi_secret("GITHUB_TOKEN") and leggi_secret("GITHUB_REPO"):
         render_forza_attesa()
 
-    st.markdown("---")
-    render_gestione_sponsor(
-        leggi_secret("GITHUB_TOKEN"), leggi_secret("GITHUB_REPO"), leggi_secret("GITHUB_BRANCH")
-    )
 
 
 # --- ROUTING: questa app è solo per la segreteria; gli spettatori usano la pagina su GitHub Pages ---
