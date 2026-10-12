@@ -108,6 +108,24 @@ def normalizza_data(data_grezza):
         return ""
 
 
+def normalizza_ora(ora_grezza):
+    """Orario d'inizio della gara come HH:MM ("15.30", "ore 15,30", "15:30" -> "15:30"), oppure ""."""
+    m = re.search(r"\b(\d{1,2})\s*[:.,h]\s*(\d{2})\b", str(ora_grezza or "").lower())
+    if not m:
+        m = re.search(r"\bore\s*(\d{1,2})\b()", str(ora_grezza or "").lower())
+    if not m:
+        return ""
+    ore, minuti = int(m[1]), int(m[2] or 0)
+    if not (8 <= ore <= 23 and minuti < 60):  # una gara non si gioca di notte: probabile lettura sbagliata
+        return ""
+    return f"{ore:02d}:{minuti:02d}"
+
+
+def data_con_ora(data, ora):
+    """"27/09/2026" + "15:30" -> "27/09/2026 ore 15:30"."""
+    return f"{data} ore {ora}" if data and ora else data
+
+
 def unisci_scansioni(casa_raw, ospite_raw):
     """Riunisce i dati letti dalle due distinte, completando ciò che manca in una con l'altra.
 
@@ -134,7 +152,8 @@ def unisci_scansioni(casa_raw, ospite_raw):
 
     return {
         "campionato": primo(casa_raw.get("campionato"), ospite_raw.get("campionato")),
-        "data": primo(casa_raw.get("data"), ospite_raw.get("data")),
+        "data": data_con_ora(primo(casa_raw.get("data"), ospite_raw.get("data")),
+                             primo(casa_raw.get("ora"), ospite_raw.get("ora"))),
         "nome_casa": primo(casa_raw.get("squadra"), casa_raw.get("squadra_casa"), ospite_raw.get("squadra_casa")),
         "nome_ospite": primo(ospite_raw.get("squadra"), ospite_raw.get("squadra_ospite"), casa_raw.get("squadra_ospite")),
         "all_casa": casa_raw.get("allenatore", ""),
@@ -206,6 +225,8 @@ def analizza_distinta(uploaded_file, ruolo_squadra, api_key):
         "3. data: la DATA DELLA GARA (vicino a 'in programma il', 'Data', 'da disputare il') in formato GG/MM/AAAA. "
         "Se l'anno è a 2 cifre (es. '27/9/26') riportalo così com'è. NON confonderla con le date di nascita, "
         "con la data di stampa in fondo al foglio, né con il numero della distinta.\n"
+        "3b. ora: l'ORARIO D'INIZIO della gara (vicino a 'ore', 'alle ore', 'inizio', 'orario') in formato HH:MM. "
+        "Se non è scritto usa \"\". Non confonderlo con l'ora di stampa del foglio.\n"
         "4. campionato: il testo dopo 'valevole per', 'Campionato' o 'del campionato' (es. 'Prima Categoria girone E').\n"
         "5. allenatore: il primo allenatore ('Allenatore', 'Allenatore Sig.', 'Allenatore 1'), non quello in seconda.\n"
         "6. assistente_arbitro: la persona nella riga 'Assistente', 'Assistente dell'Arbitro' o 'Assistente all'Arbitro "
@@ -240,6 +261,7 @@ def analizza_distinta(uploaded_file, ruolo_squadra, api_key):
         "  \"capitano_num\": 10,\n"
         "  \"vice_capitano_num\": 4,\n"
         "  \"data\": \"DD/MM/YYYY\",\n"
+        "  \"ora\": \"HH:MM\",\n"
         "  \"campionato\": \"NOME CAMPIONATO\",\n"
         "  \"giocatori\": [\n"
         "    {\"numero\": 1, \"cognome_nome\": \"ROSSI ANDREA\", \"anno_nascita\": \"04\", \"capitano\": \"\"}\n"
@@ -283,6 +305,9 @@ def normalizza_risposta(dati, ruolo_squadra):
     dati["allenatore"] = pulisci_testo(dati.get("allenatore"))
     dati["assistente_arbitro"] = pulisci_testo(re.sub(r"\(.*?\)", "", str(dati.get("assistente_arbitro") or "")))
     dati["campionato"] = pulisci_testo(dati.get("campionato"))
+    data_letta = str(dati.get("data") or "")
+    dati["ora"] = normalizza_ora(dati.get("ora")) or (  # a volte l'orario finisce dentro la data
+        normalizza_ora(data_letta) if re.search(r"ore|:", data_letta.lower()) else "")
     dati["data"] = normalizza_data(dati.get("data"))
     dati["squadra"] = pulisci_societa(dati.get("squadra"))
     dati["squadra_casa"] = pulisci_societa(dati.get("squadra_casa"))

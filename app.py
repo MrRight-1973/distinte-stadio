@@ -66,6 +66,34 @@ def firma_file(f):
     return getattr(f, "file_id", None) or f"{f.name}-{f.size}"
 
 
+class FileCaricato(io.BytesIO):
+    """Foto di una distinta tenuta in memoria: si comporta come il file appena caricato."""
+
+    def __init__(self, salvato):
+        super().__init__(salvato["dati"])
+        self.name, self.size, self.file_id = salvato["nome"], len(salvato["dati"]), salvato["id"]
+
+
+def carica_distinta(colonna, etichetta, lato):
+    """Uploader che ricorda la foto fino alla prossima partita: cambiando sezione o dopo la
+    scansione il file resta, finché non si preme "Cambia" o si archivia/cancella la partita."""
+    chiave = f"distinta_caricata_{lato}"
+    salvato = st.session_state.get(chiave)
+    if salvato:
+        colonna.markdown(f"**{etichetta}**")
+        c_nome, c_cambia = colonna.columns([3, 1])
+        c_nome.success(f"📎 {salvato['nome']}")
+        if c_cambia.button("Cambia", key=f"cambia_{lato}", use_container_width=True):
+            st.session_state.pop(chiave, None)
+            st.session_state.pop(f"uploader_file_{lato}", None)
+            st.rerun()
+        return FileCaricato(salvato)
+    f = colonna.file_uploader(etichetta, type=["png", "jpg", "jpeg", "pdf"], key=f"uploader_file_{lato}")
+    if f is not None:
+        st.session_state[chiave] = {"nome": f.name, "dati": f.getvalue(), "id": firma_file(f)}
+    return f
+
+
 def reset_solo_dati_ai():
     for chiave in ["dati_mappati", "macro_info", "firma_scansione_attiva", "pdf_interattivo_pronto"]:
         st.session_state.pop(chiave, None)
@@ -162,7 +190,8 @@ def render_login():
 def azzera_sezione_distinta():
     """Dopo l'archiviazione di una partita: via foto caricate, dati letti, PDF e ultima distinta."""
     for chiave in ["dati_mappati", "macro_info", "firma_scansione_attiva", "pdf_interattivo_pronto",
-                   "ultima_distinta", "uploader_file_casa", "uploader_file_ospite"]:
+                   "ultima_distinta", "uploader_file_casa", "uploader_file_ospite",
+                   "distinta_caricata_casa", "distinta_caricata_ospite"]:
         st.session_state.pop(chiave, None)
     reset_stato_squadra("griglia_casa")
     reset_stato_squadra("griglia_ospite")
@@ -212,8 +241,8 @@ def render_segreteria():
         st.session_state["griglia_ospite"] = griglia_vuota()
 
     col_f1, col_f2 = st.columns(2)
-    file_casa = col_f1.file_uploader("Carica distinta LOCALE (foto o PDF)", type=["png", "jpg", "jpeg", "pdf"], key="uploader_file_casa")
-    file_ospite = col_f2.file_uploader("Carica distinta OSPITE (foto o PDF)", type=["png", "jpg", "jpeg", "pdf"], key="uploader_file_ospite")
+    file_casa = carica_distinta(col_f1, "Carica distinta LOCALE (foto o PDF)", "casa")
+    file_ospite = carica_distinta(col_f2, "Carica distinta OSPITE (foto o PDF)", "ospite")
 
     c_scan, c_reset = st.columns(2)
     with c_reset:
