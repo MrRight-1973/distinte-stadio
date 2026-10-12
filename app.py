@@ -159,7 +159,18 @@ def render_login():
                 st.error("❌ Password errata. Accesso negato.")
 
 
+def azzera_sezione_distinta():
+    """Dopo l'archiviazione di una partita: via foto caricate, dati letti, PDF e ultima distinta."""
+    for chiave in ["dati_mappati", "macro_info", "firma_scansione_attiva", "pdf_interattivo_pronto",
+                   "ultima_distinta", "uploader_file_casa", "uploader_file_ospite"]:
+        st.session_state.pop(chiave, None)
+    reset_stato_squadra("griglia_casa")
+    reset_stato_squadra("griglia_ospite")
+
+
 def render_segreteria():
+    if st.session_state.pop("azzera_distinta", False):
+        azzera_sezione_distinta()
     col_titolo, col_esci = st.columns([5, 1])
     with col_titolo:
         st.title("⚽ Centro Gestione Gara - Pannello Segreteria")

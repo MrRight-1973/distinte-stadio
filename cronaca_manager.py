@@ -49,6 +49,7 @@ def _percorso_file():
 def cronaca_vuota(casa="", ospite="", campionato="", data=""):
     return {
         "id": uuid.uuid4().hex,
+        "creata": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "partita": {"casa": casa, "ospite": ospite, "campionato": campionato, "data": data},
         "durata_tempo": 45,
         "tempi": {},          # chiave fase -> {"inizio": ts, "fine": ts | None}
@@ -66,8 +67,17 @@ _da_caricare = {}  # percorso online -> (percorso locale, tipo): file da riprova
 
 def _completa(dati):
     base = cronaca_vuota()
+    base.pop("creata")  # le cronache salvate prima di questo campo non ce l'hanno: restano senza
     base.update(dati or {})
     return base
+
+
+def distinta_per_cronaca(cronaca, distinta):
+    """Una nuova partita prende solo una distinta pubblicata dopo la sua apertura:
+    dopo l'archiviazione si riparte da una nuova acquisizione delle liste."""
+    if not distinta or not cronaca.get("creata"):
+        return bool(distinta)
+    return (distinta.get("aggiornato") or "") >= cronaca["creata"]
 
 
 def _scrivi_locale(cronaca):
@@ -145,7 +155,7 @@ def _metti_in_archivio(cronaca):
 
 
 def archivia_e_azzera(cronaca, **partita):
-    """Conserva la cronaca attuale (se ha note) nell'archivio, poi ne apre una nuova."""
+    """Conserva la cronaca attuale (se ha note) nell'archivio, poi ne apre una nuova vuota."""
     _metti_in_archivio(cronaca)
     nuova = cronaca_vuota(**partita)
     salva_cronaca(nuova)

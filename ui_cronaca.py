@@ -27,6 +27,7 @@ from cronaca_manager import (
     carica_cronaca,
     chiudi_tempo,
     descrizione_nota,
+    distinta_per_cronaca,
     genera_resoconto,
     giocatori_da_distinta,
     imposta_distinta,
@@ -391,7 +392,7 @@ def _resoconto(cronaca, api_key, giocatori, loghi_sponsor, leggi_distinta):
         # Si riprende l'ultima distinta pubblicata: la cronaca potrebbe essere partita prima della Fase 3
         try:
             distinta = leggi_distinta()
-            if distinta:
+            if distinta_per_cronaca(cronaca, distinta):
                 imposta_distinta(cronaca, distinta)
                 giocatori.update(giocatori_da_distinta(distinta))
         except Exception:
@@ -430,13 +431,15 @@ def render_cronaca(api_key, macro_info=None, loghi_sponsor=lambda: None, leggi_d
     info = macro_info or {}
 
     # Le liste dei giocatori arrivano dalla distinta pubblicata (Fase 3)
-    if not cronaca.get("distinta") or st.session_state.pop("cronaca_ricarica_distinta", False):
+    ricarica = st.session_state.pop("cronaca_ricarica_distinta", False)
+    if not cronaca.get("distinta") or ricarica:
         try:
             distinta = leggi_distinta()
         except Exception as e:
             distinta = None
             st.warning(f"Distinta pubblicata non leggibile: {e}")
-        if distinta:
+        # "Ricarica" la prende comunque; da sola, una partita nuova aspetta la distinta nuova
+        if distinta and (ricarica or distinta_per_cronaca(cronaca, distinta)):
             imposta_distinta(cronaca, distinta)
     giocatori = giocatori_da_distinta(cronaca.get("distinta"))
 
@@ -465,7 +468,8 @@ def render_cronaca(api_key, macro_info=None, loghi_sponsor=lambda: None, leggi_d
             st.caption(f"Liste giocatori dalla distinta pubblicata: {(d.get('casa') or {}).get('squadra', '')} – "
                        f"{(d.get('ospite') or {}).get('squadra', '')}")
         else:
-            st.caption("Nessuna distinta pubblicata trovata: il PDF non avrà le liste dei giocatori.")
+            st.caption("In attesa delle distinte di questa partita: si collegano da sole appena le pubblichi "
+                       "(se le hai già pubblicate prima di archiviare, usa 🔄 Ricarica).")
         b1, b2 = st.columns(2)
         if b1.button("🔄 Ricarica la distinta pubblicata", use_container_width=True):
             st.session_state["cronaca_ricarica_distinta"] = True
@@ -476,13 +480,13 @@ def render_cronaca(api_key, macro_info=None, loghi_sponsor=lambda: None, leggi_d
             st.session_state["cronaca_conferma_nuova"] = True
             st.rerun()
         if st.session_state.get("cronaca_conferma_nuova"):
-            st.warning("Questa partita va nella sezione 📚 Archivio (da lì si può riaprire) e la Cronaca riparte "
-                       "vuota, con le squadre della distinta pubblicata. Continuare?")
+            st.warning("Questa partita va nella sezione 📚 Archivio (da lì si può riaprire). Poi tutto riparte "
+                       "vuoto, anche la sezione Distinta: le liste arriveranno dalle nuove distinte pubblicate. Continuare?")
             c1, c2 = st.columns(2)
             if c1.button("✅ Sì, archivia", type="primary", use_container_width=True):
                 st.session_state.pop("cronaca_conferma_nuova", None)
-                archivia_e_azzera(cronaca, casa=info.get("nome_casa", ""), ospite=info.get("nome_ospite", ""),
-                                  campionato=info.get("campionato", ""), data=info.get("data", ""))
+                archivia_e_azzera(cronaca)
+                st.session_state["azzera_distinta"] = True  # anche la sezione Distinta riparte da zero
                 st.rerun()
             if c2.button("Annulla", use_container_width=True):
                 st.session_state.pop("cronaca_conferma_nuova", None)
