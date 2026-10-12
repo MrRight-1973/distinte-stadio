@@ -108,7 +108,8 @@ def _carica_dalla_pubblicazione(token, repo, branch):
 
 
 def render_gestione_sponsor(token, repo, branch=None):
-    with st.expander(f"🏷️ Gestione Sponsor (massimo {MAX_SPONSOR})"):
+    with st.container():
+        st.caption(f"Loghi degli sponsor per la pagina live e i PDF (massimo {MAX_SPONSOR}).")
         if not (token and repo):
             st.info("Servono GITHUB_TOKEN e GITHUB_REPO nei secrets per gestire gli sponsor.")
             return
