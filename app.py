@@ -289,6 +289,13 @@ def render_segreteria():
                             st.session_state["dati_mappati"] = True
                             st.rerun()
 
+    if "dati_mappati" not in st.session_state:
+        if st.button("✍️ Compila le liste a mano o da CSV (senza scansione)", use_container_width=True):
+            st.session_state["macro_info"] = unisci_scansioni({}, {})
+            st.session_state["dati_mappati"] = True
+            st.session_state["firma_scansione_attiva"] = firma_correnti
+            st.rerun()
+
     if "dati_mappati" in st.session_state:
         st.markdown("---")
         info_gara = render_info_match(st.session_state["macro_info"])
