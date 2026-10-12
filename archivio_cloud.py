@@ -138,3 +138,24 @@ def elimina_file(percorsi):
     percorsi = [p for p in percorsi if p]
     if percorsi:
         _chiama("DELETE", f"/storage/v1/object/{SPAZIO}", json={"prefixes": percorsi})
+
+
+def elenco_file(cartella):
+    """{nome: byte} dei file di una cartella dello spazio file (foto, audio, ...)."""
+    trovati, inizio = {}, 0
+    while True:
+        r = _chiama("POST", f"/storage/v1/object/list/{SPAZIO}", json={
+            "prefix": cartella, "limit": 1000, "offset": inizio, "sortBy": {"column": "name", "order": "asc"}})
+        voci = r.json()
+        for v in voci:
+            if v.get("id"):  # le sottocartelle non hanno id
+                trovati[v["name"]] = int((v.get("metadata") or {}).get("size") or 0)
+        if len(voci) < 1000:
+            return trovati
+        inizio += 1000
+
+
+def dati_partite():
+    """{id partita: dati} di tutte le partite, in una sola richiesta."""
+    r = _chiama("GET", f"/rest/v1/{TABELLA}", params={"select": "id,dati"})
+    return {riga["id"]: riga["dati"] for riga in r.json()}

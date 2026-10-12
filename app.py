@@ -8,6 +8,7 @@ import qrcode
 import streamlit as st
 
 import archivio_cloud
+from ui_archivio import render_archivio
 from cronaca_manager import salva_foto_distinte_pubblicate
 from estrattore import analizza_distinta, unisci_scansioni
 from github_publisher import PubblicazioneErrore, leggi_file, pubblica_su_github, url_pagina_da_repo
@@ -168,10 +169,15 @@ def render_segreteria():
             st.session_state["autenticato"] = False
             st.rerun()
 
+    if "vai_a_sezione" in st.session_state:  # es. "Riapri" dall'archivio porta alla Cronaca
+        st.session_state["sezione_segreteria"] = st.session_state.pop("vai_a_sezione")
     sezione = st.radio(
-        "Sezione", ["📋 Distinta", "🎙️ Cronaca partita"], horizontal=True, label_visibility="collapsed",
-        key="sezione_segreteria",
+        "Sezione", ["📋 Distinta", "🎙️ Cronaca partita", "📚 Archivio"], horizontal=True,
+        label_visibility="collapsed", key="sezione_segreteria",
     )
+    if sezione == "📚 Archivio":
+        render_archivio(loghi_sponsor_pdf)
+        return
     if sezione == "🎙️ Cronaca partita":
         render_cronaca(leggi_secret("OPENAI_API_KEY"), st.session_state.get("macro_info"), loghi_sponsor_pdf,
                        distinta_pubblicata)
