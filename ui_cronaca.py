@@ -521,7 +521,7 @@ def render_cronaca(api_key, macro_info=None, loghi_sponsor=lambda: None, leggi_d
         st.info("📋 In attesa delle distinte di questa partita: carica le foto nella sezione 📋 Distinta, "
                 "esegui la scansione e pubblica. La cronaca si apre da sola appena la distinta è pubblicata.")
         if st.button("🔄 Ricarica la distinta pubblicata", use_container_width=True,
-                     help="Se le distinte di questa partita erano già state pubblicate prima dell'archiviazione"):
+                     help="Ricontrolla se la distinta di questa partita è stata pubblicata"):
             st.session_state["cronaca_ricarica_distinta"] = True
             st.rerun()
         return
