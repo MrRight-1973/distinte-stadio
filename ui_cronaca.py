@@ -12,7 +12,8 @@ import streamlit as st
 
 from cronaca_manager import (
     CAMPI_GIOCATORE,
-    ESITI_RIGORE,
+    ICONE_TIPO,
+    SCELTE_DETTAGLIO,
     LUNGHEZZE,
     TIPI_NOTA,
     aggiungi_foto_referto,
@@ -48,6 +49,8 @@ from cronaca_pdf import genera_pdf_resoconto
 from pdf_immagini import immagini_jpeg
 
 SQUADRE = {"": "—", "casa": "Casa", "ospite": "Ospite"}
+# I tipi nell'ordine in cui servono più spesso a bordo campo
+TIPI_EVENTO_GUIDA = ["Gol", "Occasione", "Ammonizione", "Sostituzione", "Rigore", "Espulsione", "Infortunio", "Nota"]
 
 
 @st.fragment(run_every=1)
@@ -141,50 +144,72 @@ def _referto(cronaca):
 
 
 def _scelta_giocatori(cronaca, tipo, squadra, n_form, iniziali=None):
-    """Menu per scegliere i giocatori dell'evento (marcatore, assist, chi entra e chi esce...).
+    """Scelte a tocco (come è nato il gol, motivo del cartellino...) e menu dei giocatori dell'evento.
     iniziali: i dettagli già salvati, per correggere una nota.
-    Restituisce i dettagli da salvare nella nota, es. {"giocatore": "ROSSI ANDREA", "giocatore_n": 9}."""
-    campi = CAMPI_GIOCATORE.get(tipo)
+    Restituisce i dettagli da salvare nella nota, es. {"giocatore": "ROSSI ANDREA", "giocatore_n": 9, "come": "Punizione"}."""
     iniziali = iniziali or {}
     dettagli = {}
+    scelta = SCELTE_DETTAGLIO.get(tipo)
+    if scelta:
+        campo, domanda, opzioni = scelta
+        valore = st.pills(domanda, opzioni, key=f"cronaca_{campo}_{n_form}",
+                          default=iniziali.get(campo) if iniziali.get(campo) in opzioni else None)
+        if valore:
+            dettagli[campo] = valore
+    campi = CAMPI_GIOCATORE.get(tipo)
     if not campi:
         return dettagli
     if squadra not in ("casa", "ospite"):
         st.caption("Scegli la squadra per vedere i giocatori.")
         return dettagli
-    giocatori = rosa(cronaca, squadra)
+    # Nell'autogol il giocatore è della squadra avversaria
+    autogol = tipo == "Gol" and dettagli.get("come") == "Autogol"
+    lato = {"casa": "ospite", "ospite": "casa"}[squadra] if autogol else squadra
+    giocatori = rosa(cronaca, lato)
     if not giocatori:
         st.caption("Nessuna distinta collegata: pubblicala nella sezione Distinta (o usa «Ricarica la distinta pubblicata») per scegliere i giocatori dai menu.")
         return dettagli
+    if autogol:
+        campi = [("giocatore", "Autore dell'autogol")]
     opzioni = [None] + giocatori
-    colonne = st.columns(len(campi) + (1 if tipo == "Rigore" else 0))
+    colonne = st.columns(len(campi))
     for (campo, etichetta), col in zip(campi, colonne):
         gia = next((i for i, g in enumerate(opzioni) if g and g[1] == iniziali.get(campo)), 0)
-        scelto = col.selectbox(etichetta, opzioni, index=gia, key=f"cronaca_{campo}_{n_form}", filter_mode=None,
+        scelto = col.selectbox(etichetta, opzioni, index=gia, key=f"cronaca_{campo}_{lato}_{n_form}", filter_mode=None,
                                format_func=lambda g: "—" if g is None else f"{g[0]} {g[1]}")
         if scelto:
             dettagli[campo], dettagli[f"{campo}_n"] = scelto[1], scelto[0]
-    if tipo == "Rigore":
-        esito = ESITI_RIGORE.index(iniziali["esito"]) if iniziali.get("esito") in ESITI_RIGORE else 0
-        dettagli["esito"] = colonne[-1].selectbox("Esito", ESITI_RIGORE, index=esito, key=f"cronaca_esito_{n_form}",
-                                                  filter_mode=None)
     return dettagli
 
 
 def _form_nota(cronaca, api_key, giocatori):
-    c_tipo, c_squadra = st.columns(2)
-    tipo = c_tipo.selectbox("Tipo", TIPI_NOTA, key="cronaca_tipo", filter_mode=None)
-    squadra = c_squadra.selectbox("Squadra", list(SQUADRE), format_func=lambda k: SQUADRE[k], key="cronaca_squadra",
-                                  filter_mode=None)
-    # I menu dei giocatori ripartono vuoti dopo ogni nota
+    """Presa note guidata: si tocca cosa è successo, di quale squadra, chi e come; il commento è facoltativo."""
     n_form = st.session_state.setdefault("cronaca_form_n", 0)
+    nomi = {"casa": cronaca["partita"].get("casa") or "Casa", "ospite": cronaca["partita"].get("ospite") or "Ospite"}
+    tipo = st.pills("1 · Cosa è successo?", TIPI_EVENTO_GUIDA, key=f"cronaca_tipo_{n_form}",
+                    format_func=lambda t: f"{ICONE_TIPO.get(t, '')} {t}")
+    if not tipo:
+        st.caption("Tocca il tipo di evento: il minuto viene preso in quel momento.")
+        return _messaggio_nota()
+
+    # Il minuto è quello in cui si tocca il tipo, non quello in cui si finisce di compilare
+    chiave_minuto = f"cronaca_minuto_{n_form}"
+    if chiave_minuto not in st.session_state:
+        st.session_state[chiave_minuto] = minuto_di_gioco(cronaca)
+    minuto = st.session_state[chiave_minuto]
+
+    squadra = st.pills("2 · Squadra", ["casa", "ospite"], key=f"cronaca_squadra_{n_form}",
+                       format_func=lambda k: nomi[k]) or ""
     dettagli = _scelta_giocatori(cronaca, tipo, squadra, n_form)
 
-    def registrata():
-        st.session_state["cronaca_form_n"] = n_form + 1
+    def registrata(nota):
+        st.session_state["cronaca_messaggio"] = (
+            "success", f"{nota['minuto']} {tipo} {nomi.get(squadra, '')} {descrizione_nota(nota)} {nota['testo']}".strip())
+        st.session_state["cronaca_form_n"] = n_form + 1  # si riparte da capo
         st.rerun()
 
-    # Commento vocale: la chiave cambia dopo ogni registrazione, così il registratore si svuota
+    st.caption(f"⏱️ {minuto} · commento facoltativo, a voce o scritto")
+    # Commento vocale: registrandolo, l'evento si salva subito con le scelte fatte sopra
     n_audio = st.session_state.setdefault("cronaca_audio_n", 0)
     audio = st.audio_input("🎙️ Commento vocale", key=f"cronaca_audio_{n_audio}")
     if audio is not None:
@@ -192,33 +217,39 @@ def _form_nota(cronaca, api_key, giocatori):
         impronta = hashlib.sha1(dati).hexdigest()
         if st.session_state.get("cronaca_ultimo_audio") != impronta:
             st.session_state["cronaca_ultimo_audio"] = impronta
-            minuto = minuto_di_gioco(cronaca)  # il minuto di quando si è finito di parlare
+            st.session_state["cronaca_audio_n"] = n_audio + 1
             nome_file = salva_audio(dati)
             try:
                 with st.spinner("Trascrizione in corso..."):
                     testo = trascrivi(api_key, dati, cronaca, giocatori)
                 nota = aggiungi_nota(cronaca, testo or ("" if dettagli else "(nota vocale vuota)"), tipo, squadra,
                                      "voce", None, minuto, dettagli)
-                st.session_state["cronaca_messaggio"] = ("success", f"{minuto} {descrizione_nota(nota)} {testo}".strip())
             except Exception as e:
                 # L'audio resta salvato: si può ritrascrivere più tardi
-                aggiungi_nota(cronaca, "(da trascrivere)", tipo, squadra, "voce", nome_file, minuto, dettagli)
-                st.session_state["cronaca_messaggio"] = ("warning", f"Nota salvata ma non trascritta: {e}")
-            st.session_state["cronaca_audio_n"] = n_audio + 1
-            registrata()
+                nota = aggiungi_nota(cronaca, "(da trascrivere)", tipo, squadra, "voce", nome_file, minuto, dettagli)
+                st.session_state["cronaca_avviso"] = f"Commento non trascritto, si può riprovare più tardi: {e}"
+            registrata(nota)
 
-    # Commento scritto (facoltativo se i giocatori sono già scelti dai menu)
-    with st.form("cronaca_nota_testo", clear_on_submit=True):
-        testo = st.text_input("✏️ Commento scritto", placeholder="es. di testa su cross dalla destra")
-        etichetta = "Aggiungi evento" if dettagli else "Aggiungi nota"
-        if st.form_submit_button(etichetta, use_container_width=True) and (testo.strip() or dettagli):
-            nota = aggiungi_nota(cronaca, testo, tipo, squadra, "testo", dettagli=dettagli)
-            st.session_state["cronaca_messaggio"] = ("success", f"{nota['minuto']} {tipo} {descrizione_nota(nota)}".strip())
-            registrata()
+    with st.form(f"cronaca_nota_testo_{n_form}"):
+        testo = st.text_input("✏️ Commento scritto", placeholder="es. tiro a giro sul secondo palo")
+        if st.form_submit_button("✅ Registra", type="primary", use_container_width=True):
+            if testo.strip() or dettagli or tipo != "Nota":
+                registrata(aggiungi_nota(cronaca, testo, tipo, squadra, "testo", None, minuto, dettagli))
+            else:
+                st.warning("Per una nota scrivi o detta un commento.")
+    if st.button("✖️ Annulla", use_container_width=True, key=f"cronaca_annulla_{n_form}"):
+        st.session_state["cronaca_form_n"] = n_form + 1
+        st.rerun()
+    _messaggio_nota()
 
+
+def _messaggio_nota():
     messaggio = st.session_state.pop("cronaca_messaggio", None)
     if messaggio:
         getattr(st, messaggio[0])(messaggio[1])
+    avviso = st.session_state.pop("cronaca_avviso", None)
+    if avviso:
+        st.warning(avviso)
 
 
 def _etichetta_nota(n, nomi):
