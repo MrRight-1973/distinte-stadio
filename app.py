@@ -24,6 +24,7 @@ from cronaca_manager import (
     togli_distinte_caricate,
     togli_liste_in_lavorazione,
 )
+from controlli import controlla_lista
 from estrattore import MODELLI_LETTURA, analizza_distinta, unisci_scansioni
 from github_publisher import PubblicazioneErrore, leggi_file, pubblica_su_github, url_pagina_da_repo
 from pdf_manager import genera_pdf, loghi_da_cartella_locale, numero_sponsor
@@ -131,6 +132,19 @@ def render_opzioni_lettura():
                "l'impostazione e rifai la scansione con le stesse foto. La lettura ingrandita e i modelli più "
                "nuovi costano un po' di più; GPT-5 impiega molto più tempo.")
     render_costi_letture(dettaglio=True)
+
+
+def render_controllo_liste(dati_c, dati_o):
+    """Quello che conviene ricontrollare sul foglio, aggiornato a ogni correzione."""
+    avvisi = (controlla_lista(dati_c["squadra"] or "Casa", giocatori_da_griglia("griglia_casa"), dati_c["allenatore"])
+              + controlla_lista(dati_o["squadra"] or "Ospite", giocatori_da_griglia("griglia_ospite"),
+                                dati_o["allenatore"]))
+    with st.container(border=True):
+        if not avvisi:
+            st.markdown("🔎 **Controllo liste:** ✅ nessun problema trovato.")
+            return
+        st.markdown(f"🔎 **Controllo liste:** {len(avvisi)} cose da ricontrollare sul foglio prima di pubblicare")
+        st.markdown("\n".join(f"- {a}" for a in avvisi))
 
 
 def descrizione_lettura(modello, ingrandita):
@@ -356,6 +370,7 @@ def azzera_sezione_distinta():
 
 
 SEZIONI = ["📋 Distinta", "🎙️ Cronaca partita", "📚 Archivio", "⚙️ Opzioni"]
+SOTTOSEZIONI_OPZIONI = ["🤖 Lettura AI", "🏷️ Sponsor"]  # per una nuova impostazione basta aggiungerla qui
 
 
 def render_segreteria():
@@ -377,8 +392,12 @@ def render_segreteria():
 
     sezione = st.radio("Sezione", SEZIONI, horizontal=True, label_visibility="collapsed", key="sezione_segreteria")
     if sezione == "⚙️ Opzioni":
-        render_opzioni_lettura()
-        st.divider()
+        sotto = st.segmented_control("Opzioni", SOTTOSEZIONI_OPZIONI, key="sottosezione_opzioni",
+                                     default=SOTTOSEZIONI_OPZIONI[0], label_visibility="collapsed")
+        sotto = sotto or SOTTOSEZIONI_OPZIONI[0]  # un secondo clic sul pulsante scelto lo deseleziona
+        if sotto == "🤖 Lettura AI":
+            render_opzioni_lettura()
+            return
         st.subheader("🏷️ Sponsor")
         render_gestione_sponsor(leggi_secret("GITHUB_TOKEN"), leggi_secret("GITHUB_REPO"), leggi_secret("GITHUB_BRANCH"))
         return
@@ -490,6 +509,7 @@ def render_segreteria():
             st.info("Non sono riuscito a leggere dalle distinte: " + ", ".join(mancanti) + ". Compilali a mano prima di pubblicare.")
         for avviso in inf.get("avvisi", []):
             st.warning(avviso)
+        render_controllo_liste(dati_c, dati_o)
 
         st.markdown("---")
         if st.button("⚡ Fase 3: Pubblica su Web e Genera PDF A4", type="primary", use_container_width=True):
