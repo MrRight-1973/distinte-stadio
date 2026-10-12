@@ -27,7 +27,7 @@ from nomi_file import nome_file_gara
 # Limiti del piano gratuito di Supabase
 LIMITE_FILE = 1024 ** 3        # 1 GB per foto e note vocali
 LIMITE_DATI = 500 * 1024 ** 2  # 500 MB di database
-CARTELLE = ("foto", "audio", "distinte_pubblicate")
+CARTELLE = ("foto", "audio", "distinte_pubblicate", "in_lavorazione")
 
 
 def _misura(n):
@@ -64,7 +64,7 @@ def _dettaglio_spazio(file, tutte):
     gruppi = {"archivio": 0, "aperta": 0, "distinte": 0, "orfani": 0}
     orfani = []
     for percorso, byte in file.items():
-        if percorso.startswith("distinte_pubblicate/"):
+        if percorso.startswith(("distinte_pubblicate/", "in_lavorazione/")):
             gruppi["distinte"] += byte
         elif percorso in usati["aperta"]:
             gruppi["aperta"] += byte
@@ -74,7 +74,7 @@ def _dettaglio_spazio(file, tutte):
             gruppi["orfani"] += byte
             orfani.append(percorso)
     st.caption(f"Partite in archivio {_misura(gruppi['archivio'])} · partita aperta in Cronaca "
-               f"{_misura(gruppi['aperta'])} · foto dell'ultima distinta pubblicata {_misura(gruppi['distinte'])}"
+               f"{_misura(gruppi['aperta'])} · foto delle distinte caricate e pubblicate {_misura(gruppi['distinte'])}"
                + (f" · file non più usati {_misura(gruppi['orfani'])}" if orfani else ""))
     if orfani and st.button(f"🧽 Elimina {len(orfani)} file non più usati ({_misura(gruppi['orfani'])})",
                             use_container_width=True):
