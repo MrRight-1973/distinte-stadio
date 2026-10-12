@@ -18,6 +18,7 @@ from datetime import datetime, timezone
 from openai import OpenAI
 
 import archivio_cloud as cloud
+from nomi_file import nome_file_gara
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 MODELLO_TESTO = "gpt-4o"
@@ -126,7 +127,8 @@ def stato_archivio_online():
 
 
 def _ha_contenuto(cronaca):
-    return bool(cronaca.get("note") or any(cronaca.get(e) for e in ELENCHI_FOTO) or cronaca.get("resoconto"))
+    """Note, foto aggiunte a mano o resoconto (le foto delle distinte si copiano da sole: non contano)."""
+    return bool(cronaca.get("note") or cronaca.get("referto") or cronaca.get("foto_partita") or cronaca.get("resoconto"))
 
 
 def _metti_in_archivio(cronaca):
@@ -139,6 +141,7 @@ def _metti_in_archivio(cronaca):
         _online(cloud.salva_partita, cronaca, False, punteggio(cronaca))
     elif cronaca.get("id"):
         _online(cloud.elimina_partita, cronaca["id"])
+        _cancella_foto(cronaca.get("foto_distinte") or [])  # solo le copie delle distinte: la partita era vuota
 
 
 def archivia_e_azzera(cronaca, **partita):
@@ -191,6 +194,22 @@ def conta_file(dati):
     return foto, sum(1 for n in dati.get("note") or [] if n.get("audio"))
 
 
+def file_collegati(tutte):
+    """Percorsi online usati dalle partite: {"archivio": set, "aperta": set} (tutte: {id: dati}),
+    più la partita aperta letta dal disco."""
+    aperta = carica_cronaca()
+    usati = {"archivio": set(), "aperta": {o for o, _ in _file_della_partita(aperta)}}
+    for id_partita, dati in tutte.items():
+        if id_partita != aperta.get("id"):
+            usati["archivio"] |= {o for o, _ in _file_della_partita(dati)}
+    return usati
+
+
+def pulisci_file_orfani(orfani):
+    """Elimina dall'archivio online file che nessuna partita usa più."""
+    cloud.elimina_file(list(orfani))
+
+
 def _nome_cartella(dati):
     p = dati.get("partita") or {}
     testo = " ".join(x for x in (p.get("data"), p.get("casa"), "-", p.get("ospite")) if x) or dati.get("id", "partita")
@@ -211,8 +230,10 @@ def crea_backup(id_partite, genera_pdf=None):
             cartella = _nome_cartella(dati)
             z.writestr(f"{cartella}/partita.json", json.dumps(dati, ensure_ascii=False, indent=2))
             if genera_pdf:
+                p = dati.get("partita") or {}
                 try:
-                    z.writestr(f"{cartella}/resoconto.pdf", genera_pdf(_completa(dati)))
+                    z.writestr(f"{cartella}/{nome_file_gara('Resoconto', p.get('data'), p.get('casa'), p.get('ospite'))}",
+                               genera_pdf(_completa(dati)))
                 except Exception:
                     pass  # un PDF non riuscito non deve bloccare il backup di foto e dati
             for online, nello_zip in _file_della_partita(dati):
@@ -371,8 +392,9 @@ ESITI_RIGORE = ["Segnato", "Parato", "Fuori / palo"]
 
 # Per ogni tipo, una scelta a tocco che descrive l'evento senza doverlo scrivere: (campo, domanda, opzioni)
 SCELTE_DETTAGLIO = {
+    # Il rigore non c'è: ha il suo evento "Rigore" con l'esito
     "Gol": ("come", "Come?", ["Azione", "Tiro da fuori", "Colpo di testa", "Punizione", "Calcio d'angolo",
-                              "Rigore", "Contropiede", "Autogol"]),
+                              "Contropiede", "Autogol"]),
     "Rigore": ("esito", "Esito", ESITI_RIGORE),
     "Ammonizione": ("motivo", "Motivo", ["Fallo", "Proteste", "Simulazione", "Perdita di tempo", "Comportamento"]),
     "Espulsione": ("motivo", "Motivo", ["Doppia ammonizione", "Fallo grave", "Chiara occasione da gol",
@@ -815,6 +837,19 @@ def leggi_foto_referto(nome):
 def togli_foto_referto(cronaca, nome, elenco="referto"):
     cronaca[elenco] = [n for n in cronaca.get(elenco, []) if n != nome]
     salva_cronaca(cronaca)
+    if not any(nome in (cronaca.get(e) or []) for e in ELENCHI_FOTO):
+        _cancella_foto([nome])
+
+
+def _cancella_foto(nomi):
+    """Toglie le foto dal disco dell'app e dall'archivio online (così lo spazio si libera davvero)."""
+    for nome in nomi:
+        try:
+            os.remove(os.path.join(_cartella_referto(), nome))
+        except OSError:
+            pass
+        _da_caricare.pop(f"foto/{nome}", None)
+    _online(cloud.elimina_file, [f"foto/{n}" for n in nomi])
 
 
 # --- Foto delle distinte pubblicate --------------------------------------------
@@ -853,6 +888,7 @@ def _copia_foto_distinte(cronaca):
         except OSError:
             pass  # foto di quella squadra non caricata
     if nuove:
+        _cancella_foto(cronaca.get("foto_distinte") or [])  # le copie vecchie non servono più
         cronaca["foto_distinte"] = []
         for dati in nuove:
             aggiungi_foto_referto(cronaca, dati, "foto_distinte")

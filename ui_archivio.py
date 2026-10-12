@@ -14,12 +14,15 @@ from cronaca_manager import (
     crea_backup,
     elimina_partita_archiviata,
     fase_in_corso,
+    file_collegati,
+    pulisci_file_orfani,
     partite_archiviate,
     riapri_partita,
     ripristina_backup,
     stato_archivio_online,
 )
 from cronaca_pdf import genera_pdf_resoconto
+from nomi_file import nome_file_gara
 
 # Limiti del piano gratuito di Supabase
 LIMITE_FILE = 1024 ** 3        # 1 GB per foto e note vocali
@@ -51,7 +54,33 @@ def _spazio(tutte):
                     text=f"Dati delle partite: {_misura(usati_dati)} su 500 MB ({usati_dati / LIMITE_DATI:.1%})")
         if usati_file > 0.8 * LIMITE_FILE:
             st.warning("Lo spazio per le foto è quasi pieno: fai un backup delle partite vecchie e libera spazio.")
+        _dettaglio_spazio(file, tutte)
     return file
+
+
+def _dettaglio_spazio(file, tutte):
+    """Di chi sono le foto: archivio, partita aperta, distinte pubblicate, file rimasti senza partita."""
+    usati = file_collegati(tutte)
+    gruppi = {"archivio": 0, "aperta": 0, "distinte": 0, "orfani": 0}
+    orfani = []
+    for percorso, byte in file.items():
+        if percorso.startswith("distinte_pubblicate/"):
+            gruppi["distinte"] += byte
+        elif percorso in usati["aperta"]:
+            gruppi["aperta"] += byte
+        elif percorso in usati["archivio"]:
+            gruppi["archivio"] += byte
+        else:
+            gruppi["orfani"] += byte
+            orfani.append(percorso)
+    st.caption(f"Partite in archivio {_misura(gruppi['archivio'])} · partita aperta in Cronaca "
+               f"{_misura(gruppi['aperta'])} · foto dell'ultima distinta pubblicata {_misura(gruppi['distinte'])}"
+               + (f" · file non più usati {_misura(gruppi['orfani'])}" if orfani else ""))
+    if orfani and st.button(f"🧽 Elimina {len(orfani)} file non più usati ({_misura(gruppi['orfani'])})",
+                            use_container_width=True):
+        if _prova(pulisci_file_orfani, orfani):
+            st.session_state["arch_messaggio"] = f"🧽 Eliminati {len(orfani)} file che nessuna partita usava."
+            st.rerun()
 
 
 def _prova(funzione, *argomenti):
@@ -133,7 +162,11 @@ def _azioni_selezione(selezionate, loghi_sponsor, cronaca):
             st.rerun()
         return
 
-    nome = f"backup_partite_{datetime.now():%Y%m%d_%H%M}.zip"
+    if len(selezionate) == 1:
+        p = selezionate[0]
+        nome = nome_file_gara("Backup", p.get("data"), p.get("casa"), p.get("ospite"), "zip")
+    else:
+        nome = f"Backup_{len(selezionate)}_partite_{datetime.now():%Y-%m-%d}.zip"
 
     def scaricato():
         st.session_state["arch_backup"]["scaricato"] = True

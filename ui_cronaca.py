@@ -47,6 +47,7 @@ from cronaca_manager import (
     trascrivi,
 )
 from cronaca_pdf import genera_pdf_resoconto
+from nomi_file import nome_file_gara
 from pdf_immagini import immagini_jpeg
 
 SQUADRE = {"": "—", "casa": "Casa", "ospite": "Ospite"}
@@ -412,11 +413,10 @@ def _resoconto(cronaca, api_key, giocatori, loghi_sponsor, leggi_distinta):
         st.session_state["cronaca_pdf"] = genera_pdf_resoconto(cronaca, giocatori, loghi_sponsor())
         st.session_state["cronaca_pdf_impronta"] = impronta
     p = cronaca["partita"]
-    nome = "_".join(x for x in (p.get("casa"), p.get("ospite")) if x).replace(" ", "_") or "partita"
     st.download_button(
         "💾 Scarica PDF del resoconto",
         data=st.session_state["cronaca_pdf"],
-        file_name=f"resoconto_{nome}.pdf",
+        file_name=nome_file_gara("Resoconto", p.get("data"), p.get("casa"), p.get("ospite")),
         mime="application/pdf",
         type="primary",
         use_container_width=True,
@@ -466,15 +466,27 @@ def render_cronaca(api_key, macro_info=None, loghi_sponsor=lambda: None, leggi_d
                        f"{(d.get('ospite') or {}).get('squadra', '')}")
         else:
             st.caption("Nessuna distinta pubblicata trovata: il PDF non avrà le liste dei giocatori.")
-        if st.button("🔄 Ricarica la distinta pubblicata"):
+        b1, b2 = st.columns(2)
+        if b1.button("🔄 Ricarica la distinta pubblicata", use_container_width=True):
             st.session_state["cronaca_ricarica_distinta"] = True
             cronaca["distinta"] = None
             salva_cronaca(cronaca)
             st.rerun()
-        if st.button("🆕 Nuova partita (archivia questa cronaca)"):
-            archivia_e_azzera(cronaca, casa=info.get("nome_casa", ""), ospite=info.get("nome_ospite", ""),
-                              campionato=info.get("campionato", ""), data=info.get("data", ""))
+        if b2.button("🆕 Nuova partita (archivia questa)", use_container_width=True):
+            st.session_state["cronaca_conferma_nuova"] = True
             st.rerun()
+        if st.session_state.get("cronaca_conferma_nuova"):
+            st.warning("Questa partita va nella sezione 📚 Archivio (da lì si può riaprire) e la Cronaca riparte "
+                       "vuota, con le squadre della distinta pubblicata. Continuare?")
+            c1, c2 = st.columns(2)
+            if c1.button("✅ Sì, archivia", type="primary", use_container_width=True):
+                st.session_state.pop("cronaca_conferma_nuova", None)
+                archivia_e_azzera(cronaca, casa=info.get("nome_casa", ""), ospite=info.get("nome_ospite", ""),
+                                  campionato=info.get("campionato", ""), data=info.get("data", ""))
+                st.rerun()
+            if c2.button("Annulla", use_container_width=True):
+                st.session_state.pop("cronaca_conferma_nuova", None)
+                st.rerun()
         if stato_archivio_online() is not None:
             st.caption("Le partite chiuse si ritrovano nella sezione 📚 Archivio.")
 
