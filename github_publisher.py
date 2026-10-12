@@ -4,6 +4,11 @@ Tutti i file vengono scritti in UN SOLO commit, così la pagina pubblica non pu�
 mai mostrare un JSON nuovo con un PDF vecchio (o viceversa) e GitHub Pages
 ricostruisce il sito una volta sola.
 
+Il repository della pagina è pubblico e le distinte contengono nomi e anni di
+nascita di ragazzi minorenni: per questo il nuovo commit NON ha genitori e
+sostituisce il ramo. Il ramo contiene sempre un solo commit con lo stato
+attuale, e le distinte delle partite passate non restano nella cronologia.
+
 Il token deve essere un "fine-grained personal access token" con accesso al
 repository della pagina e il permesso "Contents: Read and write".
 """
@@ -151,17 +156,22 @@ def pubblica_su_github(token, repo, file_da_pubblicare, messaggio, branch=None,
         nuovo_albero = r.json()["sha"]
 
         r = _chiama("POST", f"{base}/git/commits", token, timeout,
-                    json={"message": messaggio, "tree": nuovo_albero, "parents": [sha_commit]})
+                    json={"message": messaggio, "tree": nuovo_albero, "parents": []})
         if r.status_code != 201:
             raise PubblicazioneErrore(f"Creazione del commit fallita (HTTP {r.status_code}).")
         nuovo_commit = r.json()["sha"]
 
+        # Il commit senza genitori si sostituisce al ramo solo forzando: prima si controlla
+        # che nel frattempo nessuno (es. il salvataggio degli sponsor) abbia scritto.
+        r = _chiama("GET", f"{base}/git/ref/heads/{branch}", token, timeout)
+        if r.status_code == 200 and r.json()["object"]["sha"] != sha_commit:
+            if tentativo == 0:
+                continue  # il ramo si è mosso: si riparte dall'ultimo commit
+            raise PubblicazioneErrore("Il repository è stato modificato durante la pubblicazione: riprova.")
         r = _chiama("PATCH", f"{base}/git/refs/heads/{branch}", token, timeout,
-                    json={"sha": nuovo_commit, "force": False})
+                    json={"sha": nuovo_commit, "force": True})
         if r.status_code == 200:
             return nuovo_commit
-        if r.status_code == 422 and tentativo == 0:
-            continue  # il ramo si è mosso: si riparte dall'ultimo commit
         raise PubblicazioneErrore(f"Aggiornamento del ramo fallito (HTTP {r.status_code}).")
 
     raise PubblicazioneErrore("Pubblicazione non riuscita: riprova tra qualche istante.")
