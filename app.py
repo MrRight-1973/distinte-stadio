@@ -216,17 +216,42 @@ def pubblica_attesa():
     (senza più liste dei giocatori né PDF della partita chiusa)."""
     token, repo, branch = leggi_secret("GITHUB_TOKEN"), leggi_secret("GITHUB_REPO"), leggi_secret("GITHUB_BRANCH")
     if not (token and repo):
-        return
+        return False
     attesa = json.dumps({"stato": "in_attesa", "aggiornato": datetime.now(timezone.utc).isoformat(timespec="seconds")},
                         ensure_ascii=False, indent=2).encode("utf-8")
     for file in ({"distinta.json": attesa, "distinta.pdf": None}, {"distinta.json": attesa}):
         try:  # il PDF potrebbe non esserci già più: allora si aggiorna solo distinta.json
             pubblica_su_github(token=token, repo=repo, file_da_pubblicare=file,
                                messaggio="In attesa della prossima partita", branch=branch)
-            return
+            return True
         except PubblicazioneErrore as e:
             errore = e
     st.warning(f"Pagina spettatori non aggiornata con l'attesa della prossima partita: {errore}")
+    return False
+
+
+def render_forza_attesa():
+    """Mette subito la pagina spettatori in attesa della prossima partita, senza toccare liste e cronaca."""
+    if st.button("⏳ Metti la pagina live in attesa della prossima partita", use_container_width=True):
+        st.session_state["conferma_attesa"] = True
+        st.rerun()
+    if st.session_state.get("conferma_attesa"):
+        st.warning("La pagina degli spettatori toglie liste e PDF e mostra «In attesa della prossima partita». "
+                   "Qui nell'app non cambia nulla: per rimettere la distinta basta pubblicarla di nuovo. Continuare?")
+        c1, c2 = st.columns(2)
+        if c1.button("✅ Sì, metti in attesa", type="primary", use_container_width=True):
+            st.session_state.pop("conferma_attesa", None)
+            with st.spinner("Aggiorno la pagina spettatori..."):
+                if pubblica_attesa():
+                    st.session_state["messaggio_attesa"] = ("⏳ Pagina spettatori in attesa della prossima partita "
+                                                            "(si aggiorna entro 1-2 minuti).")
+                    st.rerun()
+        if c2.button("Annulla", key="annulla_attesa", use_container_width=True):
+            st.session_state.pop("conferma_attesa", None)
+            st.rerun()
+    messaggio = st.session_state.pop("messaggio_attesa", None)
+    if messaggio:
+        st.success(messaggio)
 
 
 def loghi_sponsor_pdf():
@@ -398,6 +423,8 @@ def render_segreteria():
                     st.warning(f"Foto delle distinte non salvate per il resoconto: {e}")
 
     render_download_buttons()
+    if leggi_secret("GITHUB_TOKEN") and leggi_secret("GITHUB_REPO"):
+        render_forza_attesa()
 
     st.markdown("---")
     render_gestione_sponsor(
