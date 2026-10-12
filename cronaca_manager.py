@@ -178,6 +178,96 @@ def elimina_partita_archiviata(id_partita):
     cloud.elimina_partita(id_partita)
 
 
+def _file_della_partita(dati):
+    """[(percorso online, percorso nello ZIP)] di foto e note vocali di una partita."""
+    file = [(f"foto/{n}", f"foto/{n}") for e in ELENCHI_FOTO for n in dati.get(e) or []]
+    file += [(f"audio/{n['audio']}", f"audio/{n['audio']}") for n in dati.get("note") or [] if n.get("audio")]
+    return file
+
+
+def conta_file(dati):
+    """(foto, note vocali) ancora presenti nella partita."""
+    foto = sum(len(dati.get(e) or []) for e in ELENCHI_FOTO)
+    return foto, sum(1 for n in dati.get("note") or [] if n.get("audio"))
+
+
+def _nome_cartella(dati):
+    p = dati.get("partita") or {}
+    testo = " ".join(x for x in (p.get("data"), p.get("casa"), "-", p.get("ospite")) if x) or dati.get("id", "partita")
+    pulito = re.sub(r"[^\w\-. ]+", "-", testo).strip(" -")
+    return f"{pulito[:80]} [{dati.get('id', '')[:6]}]"
+
+
+def crea_backup(id_partite, genera_pdf=None):
+    """ZIP con, per ogni partita, i dati (partita.json), il resoconto PDF, le foto e le note vocali."""
+    import zipfile
+
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as z:
+        for id_partita in id_partite:
+            dati = cloud.leggi_partita(id_partita)
+            if not dati:
+                continue
+            cartella = _nome_cartella(dati)
+            z.writestr(f"{cartella}/partita.json", json.dumps(dati, ensure_ascii=False, indent=2))
+            if genera_pdf:
+                try:
+                    z.writestr(f"{cartella}/resoconto.pdf", genera_pdf(_completa(dati)))
+                except Exception:
+                    pass  # un PDF non riuscito non deve bloccare il backup di foto e dati
+            for online, nello_zip in _file_della_partita(dati):
+                contenuto = cloud.scarica_file(online)
+                if contenuto is not None:
+                    z.writestr(f"{cartella}/{nello_zip}", contenuto)
+    return buffer.getvalue()
+
+
+def alleggerisci_partita(id_partita):
+    """Toglie foto e note vocali dall'archivio online; note, tabellino e articolo restano."""
+    dati = cloud.leggi_partita(id_partita)
+    if not dati:
+        return
+    foto, audio = conta_file(dati)
+    cloud.elimina_file([online for online, _ in _file_della_partita(dati)])
+    for e in ELENCHI_FOTO:
+        dati[e] = []
+    for n in dati.get("note") or []:
+        n["audio"] = None
+    dati["alleggerita"] = {"il": datetime.now().strftime("%d/%m/%Y"), "foto": foto, "audio": audio}
+    cloud.salva_partita(dati, False, punteggio(_completa(dati)))
+
+
+def ripristina_backup(dati_zip, id_aperta=""):
+    """Rimette nell'archivio online le partite di uno ZIP di backup.
+    Restituisce (nomi ripristinati, quante saltate perché aperte nella Cronaca)."""
+    import zipfile
+
+    ripristinate, saltate = [], 0
+    with zipfile.ZipFile(io.BytesIO(dati_zip)) as z:
+        for nome in z.namelist():
+            if not nome.endswith("/partita.json"):
+                continue
+            cartella = nome[: -len("partita.json")]
+            dati = json.loads(z.read(nome).decode("utf-8"))
+            if not dati.get("id"):
+                continue
+            if dati["id"] == id_aperta:
+                saltate += 1  # la partita aperta nell'app non si sovrascrive
+                continue
+            rimessi = 0
+            for online, nello_zip in _file_della_partita(dati):
+                if f"{cartella}{nello_zip}" in z.namelist():
+                    tipo = "image/jpeg" if online.startswith("foto/") else "audio/wav"
+                    cloud.carica_file(online, z.read(f"{cartella}{nello_zip}"), tipo)
+                    rimessi += 1
+            if rimessi:
+                dati.pop("alleggerita", None)
+            cloud.salva_partita(dati, False, punteggio(_completa(dati)))
+            p = dati.get("partita") or {}
+            ripristinate.append(f"{p.get('casa', '')} - {p.get('ospite', '')}".strip(" -"))
+    return ripristinate, saltate
+
+
 # --- File: copia sul disco dell'app e copia online ------------------------------
 
 def _carica_online(percorso_online, percorso_locale, tipo):
