@@ -166,6 +166,24 @@ def pubblica_distinta(info_gara, dati_c, dati_o):
     )
 
 
+def pubblica_attesa():
+    """Partita archiviata o cancellata: la pagina spettatori mostra l'attesa della prossima partita
+    (senza più liste dei giocatori né PDF della partita chiusa)."""
+    token, repo, branch = leggi_secret("GITHUB_TOKEN"), leggi_secret("GITHUB_REPO"), leggi_secret("GITHUB_BRANCH")
+    if not (token and repo):
+        return
+    attesa = json.dumps({"stato": "in_attesa", "aggiornato": datetime.now(timezone.utc).isoformat(timespec="seconds")},
+                        ensure_ascii=False, indent=2).encode("utf-8")
+    for file in ({"distinta.json": attesa, "distinta.pdf": None}, {"distinta.json": attesa}):
+        try:  # il PDF potrebbe non esserci già più: allora si aggiorna solo distinta.json
+            pubblica_su_github(token=token, repo=repo, file_da_pubblicare=file,
+                               messaggio="In attesa della prossima partita", branch=branch)
+            return
+        except PubblicazioneErrore as e:
+            errore = e
+    st.warning(f"Pagina spettatori non aggiornata con l'attesa della prossima partita: {errore}")
+
+
 def loghi_sponsor_pdf():
     """Loghi sponsor per i PDF: quelli pubblicati, o la cartella locale di riserva."""
     loghi, _ = loghi_per_pdf(leggi_secret("GITHUB_TOKEN"), leggi_secret("GITHUB_REPO"), leggi_secret("GITHUB_BRANCH"))
@@ -179,7 +197,8 @@ def distinta_pubblicata():
     if not (leggi_secret("GITHUB_TOKEN") and leggi_secret("GITHUB_REPO")):
         return None
     dati = leggi_file(leggi_secret("GITHUB_TOKEN"), leggi_secret("GITHUB_REPO"), "distinta.json", leggi_secret("GITHUB_BRANCH"))
-    return json.loads(dati) if dati else None
+    distinta = json.loads(dati) if dati else None
+    return distinta if distinta and distinta.get("casa") else None  # "in attesa": nessuna distinta
 
 
 def render_login():
@@ -213,6 +232,8 @@ def azzera_sezione_distinta():
 def render_segreteria():
     if st.session_state.pop("azzera_distinta", False):
         azzera_sezione_distinta()
+        with st.spinner("Aggiorno la pagina spettatori: in attesa della prossima partita..."):
+            pubblica_attesa()
     col_titolo, col_esci = st.columns([5, 1])
     with col_titolo:
         st.title("⚽ Centro Gestione Gara - Pannello Segreteria")
