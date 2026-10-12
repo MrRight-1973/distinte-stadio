@@ -1,4 +1,4 @@
-"""Sezione "Gestione Sponsor" del pannello segreteria.
+"""Gestione degli sponsor, nella sezione Opzioni del pannello segreteria.
 
 Si caricano i loghi (anche tutti insieme), il sistema li pulisce e li dispone da solo;
 con le frecce si cambia l'ordine, col cestino si toglie un logo. "Salva e pubblica"
