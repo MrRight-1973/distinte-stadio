@@ -7,6 +7,7 @@ import pandas as pd
 import qrcode
 import streamlit as st
 
+import archivio_cloud
 from cronaca_manager import salva_foto_distinte_pubblicate
 from estrattore import analizza_distinta, unisci_scansioni
 from github_publisher import PubblicazioneErrore, leggi_file, pubblica_su_github, url_pagina_da_repo
@@ -35,6 +36,9 @@ def leggi_secret(nome, default=None):
         return st.secrets.get(nome, default)
     except Exception:
         return default
+
+
+archivio_cloud.configura(leggi_secret("SUPABASE_URL"), leggi_secret("SUPABASE_KEY"))
 
 
 def link_pagina_spettatori():

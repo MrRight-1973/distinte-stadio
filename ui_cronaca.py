@@ -27,6 +27,8 @@ from cronaca_manager import (
     carica_cronaca,
     chiudi_tempo,
     descrizione_nota,
+    elimina_partita_archiviata,
+    fase_in_corso,
     genera_resoconto,
     giocatori_da_distinta,
     imposta_distinta,
@@ -34,17 +36,21 @@ from cronaca_manager import (
     leggi_foto_referto,
     minuto_di_gioco,
     note_in_ordine,
+    partite_archiviate,
     orologio,
     punteggio,
     ricalcola_eventi,
+    riapri_partita,
     rosa,
     salva_audio,
     salva_cronaca,
+    stato_archivio_online,
     stato_gara,
     testo_semplice,
     togli_foto_referto,
     trascrivi,
 )
+import archivio_cloud
 from cronaca_pdf import genera_pdf_resoconto
 from pdf_immagini import immagini_jpeg
 
@@ -422,6 +428,60 @@ def _resoconto(cronaca, api_key, giocatori, loghi_sponsor, leggi_distinta):
     )
 
 
+def _archivio(cronaca):
+    """Partite salvate online: riaprirle per correggerle o eliminarle."""
+    if not st.toggle("📚 Archivio partite", key="cronaca_archivio_aperto"):
+        return
+    if stato_archivio_online() is None:
+        st.caption("Per conservare lo storico delle partite collega l'archivio online "
+                   "(SUPABASE_URL e SUPABASE_KEY nei secrets dell'app).")
+        return
+    try:
+        partite = partite_archiviate(cronaca)
+    except archivio_cloud.ArchivioErrore as e:
+        st.warning(str(e))
+        return
+    if not partite:
+        st.caption("Nessuna partita in archivio: ci finiscono con \"🆕 Nuova partita\".")
+        return
+    da_eliminare = st.session_state.get("cronaca_da_eliminare")
+    for p in partite:
+        gol = "–" if p.get("gol_casa") is None else f"{p['gol_casa']} – {p['gol_ospite']}"
+        with st.container(border=True):
+            st.markdown(f"**{p.get('casa') or 'Casa'} {gol} {p.get('ospite') or 'Ospite'}**")
+            st.caption(" · ".join(x for x in (p.get("data"), p.get("campionato")) if x) or "Senza data")
+            if da_eliminare == p["id"]:
+                st.warning("Eliminare definitivamente questa partita, con foto e note vocali?")
+                c1, c2 = st.columns(2)
+                if c1.button("🗑️ Sì, elimina", key=f"arch_si_{p['id']}", type="primary", use_container_width=True):
+                    try:
+                        elimina_partita_archiviata(p["id"])
+                    except archivio_cloud.ArchivioErrore as e:
+                        st.error(str(e))
+                    else:
+                        st.session_state.pop("cronaca_da_eliminare", None)
+                        st.rerun()
+                if c2.button("Annulla", key=f"arch_no_{p['id']}", use_container_width=True):
+                    st.session_state.pop("cronaca_da_eliminare", None)
+                    st.rerun()
+                continue
+            c1, c2 = st.columns(2)
+            if c1.button("📂 Riapri", key=f"arch_apri_{p['id']}", use_container_width=True):
+                if fase_in_corso(cronaca):
+                    st.error("C'è un tempo in corso: chiudilo prima di riaprire un'altra partita.")
+                else:
+                    try:
+                        riapri_partita(cronaca, p["id"])
+                    except archivio_cloud.ArchivioErrore as e:
+                        st.error(str(e))
+                    else:
+                        st.session_state["cronaca_messaggio"] = ("success", "📂 Partita riaperta: quella di prima è in archivio.")
+                        st.rerun()
+            if c2.button("🗑️ Elimina", key=f"arch_elimina_{p['id']}", use_container_width=True):
+                st.session_state["cronaca_da_eliminare"] = p["id"]
+                st.rerun()
+
+
 def render_cronaca(api_key, macro_info=None, loghi_sponsor=lambda: None, leggi_distinta=lambda: None):
     """loghi_sponsor: funzione che restituisce i loghi (bytes) da stampare nel PDF.
     leggi_distinta: funzione che restituisce l'ultima distinta pubblicata (info_gara, casa, ospite)."""
@@ -440,6 +500,9 @@ def render_cronaca(api_key, macro_info=None, loghi_sponsor=lambda: None, leggi_d
     giocatori = giocatori_da_distinta(cronaca.get("distinta"))
 
     st.header("🎙️ Cronaca partita")
+    stato_online = stato_archivio_online()
+    if stato_online and not stato_online[0]:
+        st.warning(f"⚠️ {stato_online[1]} Le note restano salvate sull'app e verranno inviate al prossimo salvataggio.")
     if not api_key:
         st.warning("OPENAI_API_KEY non configurata: si possono scrivere note, ma non trascrivere né generare il resoconto.")
 
@@ -471,6 +534,7 @@ def render_cronaca(api_key, macro_info=None, loghi_sponsor=lambda: None, leggi_d
             archivia_e_azzera(cronaca, casa=info.get("nome_casa", ""), ospite=info.get("nome_ospite", ""),
                               campionato=info.get("campionato", ""), data=info.get("data", ""))
             st.rerun()
+    _archivio(cronaca)
 
     _tabellone()
     _pulsanti_tempo(cronaca)
