@@ -7,6 +7,7 @@ from datetime import datetime
 from openai import OpenAI
 from PIL import Image, ImageOps
 
+from giornata import normalizza_giornata
 from pdf_immagini import e_pdf, pagine_pdf
 
 MODELLO = "gpt-4.1"
@@ -173,6 +174,7 @@ def unisci_scansioni(casa_raw, ospite_raw):
 
     return {
         "campionato": primo(casa_raw.get("campionato"), ospite_raw.get("campionato")),
+        "giornata": primo(casa_raw.get("giornata"), ospite_raw.get("giornata")),
         "data": data_con_ora(primo(casa_raw.get("data"), ospite_raw.get("data")),
                              primo(casa_raw.get("ora"), ospite_raw.get("ora"))),
         "nome_casa": primo(casa_raw.get("squadra"), casa_raw.get("squadra_casa"), ospite_raw.get("squadra_casa")),
@@ -291,6 +293,8 @@ def analizza_distinta(uploaded_file, ruolo_squadra, api_key, modello=MODELLO, in
         "3b. ora: l'ORARIO D'INIZIO della gara (vicino a 'ore', 'alle ore', 'inizio', 'orario') in formato HH:MM. "
         "Se non è scritto usa \"\". Non confonderlo con l'ora di stampa del foglio.\n"
         "4. campionato: il testo dopo 'valevole per', 'Campionato' o 'del campionato' (es. 'Prima Categoria girone E').\n"
+        "4b. giornata: il numero della giornata di campionato se è scritto (es. '5ª giornata', 'Giornata 5', "
+        "'G. 5', '5° turno'): riporta solo il numero. Se non c'è usa \"\".\n"
         "5. allenatore: il primo allenatore ('Allenatore', 'Allenatore Sig.', 'Allenatore 1'), non quello in seconda.\n"
         "6. assistente_arbitro: la persona nella riga 'Assistente', 'Assistente dell'Arbitro' o 'Assistente all'Arbitro "
         "(guardalinee)'. Riporta solo COGNOME NOME, senza data di nascita né numeri di tessera.\n"
@@ -326,6 +330,7 @@ def analizza_distinta(uploaded_file, ruolo_squadra, api_key, modello=MODELLO, in
         "  \"data\": \"DD/MM/YYYY\",\n"
         "  \"ora\": \"HH:MM\",\n"
         "  \"campionato\": \"NOME CAMPIONATO\",\n"
+        "  \"giornata\": \"5\",\n"
         "  \"giocatori\": [\n"
         "    {\"numero\": 1, \"cognome_nome\": \"ROSSI ANDREA\", \"anno_nascita\": \"04\", \"capitano\": \"\"}\n"
         "  ]\n"
@@ -379,6 +384,7 @@ def normalizza_risposta(dati, ruolo_squadra):
     dati["allenatore"] = pulisci_testo(dati.get("allenatore"))
     dati["assistente_arbitro"] = pulisci_testo(re.sub(r"\(.*?\)", "", str(dati.get("assistente_arbitro") or "")))
     dati["campionato"] = pulisci_testo(dati.get("campionato"))
+    dati["giornata"] = normalizza_giornata(dati.get("giornata"))
     data_letta = str(dati.get("data") or "")
     dati["ora"] = normalizza_ora(dati.get("ora")) or (  # a volte l'orario finisce dentro la data
         normalizza_ora(data_letta) if re.search(r"ore|:", data_letta.lower()) else "")

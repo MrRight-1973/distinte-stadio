@@ -1,5 +1,6 @@
 import streamlit as st
 
+from giornata import normalizza_giornata
 from nomi_file import nome_file_gara
 
 
@@ -12,10 +13,12 @@ def render_info_match(info):
         arbitro = st.text_input("🏁 Arbitro (Nome e Cognome)", value=info.get("arbitro", ""))
         ass1 = st.text_input("🚩 Assistente Arbitrale 1", value=info.get("ass_casa", ""))
     with c_g2:
-        data = st.text_input("📅 Data Partita", value=info["data"])
-        st.write("")
+        c_data, c_giornata = st.columns([3, 1])
+        data = c_data.text_input("📅 Data Partita", value=info["data"])
+        giornata = c_giornata.text_input("📆 Giornata", value=info.get("giornata", ""), placeholder="es. 5")
         ass2 = st.text_input("🚩 Assistente Arbitrale 2", value=info.get("ass_ospite", ""))
-    return {"campionato": campionato, "data": data, "arbitro": arbitro, "assistente1": ass1, "assistente2": ass2}
+    return {"campionato": campionato, "giornata": normalizza_giornata(giornata), "data": data, "arbitro": arbitro,
+            "assistente1": ass1, "assistente2": ass2}
 
 
 def _nome_distinta():

@@ -101,7 +101,7 @@ def elenco_partite(esclusa=""):
     """Tutte le partite salvate tranne quella aperta (esclusa), dalla più recente."""
     r = _chiama("GET", f"/rest/v1/{TABELLA}", params={
         "id": f"neq.{esclusa}", "order": "aggiornato.desc",
-        "select": "id,casa,ospite,campionato,data,gol_casa,gol_ospite,aggiornato"})
+        "select": "id,casa,ospite,campionato,data,gol_casa,gol_ospite,aggiornato,giornata:dati->partita->>giornata"})
     return r.json()
 
 

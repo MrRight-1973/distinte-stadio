@@ -10,6 +10,7 @@ from reportlab.lib.utils import ImageReader
 from reportlab.platypus import Image as RLImage
 from reportlab.platypus import Flowable, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
+from giornata import campionato_e_giornata
 from sponsor_manager import MAX_SPONSOR, distribuisci_righe
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -207,7 +208,10 @@ def elementi_distinta(casa, ospite, info_gara, qr_code_bytes=None, titolo="DISTI
     ]
 
     def campo(etichetta, chiave):
-        valore = _esc(info_gara.get(chiave)).strip() or "—"
+        valore = info_gara.get(chiave)
+        if chiave == "campionato":
+            valore = campionato_e_giornata(valore, info_gara.get("giornata"))
+        valore = _esc(valore).strip() or "—"
         return Paragraph(f"<b>{etichetta}:</b> {valore}", info_style)
 
     # Il campionato ha una riga intera (anche se lungo resta su una riga sola);
