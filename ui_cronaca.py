@@ -50,6 +50,7 @@ from cronaca_manager import (
     trascrivi,
 )
 from cronaca_pdf import genera_pdf_resoconto
+from giornata import normalizza_giornata
 from nomi_file import nome_file_gara
 from pdf_immagini import immagini_jpeg
 
@@ -531,11 +532,13 @@ def render_cronaca(api_key, macro_info=None, loghi_sponsor=lambda: None, leggi_d
         c1, c2 = st.columns(2)
         casa = c1.text_input("Squadra di casa", p.get("casa") or info.get("nome_casa", ""))
         ospite = c2.text_input("Squadra ospite", p.get("ospite") or info.get("nome_ospite", ""))
-        c3, c4, c5 = st.columns([2, 1, 1])
+        c3, c6, c4, c5 = st.columns([2, 1, 1, 1])
         campionato = c3.text_input("Campionato", p.get("campionato") or info.get("campionato", ""))
+        giornata = normalizza_giornata(c6.text_input("Giornata", p.get("giornata") or info.get("giornata", ""),
+                                                     placeholder="es. 5"))
         data = c4.text_input("Data", p.get("data") or info.get("data", ""))
         durata = c5.number_input("Minuti per tempo", 20, 45, int(cronaca.get("durata_tempo") or 45), step=5)
-        nuovi = {"casa": casa, "ospite": ospite, "campionato": campionato, "data": data}
+        nuovi = {"casa": casa, "ospite": ospite, "campionato": campionato, "giornata": giornata, "data": data}
         if nuovi != p or durata != cronaca.get("durata_tempo"):
             cronaca["partita"], cronaca["durata_tempo"] = nuovi, int(durata)
             salva_cronaca(cronaca)

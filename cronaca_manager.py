@@ -51,7 +51,7 @@ def cronaca_vuota(casa="", ospite="", campionato="", data=""):
     return {
         "id": uuid.uuid4().hex,
         "creata": datetime.now(timezone.utc).isoformat(timespec="seconds"),
-        "partita": {"casa": casa, "ospite": ospite, "campionato": campionato, "data": data},
+        "partita": {"casa": casa, "ospite": ospite, "campionato": campionato, "giornata": "", "data": data},
         "durata_tempo": 45,
         "tempi": {},          # chiave fase -> {"inizio": ts, "fine": ts | None}
         "note": [],
@@ -841,6 +841,7 @@ def imposta_distinta(cronaca, distinta):
     p["casa"] = (distinta.get("casa") or {}).get("squadra") or p.get("casa", "")
     p["ospite"] = (distinta.get("ospite") or {}).get("squadra") or p.get("ospite", "")
     p["campionato"] = info.get("campionato") or p.get("campionato", "")
+    p["giornata"] = info.get("giornata") or p.get("giornata", "")
     p["data"] = info.get("data") or p.get("data", "")
     if nuova:
         _copia_foto_distinte(cronaca)

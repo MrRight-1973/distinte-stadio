@@ -22,6 +22,7 @@ from cronaca_manager import (
     stato_archivio_online,
 )
 from cronaca_pdf import genera_pdf_resoconto
+from giornata import campionato_e_giornata
 from nomi_file import nome_file_gara
 
 # Limiti del piano gratuito di Supabase
@@ -96,7 +97,7 @@ def _riga_partita(p, cronaca, dati_file):
     gol = "–" if p.get("gol_casa") is None else f"{p['gol_casa']} – {p['gol_ospite']}"
     with st.container(border=True):
         st.checkbox(f"**{p.get('casa') or 'Casa'} {gol} {p.get('ospite') or 'Ospite'}**", key=f"arch_sel_{p['id']}")
-        info = [x for x in (p.get("data"), p.get("campionato")) if x]
+        info = [x for x in (p.get("data"), campionato_e_giornata(p.get("campionato"), p.get("giornata"))) if x]
         if dati_file:
             info.append(dati_file)
         st.caption(" · ".join(info) or "Senza data")

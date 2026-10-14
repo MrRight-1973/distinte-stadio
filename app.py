@@ -48,6 +48,7 @@ from squadra_manager import (
 from ui_components import render_download_buttons, render_info_match
 from ui_cronaca import render_cronaca
 from ui_sponsor import loghi_per_pdf, render_gestione_sponsor
+from ui_statistiche import render_statistiche
 
 # Deve essere il PRIMO comando Streamlit
 st.set_page_config(page_title="Segreteria - Distinta Digitale Azzurra", page_icon="⚽", layout="wide")
@@ -202,7 +203,8 @@ def ripristina_liste_salvate():
     info, casa, ospite = salvate.get("info_gara") or {}, salvate.get("casa") or {}, salvate.get("ospite") or {}
     st.session_state["macro_info"] = {
         **unisci_scansioni({}, {}), **(salvate.get("macro_info") or {}),
-        "campionato": info.get("campionato", ""), "data": info.get("data", ""), "arbitro": info.get("arbitro", ""),
+        "campionato": info.get("campionato", ""), "giornata": info.get("giornata", ""),
+        "data": info.get("data", ""), "arbitro": info.get("arbitro", ""),
         "ass_casa": info.get("assistente1", ""), "ass_ospite": info.get("assistente2", ""),
         "nome_casa": casa.get("squadra", ""), "all_casa": casa.get("allenatore", ""),
         "nome_ospite": ospite.get("squadra", ""), "all_ospite": ospite.get("allenatore", ""),
@@ -381,7 +383,7 @@ def azzera_sezione_distinta():
     reset_stato_squadra("griglia_ospite")
 
 
-SEZIONI = ["📋 Distinta", "🎙️ Cronaca partita", "📚 Archivio", "⚙️ Opzioni"]
+SEZIONI = ["📋 Distinta", "🎙️ Cronaca partita", "📚 Archivio", "📊 Statistiche", "⚙️ Opzioni"]
 SOTTOSEZIONI_OPZIONI = ["🤖 Lettura AI", "🏷️ Sponsor", "👥 Utenti"]  # per una nuova impostazione basta aggiungerla qui
 SEZIONI_PER_RUOLO = {"admin": SEZIONI, "user": SEZIONI[:2]}
 
@@ -469,6 +471,9 @@ def render_segreteria():
             return
         st.subheader("🏷️ Sponsor")
         render_gestione_sponsor(leggi_secret("GITHUB_TOKEN"), leggi_secret("GITHUB_REPO"), leggi_secret("GITHUB_BRANCH"))
+        return
+    if sezione == "📊 Statistiche":
+        render_statistiche()
         return
     if sezione == "📚 Archivio":
         render_archivio(loghi_sponsor_pdf)
