@@ -33,6 +33,7 @@ from cronaca_manager import (
     giocatori_da_distinta,
     ha_contenuto,
     imposta_distinta,
+    impostazioni_lettura,
     leggi_audio,
     leggi_foto_referto,
     fase_in_corso,
@@ -41,6 +42,7 @@ from cronaca_manager import (
     note_in_ordine,
     orologio,
     punteggio,
+    registra_costo_lettura,
     ricalcola_eventi,
     rosa,
     salva_audio,
@@ -132,9 +134,93 @@ def _galleria_foto(cronaca, elenco, etichetta_caricatore):
                     st.rerun()
 
 
-def _referto(cronaca):
+ESITI_CONFRONTO = {"uguale": "✅ Uguale", "minuto": "⚠️ Minuto diverso", "manca": "➕ Manca nelle note"}
+
+
+def _confronta_foglio(cronaca, api_key):
+    """Foglio dell'arbitro (ammoniti, espulsi, sostituzioni) letto da foto e confrontato con le note
+    prese in partita: si vedono le differenze e si possono aggiungere i mancanti o correggere i minuti."""
+    from foglio_arbitro import confronta, leggi_foglio
+
+    foto = cronaca.get("referto") or []
+    with st.expander("🔎 Confronta le note con il foglio dell'arbitro (ammoniti, espulsi, sostituzioni)",
+                     expanded=bool(st.session_state.get("foglio_letto"))):
+        if not foto:
+            st.caption("Carica qui sopra la foto del foglio con ammoniti, espulsi e variazioni: lo leggo e lo "
+                       "confronto con le note prese in partita. Se le note mancano, le aggiungo io.")
+            return
+        scelta = st.selectbox("Foto da leggere", foto, format_func=lambda n: f"Foto {foto.index(n) + 1}",
+                              key="foglio_foto") if len(foto) > 1 else foto[0]
+        if st.button("🔍 Leggi il foglio e confronta", use_container_width=True, disabled=not api_key):
+            modello = impostazioni_lettura()["modello"]
+            try:
+                with st.spinner("Lettura del foglio in corso..."):
+                    letto = leggi_foglio(api_key, leggi_foto_referto(scelta), modello)
+                registra_costo_lettura("Foglio dell'arbitro", modello, True, letto["costo"])
+                st.session_state["foglio_letto"] = letto
+                st.session_state["foglio_tabella_n"] = st.session_state.get("foglio_tabella_n", 0) + 1
+            except Exception as e:
+                st.error(f"Lettura non riuscita: {e}")
+        letto = st.session_state.get("foglio_letto")
+        if not letto:
+            return
+
+        dal_foglio, solo_note = confronta(cronaca, letto)
+        nomi = {"casa": cronaca["partita"].get("casa") or "Casa", "ospite": cronaca["partita"].get("ospite") or "Ospite"}
+        conta = {k: sum(1 for e in dal_foglio if e["stato"] == k) for k in ESITI_CONFRONTO}
+        st.markdown(f"✅ **{conta['uguale']}** uguali · ⚠️ **{conta['minuto']}** con minuto diverso · "
+                    f"➕ **{conta['manca']}** mancano nelle note · ❓ **{len(solo_note)}** solo nelle note")
+        if letto.get("risultato"):
+            g = punteggio(cronaca)
+            if list(g) == letto["risultato"]:
+                st.caption(f"✅ Risultato uguale: {g[0]}-{g[1]}")
+            else:
+                st.warning(f"Risultato sul foglio {letto['risultato'][0]}-{letto['risultato'][1]}, nelle note "
+                           f"{g[0]}-{g[1]}: controlla i gol (sul foglio non ci sono, vanno sistemati a mano).")
+
+        if dal_foglio:
+            st.markdown("**Sul foglio dell'arbitro**")
+            tabella = pd.DataFrame([{
+                "Esito": ESITI_CONFRONTO[e["stato"]], "Evento": f"{ICONE_TIPO.get(e['tipo'], '')} {e['tipo']}",
+                "Squadra": nomi[e["squadra"]], "Giocatori": descrizione_nota(e) or "—",
+                "Min. foglio": e["minuto"] or "–",
+                "Min. note": (e["nota"].get("minuto") or "–") if e["nota"] else "",
+                "Sistema": e["stato"] != "uguale",
+            } for e in dal_foglio])
+            scelte = st.data_editor(tabella, hide_index=True, use_container_width=True,
+                                    key=f"foglio_tabella_{st.session_state.get('foglio_tabella_n', 0)}",
+                                    disabled=[c for c in tabella.columns if c != "Sistema"])
+        if solo_note:
+            st.markdown("**❓ Solo nelle note** (sul foglio non ci sono: controlla e, se serve, correggile qui sotto)")
+            st.dataframe(pd.DataFrame([{"Min.": n.get("minuto") or "–",
+                                        "Evento": f"{ICONE_TIPO.get(n.get('tipo'), '')} {n.get('tipo')}",
+                                        "Squadra": nomi[n["squadra"]], "Giocatori": descrizione_nota(n) or "—"}
+                                       for n in solo_note]), hide_index=True, use_container_width=True)
+        st.caption("I nomi del foglio arrivano dai numeri di maglia della distinta. «Sistema» aggiunge alle note "
+                   "gli eventi che mancano e corregge i minuti con quelli del foglio.")
+        c1, c2 = st.columns(2)
+        da_sistemare = [e for e, si in zip(dal_foglio, scelte["Sistema"]) if si and e["stato"] != "uguale"] if dal_foglio else []
+        if c1.button(f"✅ Sistema le note ({len(da_sistemare)})", type="primary", use_container_width=True,
+                     disabled=not da_sistemare):
+            for e in da_sistemare:
+                if e["stato"] == "manca":
+                    aggiungi_nota(cronaca, "", e["tipo"], e["squadra"], "foglio", None, e["minuto"], e["dettagli"])
+                else:
+                    e["nota"]["minuto"] = e["minuto"]
+            salva_cronaca(cronaca)
+            st.session_state["foglio_tabella_n"] = st.session_state.get("foglio_tabella_n", 0) + 1
+            st.session_state["cronaca_messaggio"] = ("success", f"Note sistemate dal foglio dell'arbitro: {len(da_sistemare)}.")
+            st.rerun()
+        if c2.button("✖️ Chiudi il confronto", use_container_width=True):
+            st.session_state.pop("foglio_letto", None)
+            st.rerun()
+        _messaggio_nota()
+
+
+def _referto(cronaca, api_key=None):
     st.subheader("📄 Referto dell'arbitro")
     _galleria_foto(cronaca, "referto", "Carica o scatta la foto del referto (anche PDF)")
+    _confronta_foglio(cronaca, api_key)
     st.subheader("📸 Foto della partita")
     st.caption("Vanno nel PDF del resoconto, dopo la cronaca.")
     _galleria_foto(cronaca, "foto_partita", "Carica o scatta le foto della partita")
@@ -567,6 +653,6 @@ def render_cronaca(api_key, macro_info=None, loghi_sponsor=lambda: None, leggi_d
     _elenco_note(cronaca, api_key, giocatori)
     _importa_note(cronaca)
     st.markdown("---")
-    _referto(cronaca)
+    _referto(cronaca, api_key)
     st.markdown("---")
     _resoconto(cronaca, api_key, giocatori, loghi_sponsor, leggi_distinta)
