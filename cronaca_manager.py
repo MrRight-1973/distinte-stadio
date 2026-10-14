@@ -508,12 +508,18 @@ def punteggio(cronaca):
 
 # --- Note ---------------------------------------------------------------------
 
+def minuto_scritto(testo):
+    """Il minuto scritto a mano: "63" -> "63'", "45+2" -> "45+2'"; le parole restano come sono."""
+    testo = str(testo or "").strip()
+    return f"{testo}'" if re.fullmatch(r"\d{1,3}(\+\d{1,2})?", testo) else testo
+
+
 def aggiungi_nota(cronaca, testo, tipo="Nota", squadra="", origine="testo", audio=None, minuto=None, dettagli=None):
     """dettagli: giocatori scelti dai menu, es. {"giocatore": "ROSSI ANDREA", "giocatore_n": 9, "assist": ...}."""
     nota = {
         "id": uuid.uuid4().hex[:10],
         "ts": time.time(),
-        "minuto": minuto or minuto_di_gioco(cronaca),
+        "minuto": minuto_di_gioco(cronaca) if minuto is None else minuto,  # "" = minuto non noto
         "tipo": tipo,
         "squadra": squadra,
         "testo": testo.strip(),
@@ -717,8 +723,27 @@ def _unisci_eventi(cronaca, letti_da_ai):
         eventi.append({"tipo": tipo, "squadra": squadra, "minuto": n.get("minuto"),
                        "giocatore": d.get("giocatore") or letto.get("giocatore") or "",
                        "nota": _sigla_evento(n) or letto.get("nota", "")})
-    eventi += [e for e in ai if e["tipo"] in ("ammonizione", "espulsione")]
+    # Cartellini citati solo nelle note generiche: si aggiungono se non sono già nel tabellino
+    # (stesso giocatore), anche quando il minuto manca o è "Pre-gara" (note inserite dopo la gara).
+    for e in ai:
+        if e["tipo"] in ("ammonizione", "espulsione") and e.get("giocatore") and not any(
+                x["tipo"] == e["tipo"] and x["squadra"] == e["squadra"]
+                and _stesso_giocatore(x["giocatore"], e["giocatore"]) for x in eventi):
+            eventi.append(e)
+    # Espulso dopo due gialli: si segna "2ª amm." anche se il motivo non è stato scelto
+    for x in eventi:
+        if x["tipo"] == "espulsione" and not x.get("nota") and sum(
+                1 for y in eventi if y["tipo"] == "ammonizione" and y["squadra"] == x["squadra"]
+                and _stesso_giocatore(y["giocatore"], x["giocatore"])) >= 2:
+            x["nota"] = "2ª amm."
     return pulisci_eventi(eventi)
+
+
+def _stesso_giocatore(a, b):
+    def chiave(nome):
+        return re.sub(r"[^A-Z ]", "", re.sub(r"\(.*?\)", "", pulisci_nome(nome)).upper()).split()
+    a, b = chiave(a), chiave(b)
+    return bool(a and b) and (a == b or set(a) <= set(b) or set(b) <= set(a))
 
 
 def ricalcola_eventi(cronaca):

@@ -4,7 +4,7 @@ import streamlit as st
 
 import archivio_cloud
 from cronaca_manager import carica_cronaca
-from statistiche import squadre_presenti, statistiche_squadra
+from statistiche import chiave_squadra, squadre_presenti, statistiche_squadra
 
 COLONNE = {"giocatore": "Giocatore", "convocazioni": "Convocato", "presenze": "Presenze", "titolare": "Da titolare",
            "minuti": "Minuti", "media": "Min/partita", "gol": "⚽ Gol", "assist": "🅰️ Assist",
@@ -24,7 +24,7 @@ def _partite():
     return [p for p in partite.values() if p]
 
 
-def render_statistiche():
+def render_statistiche(nome_societa=""):
     partite = _partite()
     squadre = squadre_presenti(partite)
     if not squadre:
@@ -32,10 +32,12 @@ def render_statistiche():
                 "partita dopo partita.")
         return
 
-    c1, c2 = st.columns(2)
-    chiave = c1.selectbox("Squadra", [k for k, _ in squadre], format_func=dict(squadre).get, key="stat_squadra")
+    # Solo la nostra società: quella nei secrets (NOME_SOCIETA) o, se manca, quella presente in più partite
+    nostra = chiave_squadra(nome_societa) if nome_societa else ""
+    chiave = nostra if any(k == nostra for k, _ in squadre) else squadre[0][0]
+    st.caption(f"Giocatori di {dict(squadre)[chiave]}")
     campionati = sorted({(p.get("partita") or {}).get("campionato") or "" for p in partite} - {""})
-    campionato = c2.selectbox("Campionato", ["Tutti"] + campionati, key="stat_campionato")
+    campionato = st.selectbox("Campionato", ["Tutti"] + campionati, key="stat_campionato")
     if campionato != "Tutti":
         partite = [p for p in partite if (p.get("partita") or {}).get("campionato") == campionato]
 

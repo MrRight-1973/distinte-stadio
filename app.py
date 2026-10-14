@@ -473,7 +473,7 @@ def render_segreteria():
         render_gestione_sponsor(leggi_secret("GITHUB_TOKEN"), leggi_secret("GITHUB_REPO"), leggi_secret("GITHUB_BRANCH"))
         return
     if sezione == "📊 Statistiche":
-        render_statistiche()
+        render_statistiche(leggi_secret("NOME_SOCIETA") or "Azzurra Duecarrare")
         return
     if sezione == "📚 Archivio":
         render_archivio(loghi_sponsor_pdf)
