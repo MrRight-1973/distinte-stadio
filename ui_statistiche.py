@@ -1,10 +1,14 @@
 """Sezione "Statistiche": minuti giocati, gol, assist e cartellini dei giocatori, dalle partite con cronaca."""
+from datetime import datetime
+
 import pandas as pd
 import streamlit as st
 
 import archivio_cloud
 from cronaca_manager import carica_cronaca
-from statistiche import chiave_squadra, squadre_presenti, statistiche_squadra
+from giornata import etichetta_giornata
+from statistiche import chiave_squadra, risultati_squadra, squadre_presenti, statistiche_squadra
+from statistiche_pdf import PARTI, genera_pdf_statistiche
 
 COLONNE = {"giocatore": "Giocatore", "convocazioni": "Convocato", "presenze": "Presenze", "titolare": "Da titolare",
            "minuti": "Minuti", "media": "Min/partita", "gol": "⚽ Gol", "assist": "🅰️ Assist",
@@ -42,26 +46,36 @@ def render_statistiche(nome_societa=""):
         partite = [p for p in partite if (p.get("partita") or {}).get("campionato") == campionato]
 
     riepilogo, per_partita = statistiche_squadra(partite, chiave)
+    risultati = risultati_squadra(partite, chiave)
     if not per_partita:
         st.info("Nessuna partita giocata per questa squadra con i filtri scelti.")
         return
 
-    m = st.columns(4)
+    fatti, subiti = sum(r["fatti"] for r in risultati), sum(r["subiti"] for r in risultati)
+    m = st.columns(5)
     m[0].metric("Partite", len(per_partita))
-    m[1].metric("Gol", sum(r["gol"] for r in riepilogo))
-    m[2].metric("🟨 Ammonizioni", sum(r["ammonizioni"] for r in riepilogo))
-    m[3].metric("🟥 Espulsioni", sum(r["espulsioni"] for r in riepilogo))
+    m[1].metric("⚽ Gol fatti", fatti)
+    m[2].metric("🥅 Gol subiti", subiti)
+    m[3].metric("🟨 Ammonizioni", sum(r["ammonizioni"] for r in riepilogo))
+    m[4].metric("🟥 Espulsioni", sum(r["espulsioni"] for r in riepilogo))
 
     tabella = pd.DataFrame(riepilogo)
     tabella["media"] = [round(r["minuti"] / r["presenze"]) if r["presenze"] else 0 for r in riepilogo]
     tabella = tabella[list(COLONNE)].rename(columns=COLONNE)
-    st.markdown("**👥 Giocatori**")
-    st.dataframe(tabella, hide_index=True, use_container_width=True)
-    st.download_button("⬇️ Scarica le statistiche (CSV)", tabella.to_csv(index=False, sep=";").encode("utf-8-sig"),
-                       file_name="statistiche_giocatori.csv", mime="text/csv")
+
+    with st.expander(f"📅 Risultati: {fatti} gol fatti, {subiti} subiti"):
+        st.dataframe(pd.DataFrame([{
+            "Giornata": etichetta_giornata(r["giornata"]), "Data": r["data"], "Avversario": r["avversario"],
+            "": "🏠 Casa" if r["in_casa"] else "🚌 Trasferta", "Fatti": r["fatti"], "Subiti": r["subiti"],
+        } for r in reversed(risultati)]), hide_index=True, use_container_width=True)
+
+    with st.expander(f"👥 Giocatori ({len(riepilogo)})"):
+        st.dataframe(tabella, hide_index=True, use_container_width=True)
+        st.download_button("⬇️ Scarica le statistiche (CSV)", tabella.to_csv(index=False, sep=";").encode("utf-8-sig"),
+                           file_name="statistiche_giocatori.csv", mime="text/csv")
 
     cartellini = tabella[(tabella["🟨"] > 0) | (tabella["🟥"] > 0)].sort_values(["🟥", "🟨"], ascending=False)
-    with st.expander(f"🟨 Cartellini ({len(cartellini)} giocatori)", expanded=False):
+    with st.expander(f"🟨 Cartellini ({len(cartellini)} giocatori)"):
         if cartellini.empty:
             st.caption("Nessun cartellino.")
         else:
@@ -74,6 +88,18 @@ def render_statistiche(nome_societa=""):
         griglia = griglia.reindex([r["giocatore"] for r in riepilogo]).fillna(0).astype(int)
         st.dataframe(griglia, use_container_width=True)
 
+    with st.expander("🖨️ Crea PDF delle statistiche"):
+        scelte = [k for k, testo in PARTI.items() if st.checkbox(testo, value=k != "minuti", key=f"stat_pdf_{k}")]
+        if st.button("🖨️ Crea PDF", type="primary", use_container_width=True, disabled=not scelte):
+            st.session_state["stat_pdf"] = (campionato, scelte, genera_pdf_statistiche(
+                dict(squadre)[chiave], "" if campionato == "Tutti" else campionato,
+                riepilogo, per_partita, risultati, scelte))
+        pronto = st.session_state.get("stat_pdf")
+        if pronto and pronto[:2] == (campionato, scelte):  # cambiate le scelte: si ricrea
+            st.download_button("⬇️ Scarica il PDF", pronto[2], mime="application/pdf",
+                               file_name=f"Statistiche_{datetime.now():%Y-%m-%d}.pdf", use_container_width=True)
+
     st.caption("I titolari sono i primi 11 della distinta. I minuti si calcolano dalle sostituzioni e dalle "
                "espulsioni segnate in cronaca, sulla durata regolamentare: perché siano giusti, nelle note scegli "
-               "sempre i giocatori dai menu. Contano le partite iniziate o con almeno una nota.")
+               "sempre i giocatori dai menu. Contano le partite iniziate o con almeno una nota. Lo stesso giocatore "
+               "scritto in modo diverso (accenti, doppie) si conta una volta sola.")

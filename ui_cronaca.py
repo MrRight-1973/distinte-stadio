@@ -632,7 +632,10 @@ def render_cronaca(api_key, macro_info=None, loghi_sponsor=lambda: None, leggi_d
                                                      placeholder="es. 5"))
         data = c4.text_input("Data", p.get("data") or info.get("data", ""))
         durata = c5.number_input("Minuti per tempo", 20, 45, int(cronaca.get("durata_tempo") or 45), step=5)
-        nuovi = {"casa": casa, "ospite": ospite, "campionato": campionato, "giornata": giornata, "data": data}
+        arbitro = st.text_input("🏁 Arbitro", p.get("arbitro") or info.get("arbitro", ""),
+                                help="Esce nel PDF del resoconto; se manca sulla distinta scrivilo qui")
+        nuovi = {"casa": casa, "ospite": ospite, "campionato": campionato, "giornata": giornata, "data": data,
+                 "arbitro": arbitro}
         if nuovi != p or durata != cronaca.get("durata_tempo"):
             cronaca["partita"], cronaca["durata_tempo"] = nuovi, int(durata)
             salva_cronaca(cronaca)

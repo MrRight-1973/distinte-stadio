@@ -4,8 +4,9 @@ I titolari sono i primi 11 della distinta (come nel resoconto); i minuti si cont
 sostituzioni e dalle espulsioni segnate in cronaca, sulla durata regolamentare (2 x minuti per tempo).
 """
 import re
+import unicodedata
 
-from cronaca_manager import e_autogol, e_gol, pulisci_nome, rosa
+from cronaca_manager import e_autogol, e_gol, pulisci_nome, punteggio, rosa
 from estrattore import _chiave_squadra
 from giornata import etichetta_giornata
 
@@ -16,8 +17,20 @@ def chiave_squadra(nome):
     return _chiave_squadra(str(nome or ""))
 
 
-def chiave_giocatore(nome):
+def nome_giocatore(nome):
+    """Il nome come si stampa: senza sigle di capitano e numero tra parentesi."""
     return re.sub(r"\s+", " ", re.sub(r"\(\d+\)", "", pulisci_nome(nome))).strip().upper()
+
+
+def chiave_giocatore(nome):
+    """Chiave per riconoscere lo stesso giocatore anche se scritto in modo un po' diverso tra una distinta
+    e l'altra: senza accenti e apostrofi, lettere doppie contate una volta, parole in qualsiasi ordine.
+    "MIAZZI NICOLO'", "MIAZI NICOLÒ" e "NICOLO MIAZZI" -> "MIAZI NICOLO"."""
+    testo = unicodedata.normalize("NFKD", nome_giocatore(nome))
+    testo = "".join(c for c in testo if not unicodedata.combining(c))
+    testo = re.sub(r"[^A-Z0-9 ]", "", testo.upper())
+    testo = re.sub(r"([A-Z])\1+", r"\1", testo)
+    return " ".join(sorted(testo.split()))
 
 
 def minuto_numero(minuto, durata=45):
@@ -45,7 +58,7 @@ def statistiche_partita(cronaca, lato):
     fine = 2 * durata
     giocatori = {}
     for i, (numero, nome) in enumerate(rosa(cronaca, lato)):
-        giocatori[chiave_giocatore(nome)] = {"nome": chiave_giocatore(nome), "numero": numero, "titolare": i < TITOLARI,
+        giocatori[chiave_giocatore(nome)] = {"nome": nome_giocatore(nome), "numero": numero, "titolare": i < TITOLARI,
                                             "in_campo_da": 0 if i < TITOLARI else None, "minuti": 0,
                                             "gol": 0, "assist": 0, "ammonizioni": 0, "espulsioni": 0}
 
@@ -133,21 +146,45 @@ def statistiche_squadra(partite, chiave):
 
     riepilogo: [{giocatore, convocazioni, presenze, titolare, minuti, gol, assist, ammonizioni, espulsioni}]
     per_partita: [(etichetta partita, {giocatore: minuti})]
+    Lo stesso giocatore scritto in modo diverso tra le partite (accenti, doppie) si conta una volta sola,
+    col nome scritto più spesso.
     """
-    totali, per_partita = {}, []
+    totali, per_partita, nomi = {}, [], {}
     for c in sorted(partite, key=data_ordinabile):
         lato = lato_della_squadra(c, chiave)
         if not lato or not giocata(c):
             continue
         partita = statistiche_partita(c, lato)
-        per_partita.append((etichetta_partita(c, lato), {g["nome"]: g["minuti"] for g in partita.values()}))
+        per_partita.append((etichetta_partita(c, lato), {k: g["minuti"] for k, g in partita.items()}))
         for k, g in partita.items():
-            t = totali.setdefault(k, {"giocatore": g["nome"], "convocazioni": 0, "presenze": 0, "titolare": 0,
+            conta = nomi.setdefault(k, {})
+            conta[g["nome"]] = conta.get(g["nome"], 0) + 1
+            t = totali.setdefault(k, {"giocatore": "", "convocazioni": 0, "presenze": 0, "titolare": 0,
                                       "minuti": 0, "gol": 0, "assist": 0, "ammonizioni": 0, "espulsioni": 0})
             t["convocazioni"] += 1
             t["presenze"] += g["minuti"] > 0
             t["titolare"] += g["titolare"]
             for campo in ("minuti", "gol", "assist", "ammonizioni", "espulsioni"):
                 t[campo] += g[campo]
+    nome = {k: max(conta, key=lambda n: (conta[n], len(n))) for k, conta in nomi.items()}
+    for k, t in totali.items():
+        t["giocatore"] = nome[k]
+    per_partita = [(etichetta, {nome[k]: minuti for k, minuti in m.items()}) for etichetta, m in per_partita]
     riepilogo = sorted(totali.values(), key=lambda t: (-t["minuti"], t["giocatore"]))
     return riepilogo, per_partita
+
+
+def risultati_squadra(partite, chiave):
+    """Le partite giocate dalla squadra, dalla più vecchia: [{giornata, data, avversario, in_casa, fatti, subiti}]."""
+    risultati = []
+    for c in sorted(partite, key=data_ordinabile):
+        lato = lato_della_squadra(c, chiave)
+        if not lato or not giocata(c):
+            continue
+        p = c.get("partita") or {}
+        gol = dict(zip(("casa", "ospite"), punteggio(c)))
+        altro = "ospite" if lato == "casa" else "casa"
+        risultati.append({"giornata": p.get("giornata") or "", "data": str(p.get("data") or "").split(" ore")[0],
+                          "avversario": p.get(altro) or "?", "in_casa": lato == "casa",
+                          "fatti": gol[lato], "subiti": gol[altro]})
+    return risultati

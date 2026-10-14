@@ -56,8 +56,9 @@ def genera_pdf_resoconto(cronaca, giocatori=None, sponsor_loghi=None):
     # 1. Resoconto di gara: liste, gol accanto alle squadre, tabellino
     casa = distinta.get("casa") or {"squadra": p.get("casa"), "giocatori": []}
     ospite = distinta.get("ospite") or {"squadra": p.get("ospite"), "giocatori": []}
-    info = distinta.get("info_gara") or {"campionato": p.get("campionato"), "giornata": p.get("giornata"),
-                                         "data": p.get("data")}
+    # Quello scritto in Cronaca (⚙️ Partita) vale più della distinta: si corregge anche dopo la pubblicazione
+    info = {**(distinta.get("info_gara") or {}),
+            **{k: p[k] for k in ("campionato", "giornata", "data", "arbitro") if p.get(k)}}
     story += elementi_distinta(casa, ospite, info, titolo="RESOCONTO DI GARA UFFICIALE",
                                gol=gol_da_eventi(eventi), eventi=eventi)
 

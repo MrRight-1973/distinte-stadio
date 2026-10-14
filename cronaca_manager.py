@@ -12,6 +12,7 @@ import os
 import re
 import tempfile
 import time
+import unicodedata
 import uuid
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
@@ -51,7 +52,7 @@ def cronaca_vuota(casa="", ospite="", campionato="", data=""):
     return {
         "id": uuid.uuid4().hex,
         "creata": datetime.now(timezone.utc).isoformat(timespec="seconds"),
-        "partita": {"casa": casa, "ospite": ospite, "campionato": campionato, "giornata": "", "data": data},
+        "partita": {"casa": casa, "ospite": ospite, "campionato": campionato, "giornata": "", "data": data, "arbitro": ""},
         "durata_tempo": 45,
         "tempi": {},          # chiave fase -> {"inizio": ts, "fine": ts | None}
         "note": [],
@@ -740,8 +741,10 @@ def _unisci_eventi(cronaca, letti_da_ai):
 
 
 def _stesso_giocatore(a, b):
-    def chiave(nome):
-        return re.sub(r"[^A-Z ]", "", re.sub(r"\(.*?\)", "", pulisci_nome(nome)).upper()).split()
+    def chiave(nome):  # senza accenti, apostrofi e doppie: "MIAZZI NICOLO'" = "MIAZI NICOLÒ"
+        testo = unicodedata.normalize("NFKD", re.sub(r"\(.*?\)", "", pulisci_nome(nome)).upper())
+        testo = re.sub(r"[^A-Z ]", "", "".join(c for c in testo if not unicodedata.combining(c)))
+        return re.sub(r"([A-Z])\1+", r"\1", testo).split()
     a, b = chiave(a), chiave(b)
     return bool(a and b) and (a == b or set(a) <= set(b) or set(b) <= set(a))
 
@@ -868,6 +871,7 @@ def imposta_distinta(cronaca, distinta):
     p["campionato"] = info.get("campionato") or p.get("campionato", "")
     p["giornata"] = info.get("giornata") or p.get("giornata", "")
     p["data"] = info.get("data") or p.get("data", "")
+    p["arbitro"] = info.get("arbitro") or p.get("arbitro", "")
     if nuova:
         _copia_foto_distinte(cronaca)
     salva_cronaca(cronaca)
