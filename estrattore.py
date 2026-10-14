@@ -182,6 +182,7 @@ def unisci_scansioni(casa_raw, ospite_raw):
         "all_casa": casa_raw.get("allenatore", ""),
         "all_ospite": ospite_raw.get("allenatore", ""),
         # Nelle categorie dilettantistiche ogni società porta il proprio assistente di parte
+        "arbitro": primo(casa_raw.get("arbitro"), ospite_raw.get("arbitro")),
         "ass_casa": casa_raw.get("assistente_arbitro", ""),
         "ass_ospite": ospite_raw.get("assistente_arbitro", ""),
         "avvisi": avvisi,
@@ -296,6 +297,8 @@ def analizza_distinta(uploaded_file, ruolo_squadra, api_key, modello=MODELLO, in
         "4b. giornata: il numero della giornata di campionato se è scritto (es. '5ª giornata', 'Giornata 5', "
         "'G. 5', '5° turno'): riporta solo il numero. Se non c'è usa \"\".\n"
         "5. allenatore: il primo allenatore ('Allenatore', 'Allenatore Sig.', 'Allenatore 1'), non quello in seconda.\n"
+        "5b. arbitro: il direttore di gara se è scritto (righe 'Arbitro', 'Arbitro Sig.', 'Direttore di gara'), "
+        "solo COGNOME NOME; se non c'è usa \"\". Non confonderlo con l'assistente né col dirigente addetto all'arbitro.\n"
         "6. assistente_arbitro: la persona nella riga 'Assistente', 'Assistente dell'Arbitro' o 'Assistente all'Arbitro "
         "(guardalinee)'. Riporta solo COGNOME NOME, senza data di nascita né numeri di tessera.\n"
         "7. giocatori: una voce per OGNI riga compilata della tabella, nell'ordine dall'alto in basso.\n"
@@ -324,6 +327,7 @@ def analizza_distinta(uploaded_file, ruolo_squadra, api_key, modello=MODELLO, in
         "  \"squadra_casa\": \"\",\n"
         "  \"squadra_ospite\": \"\",\n"
         "  \"allenatore\": \"COGNOME NOME\",\n"
+        "  \"arbitro\": \"\",\n"
         "  \"assistente_arbitro\": \"COGNOME NOME\",\n"
         "  \"capitano_num\": 10,\n"
         "  \"vice_capitano_num\": 4,\n"
@@ -382,6 +386,7 @@ def analizza_distinta(uploaded_file, ruolo_squadra, api_key, modello=MODELLO, in
 def normalizza_risposta(dati, ruolo_squadra):
     """Pulisce la risposta del modello e la riporta alla griglia fissa di 20 righe."""
     dati["allenatore"] = pulisci_testo(dati.get("allenatore"))
+    dati["arbitro"] = pulisci_testo(re.sub(r"\(.*?\)", "", str(dati.get("arbitro") or "")))
     dati["assistente_arbitro"] = pulisci_testo(re.sub(r"\(.*?\)", "", str(dati.get("assistente_arbitro") or "")))
     dati["campionato"] = pulisci_testo(dati.get("campionato"))
     dati["giornata"] = normalizza_giornata(dati.get("giornata"))

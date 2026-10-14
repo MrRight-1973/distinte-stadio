@@ -35,7 +35,9 @@ from cronaca_manager import (
     imposta_distinta,
     leggi_audio,
     leggi_foto_referto,
+    fase_in_corso,
     minuto_di_gioco,
+    minuto_scritto,
     note_in_ordine,
     orologio,
     punteggio,
@@ -198,11 +200,17 @@ def _form_nota(cronaca, api_key, giocatori):
         st.caption("Tocca il tipo di evento: il minuto viene preso in quel momento.")
         return _messaggio_nota()
 
-    # Il minuto è quello in cui si tocca il tipo, non quello in cui si finisce di compilare
+    # A gara in corso il minuto è quello in cui si tocca il tipo; prima o dopo la gara (note
+    # inserite a casa) si scrive a mano, e se non si sa resta vuoto invece di "Pre-gara".
+    a_posteriori = not fase_in_corso(cronaca) and stato_gara(cronaca) != "intervallo"
     chiave_minuto = f"cronaca_minuto_{n_form}"
-    if chiave_minuto not in st.session_state:
-        st.session_state[chiave_minuto] = minuto_di_gioco(cronaca)
-    minuto = st.session_state[chiave_minuto]
+    if a_posteriori:
+        minuto = minuto_scritto(st.text_input("⏱️ Minuto", key=f"cronaca_minuto_scritto_{n_form}",
+                                              placeholder="es. 63 o 45+2 (vuoto se non lo sai)"))
+    else:
+        if chiave_minuto not in st.session_state:
+            st.session_state[chiave_minuto] = minuto_di_gioco(cronaca)
+        minuto = st.session_state[chiave_minuto]
 
     squadra = st.pills("2 · Squadra", ["casa", "ospite"], key=f"cronaca_squadra_{n_form}",
                        format_func=lambda k: nomi[k]) or ""
@@ -214,7 +222,7 @@ def _form_nota(cronaca, api_key, giocatori):
         st.session_state["cronaca_form_n"] = n_form + 1  # si riparte da capo
         st.rerun()
 
-    st.caption(f"⏱️ {minuto} · commento facoltativo, a voce o scritto")
+    st.caption(f"⏱️ {minuto or 'minuto non indicato'} · commento facoltativo, a voce o scritto")
     # Commento vocale: registrandolo, l'evento si salva subito con le scelte fatte sopra
     n_audio = st.session_state.setdefault("cronaca_audio_n", 0)
     audio = st.audio_input("🎙️ Commento vocale", key=f"cronaca_audio_{n_audio}")
