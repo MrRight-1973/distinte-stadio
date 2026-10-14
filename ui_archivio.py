@@ -1,8 +1,10 @@
 """Sezione "Archivio" del pannello segreteria: le partite chiuse, lo spazio occupato su Supabase,
 il backup ZIP (dati, resoconto PDF, foto, note vocali) e la liberazione dello spazio."""
 import json
+import re
 from datetime import datetime
 
+import pandas as pd
 import streamlit as st
 
 import archivio_cloud
@@ -22,7 +24,7 @@ from cronaca_manager import (
     stato_archivio_online,
 )
 from cronaca_pdf import genera_pdf_resoconto
-from giornata import campionato_e_giornata
+from giornata import normalizza_giornata
 from nomi_file import nome_file_gara
 
 # Limiti del piano gratuito di Supabase
@@ -40,21 +42,20 @@ def _misura(n):
 
 
 def _spazio(tutte):
-    """Indicatori dello spazio usato; restituisce {percorso online: byte} per pesare ogni partita.
-    tutte: {id: dati} di tutte le partite salvate."""
+    """Indicatori dello spazio usato, in un riquadro chiuso; restituisce {percorso online: byte}
+    per pesare ogni partita. tutte: {id: dati} di tutte le partite salvate."""
     file = {}
     for cartella in CARTELLE:
         file.update({f"{cartella}/{nome}": byte for nome, byte in archivio_cloud.elenco_file(cartella).items()})
     usati_file = sum(file.values())
     usati_dati = sum(len(json.dumps(d, ensure_ascii=False).encode()) for d in tutte.values())
-    with st.container(border=True):
-        st.markdown("**💾 Spazio su Supabase** (piano gratuito)")
+    if usati_file > 0.8 * LIMITE_FILE:
+        st.warning("Lo spazio per le foto è quasi pieno: fai un backup delle partite vecchie e libera spazio.")
+    with st.expander(f"💾 Spazio su Supabase: foto {usati_file / LIMITE_FILE:.0%}, dati {usati_dati / LIMITE_DATI:.1%}"):
         st.progress(min(usati_file / LIMITE_FILE, 1.0),
                     text=f"Foto e note vocali: {_misura(usati_file)} su 1 GB ({usati_file / LIMITE_FILE:.0%})")
         st.progress(min(usati_dati / LIMITE_DATI, 1.0),
                     text=f"Dati delle partite: {_misura(usati_dati)} su 500 MB ({usati_dati / LIMITE_DATI:.1%})")
-        if usati_file > 0.8 * LIMITE_FILE:
-            st.warning("Lo spazio per le foto è quasi pieno: fai un backup delle partite vecchie e libera spazio.")
         _dettaglio_spazio(file, tutte)
     return file
 
@@ -93,39 +94,87 @@ def _prova(funzione, *argomenti):
         return False
 
 
-def _riga_partita(p, cronaca, dati_file):
-    gol = "–" if p.get("gol_casa") is None else f"{p['gol_casa']} – {p['gol_ospite']}"
-    with st.container(border=True):
-        st.checkbox(f"**{p.get('casa') or 'Casa'} {gol} {p.get('ospite') or 'Ospite'}**", key=f"arch_sel_{p['id']}")
-        info = [x for x in (p.get("data"), campionato_e_giornata(p.get("campionato"), p.get("giornata"))) if x]
-        if dati_file:
-            info.append(dati_file)
-        st.caption(" · ".join(info) or "Senza data")
+ORDINI = {"📅 Data": "data", "🔢 Giornata": "giornata"}
 
-        if st.session_state.get("arch_da_eliminare") == p["id"]:
-            st.warning("Eliminare definitivamente questa partita, con foto e note vocali?")
-            c1, c2 = st.columns(2)
-            if c1.button("🗑️ Sì, elimina", key=f"arch_si_{p['id']}", type="primary", use_container_width=True):
-                if _prova(elimina_partita_archiviata, p["id"]):
-                    st.session_state.pop("arch_da_eliminare", None)
-                    st.rerun()
-            if c2.button("Annulla", key=f"arch_no_{p['id']}", use_container_width=True):
-                st.session_state.pop("arch_da_eliminare", None)
-                st.rerun()
-            return
+
+def data_ordinabile(data):
+    """(anno, mese, giorno) da "dd/mm/yyyy ...", per l'ordine; senza data in fondo."""
+    numeri = re.findall(r"\d+", str(data or ""))
+    if len(numeri) >= 3:
+        anno = int(numeri[2]) + (2000 if len(numeri[2]) == 2 else 0)
+        return (anno, int(numeri[1]), int(numeri[0]))
+    return (0, 0, 0)
+
+
+def _data_breve(data):
+    """"05/10/2026 ore 15:30" -> "05/10/26": la tabella resta stretta anche sul telefono."""
+    a, m, g = data_ordinabile(data)
+    return f"{g:02d}/{m:02d}/{a % 100:02d}" if a else str(data or "").split(" ore")[0]
+
+
+def ordina_partite(partite, per="data"):
+    """Dalla più recente: per data della partita, oppure per giornata (a parità, per data)."""
+    def chiave(p):
+        giornata = int(normalizza_giornata(p.get("giornata")) or 0)
+        data = data_ordinabile(p.get("data"))
+        return (giornata, data) if per == "giornata" else (data, giornata)
+    return sorted(partite, key=chiave, reverse=True)
+
+
+def _tabella_partite(partite, dettagli, file_online, ordine):
+    """Le partite in una tabella compatta, una riga ciascuna: si selezionano con la casella a sinistra."""
+    righe = []
+    for p in partite:
+        gol = "–" if p.get("gol_casa") is None else f"{p['gol_casa']}-{p['gol_ospite']}"
+        righe.append({
+            "G.": normalizza_giornata(p.get("giornata")),
+            "Data": _data_breve(p.get("data")),
+            "Partita": f"{p.get('casa') or 'Casa'} {gol} {p.get('ospite') or 'Ospite'}",
+            "Campionato": p.get("campionato") or "",
+            "File": _descrizione_file(dettagli.get(p["id"], {}), file_online),
+        })
+    scelta = st.dataframe(pd.DataFrame(righe), hide_index=True, use_container_width=True,
+                          on_select="rerun", selection_mode="multi-row",
+                          key=f"arch_tabella_{ordine}_{st.session_state.get('arch_tabella_n', 0)}",
+                          height=min(35 * len(righe) + 40, 420),
+                          column_config={"G.": st.column_config.TextColumn(width="small"),
+                                         "Partita": st.column_config.TextColumn(width="large")})
+    return [partite[i] for i in scelta.selection.rows]
+
+
+def _azioni_partita(p, cronaca):
+    """Con una sola partita selezionata: riaprirla in Cronaca o eliminarla."""
+    if st.session_state.get("arch_da_eliminare") == p["id"]:
+        st.warning(f"Eliminare definitivamente {p.get('casa')} – {p.get('ospite')}, con foto e note vocali?")
         c1, c2 = st.columns(2)
-        if c1.button("📂 Riapri in Cronaca", key=f"arch_apri_{p['id']}", use_container_width=True):
-            if fase_in_corso(cronaca):
-                st.error("C'è un tempo in corso nella Cronaca: chiudilo prima di riaprire un'altra partita.")
-            else:
-                if not _prova(riapri_partita, cronaca, p["id"]):
-                    return
-                st.session_state["vai_a_sezione"] = "🎙️ Cronaca partita"
-                st.session_state["cronaca_messaggio"] = ("success", "📂 Partita riaperta: quella di prima è in archivio.")
+        if c1.button("🗑️ Sì, elimina", key="arch_si", type="primary", use_container_width=True):
+            if _prova(elimina_partita_archiviata, p["id"]):
+                st.session_state.pop("arch_da_eliminare", None)
+                _deseleziona()
                 st.rerun()
-        if c2.button("🗑️ Elimina", key=f"arch_elimina_{p['id']}", use_container_width=True):
-            st.session_state["arch_da_eliminare"] = p["id"]
+        if c2.button("Annulla", key="arch_no", use_container_width=True):
+            st.session_state.pop("arch_da_eliminare", None)
             st.rerun()
+        return
+    c1, c2 = st.columns(2)
+    if c1.button("📂 Riapri in Cronaca", key="arch_apri", use_container_width=True):
+        if fase_in_corso(cronaca):
+            st.error("C'è un tempo in corso nella Cronaca: chiudilo prima di riaprire un'altra partita.")
+        else:
+            if not _prova(riapri_partita, cronaca, p["id"]):
+                return
+            _deseleziona()
+            st.session_state["vai_a_sezione"] = "🎙️ Cronaca partita"
+            st.session_state["cronaca_messaggio"] = ("success", "📂 Partita riaperta: quella di prima è in archivio.")
+            st.rerun()
+    if c2.button("🗑️ Elimina", key="arch_elimina", use_container_width=True):
+        st.session_state["arch_da_eliminare"] = p["id"]
+        st.rerun()
+
+
+def _deseleziona():
+    """La tabella riparte senza righe selezionate."""
+    st.session_state["arch_tabella_n"] = st.session_state.get("arch_tabella_n", 0) + 1
 
 
 def _descrizione_file(dati_partita, file_online):
@@ -146,7 +195,9 @@ def _descrizione_file(dati_partita, file_online):
 
 
 def _azioni_selezione(selezionate, loghi_sponsor, cronaca):
-    st.subheader(f"☑️ {len(selezionate)} partite selezionate")
+    st.markdown(f"**☑️ {len(selezionate)} partit{'a selezionata' if len(selezionate) == 1 else 'e selezionate'}**")
+    if len(selezionate) == 1:
+        _azioni_partita(selezionate[0], cronaca)
     chiave = tuple(sorted(p["id"] for p in selezionate))
     backup = st.session_state.get("arch_backup")
     if not backup or backup["ids"] != chiave:
@@ -189,7 +240,7 @@ def _azioni_selezione(selezionate, loghi_sponsor, cronaca):
         for id_partita in chiave:
             if not _prova(azione, id_partita):
                 return
-        st.session_state["arch_deseleziona"] = chiave  # le caselle si azzerano al giro successivo
+        _deseleziona()
         st.session_state.pop("arch_backup", None)
         st.session_state["arch_messaggio"] = f"🧹 Spazio liberato per {len(chiave)} partite."
         st.rerun()
@@ -223,8 +274,6 @@ def render_archivio(loghi_sponsor=lambda: None):
     if messaggio:
         st.success(messaggio)
 
-    for id_partita in st.session_state.pop("arch_deseleziona", ()):
-        st.session_state[f"arch_sel_{id_partita}"] = False
     cronaca = carica_cronaca()
     try:
         dettagli = archivio_cloud.dati_partite()
@@ -237,21 +286,14 @@ def render_archivio(loghi_sponsor=lambda: None):
     if not partite:
         st.caption("Nessuna partita in archivio: ci finiscono con \"🆕 Nuova partita\" nella Cronaca.")
     else:
-        st.caption("Le partite chiuse, dalla più recente. La partita aperta è nella Cronaca.")
-        c1, c2 = st.columns(2)
-        if c1.button("☑️ Seleziona tutte", use_container_width=True):
-            for p in partite:
-                st.session_state[f"arch_sel_{p['id']}"] = True
-            st.rerun()
-        if c2.button("Nessuna", use_container_width=True):
-            for p in partite:
-                st.session_state[f"arch_sel_{p['id']}"] = False
-            st.rerun()
-        for p in partite:
-            _riga_partita(p, cronaca, _descrizione_file(dettagli.get(p["id"], {}), file_online))
-        selezionate = [p for p in partite if st.session_state.get(f"arch_sel_{p['id']}")]
+        c1, c2 = st.columns([3, 2], vertical_alignment="center")
+        c1.caption("Le partite chiuse; quella aperta è nella Cronaca. Spunta una o più righe per riaprirle, "
+                   "eliminarle o farne il backup.")
+        ordine = c2.segmented_control("Ordina per", list(ORDINI), default="📅 Data", key="arch_ordine",
+                                      label_visibility="collapsed") or "📅 Data"
+        partite = ordina_partite(partite, ORDINI[ordine])
+        selezionate = _tabella_partite(partite, dettagli, file_online, ORDINI[ordine])
         if selezionate:
-            st.markdown("---")
             _azioni_selezione(selezionate, loghi_sponsor, cronaca)
     st.markdown("---")
     _ripristino(cronaca)
