@@ -145,7 +145,7 @@ def _filtri(partite):
     return partite, f"{anno}|{campionato}"
 
 
-def _tabella_partite(partite, dettagli, file_online, ordine):
+def _tabella_partite(partite, dettagli, file_online, ordine, aperta_da=None):
     """Le partite in una tabella compatta, una riga ciascuna: si selezionano con la casella a sinistra."""
     righe = []
     for p in partite:
@@ -155,7 +155,8 @@ def _tabella_partite(partite, dettagli, file_online, ordine):
             "Data": _data_breve(p.get("data")),
             "Partita": f"{p.get('casa') or 'Casa'} {gol} {p.get('ospite') or 'Ospite'}",
             "Campionato": p.get("campionato") or "",
-            "File": _descrizione_file(dettagli.get(p["id"], {}), file_online),
+            "File": ("✏️ aperta in Cronaca · " if p["id"] == aperta_da else "")
+                    + _descrizione_file(dettagli.get(p["id"], {}), file_online),
         })
     scelta = st.dataframe(pd.DataFrame(righe), hide_index=True, use_container_width=True,
                           on_select="rerun", selection_mode="multi-row",
@@ -189,7 +190,8 @@ def _azioni_partita(p, cronaca):
                 return
             _deseleziona()
             st.session_state["vai_a_sezione"] = "🎙️ Cronaca partita"
-            st.session_state["cronaca_messaggio"] = ("success", "📂 Partita riaperta: quella di prima è in archivio.")
+            st.session_state["cronaca_messaggio"] = ("success", "📂 Partita riaperta: in archivio resta com'era finché "
+                                                                "non la archivi di nuovo. Quella di prima è in archivio.")
             st.rerun()
     if c2.button("🗑️ Elimina", key="arch_elimina", use_container_width=True):
         st.session_state["arch_da_eliminare"] = p["id"]
@@ -319,7 +321,8 @@ def render_archivio(loghi_sponsor=lambda: None):
         if not partite:
             st.caption("Nessuna partita con questi filtri.")
             return
-        selezionate = _tabella_partite(partite, dettagli, file_online, f"{ORDINI[ordine]}_{filtro}")
+        selezionate = _tabella_partite(partite, dettagli, file_online, f"{ORDINI[ordine]}_{filtro}",
+                                       cronaca.get("archivio_id"))
         if selezionate:
             _azioni_selezione(selezionate, loghi_sponsor, cronaca)
     st.markdown("---")
