@@ -46,6 +46,8 @@ from squadra_manager import (
     reset_stato_squadra,
 )
 from stagioni import campionati_correnti
+from rose import correggi_con_rosa, lato_nostro, rosa_squadra
+from ui_rose import render_opzioni_rose, render_prepara_da_rosa
 from ui_stagioni import render_opzioni_campionati
 from ui_components import render_download_buttons, render_info_match
 from ui_cronaca import render_cronaca
@@ -344,6 +346,50 @@ def loghi_sponsor_pdf():
     return loghi if loghi is not None else loghi_da_cartella_locale()
 
 
+def nome_societa():
+    return leggi_secret("NOME_SOCIETA") or "A.S.D. AZZURRA DUE CARRARE"
+
+
+def lista_dalla_rosa(lato, griglia, campionato, firma_correnti):
+    """La nostra lista preparata dalla rosa va nella distinta; l'altra squadra resta da compilare
+    (a mano, da CSV o con la scansione)."""
+    chiave = f"griglia_{lato}"
+    if "dati_mappati" not in st.session_state:
+        st.session_state["macro_info"] = unisci_scansioni({}, {})
+        reset_stato_squadra("griglia_ospite" if lato == "casa" else "griglia_casa")
+        st.session_state["firma_scansione_attiva"] = firma_correnti
+        st.session_state["dati_mappati"] = True
+    st.session_state[chiave] = griglia
+    pulisci_widget_squadra(chiave)
+    info = st.session_state["macro_info"]
+    info["campionato"] = campionato
+    info[f"nome_{lato}"] = info.get(f"nome_{lato}") or nome_societa()
+    st.session_state.pop("pdf_interattivo_pronto", None)
+    st.rerun()
+
+
+def nomi_come_in_rosa(casa_raw, ospite_raw):
+    """Dopo la scansione: i nomi della nostra squadra scritti come nella rosa (accenti, doppie, ordine)."""
+    info = st.session_state["macro_info"]
+    lato = lato_nostro(info.get("nome_casa"), info.get("nome_ospite"), nome_societa())
+    stagione, elenco = campionati_correnti()
+    rosa = [g for c in elenco for g in rosa_squadra(stagione, c)]
+    if not lato or not rosa:
+        return
+    giocatori = (casa_raw if lato == "casa" else ospite_raw)["giocatori"]
+    corretti, cambiati = correggi_con_rosa(giocatori, rosa)
+    st.session_state[f"griglia_{lato}"] = pd.DataFrame(corretti).set_index("N°")
+    if cambiati:
+        info.setdefault("avvisi", []).append(
+            f"👕 {cambiati} nom{'e' if cambiati == 1 else 'i'} della nostra squadra scritt{'o' if cambiati == 1 else 'i'} "
+            "come nella rosa: controlla la lista.")
+
+
+def tutte_le_partite():
+    from ui_statistiche import _partite
+    return _partite()
+
+
 def distinta_pubblicata():
     """Ultima distinta pubblicata: quella di questa sessione, altrimenti distinta.json dal repository della pagina."""
     if st.session_state.get("ultima_distinta"):
@@ -386,7 +432,7 @@ def azzera_sezione_distinta():
 
 
 SEZIONI = ["📋 Distinta", "🎙️ Cronaca partita", "📚 Archivio", "📊 Statistiche", "⚙️ Opzioni"]
-SOTTOSEZIONI_OPZIONI = ["🏆 Campionati", "🤖 Lettura AI", "🏷️ Sponsor", "👥 Utenti"]  # per una nuova impostazione basta aggiungerla qui
+SOTTOSEZIONI_OPZIONI = ["🏆 Campionati", "👕 Rose", "🤖 Lettura AI", "🏷️ Sponsor", "👥 Utenti"]  # per una nuova impostazione basta aggiungerla qui
 SEZIONI_PER_RUOLO = {"admin": SEZIONI, "user": SEZIONI[:2]}
 
 
@@ -468,6 +514,9 @@ def render_segreteria():
         if sotto == "🏆 Campionati":
             render_opzioni_campionati()
             return
+        if sotto == "👕 Rose":
+            render_opzioni_rose(nome_societa(), tutte_le_partite)
+            return
         if sotto == "🤖 Lettura AI":
             render_opzioni_lettura()
             return
@@ -478,7 +527,7 @@ def render_segreteria():
         render_gestione_sponsor(leggi_secret("GITHUB_TOKEN"), leggi_secret("GITHUB_REPO"), leggi_secret("GITHUB_BRANCH"))
         return
     if sezione == "📊 Statistiche":
-        render_statistiche(leggi_secret("NOME_SOCIETA") or "Azzurra Duecarrare")
+        render_statistiche(nome_societa())
         return
     if sezione == "📚 Archivio":
         render_archivio(loghi_sponsor_pdf)
@@ -516,6 +565,9 @@ def render_segreteria():
             reset_solo_dati_ai()
 
     firma_correnti = f"{firma_file(file_casa)}__{firma_file(file_ospite)}"
+    dalla_rosa = render_prepara_da_rosa()
+    if dalla_rosa:
+        lista_dalla_rosa(*dalla_rosa, firma_correnti)
 
     if file_casa and file_ospite:
         # File cambiati: la scansione precedente (e il PDF) non sono più validi
@@ -545,6 +597,7 @@ def render_segreteria():
                             st.session_state["macro_info"] = unisci_scansioni(casa_raw, ospite_raw)
                             if campionati_correnti()[1]:  # il campionato si sceglie dall'elenco delle Opzioni
                                 st.session_state["macro_info"]["campionato"] = ""
+                            nomi_come_in_rosa(casa_raw, ospite_raw)
                             st.session_state["macro_info"]["lettura"] = descrizione_lettura(modello, ingrandita)
                             costo = sum(r.get("consumo", {}).get("costo", 0) for r in (casa_raw, ospite_raw))
                             st.session_state["macro_info"]["costo_lettura"] = costo
