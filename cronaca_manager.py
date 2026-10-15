@@ -872,6 +872,7 @@ def imposta_distinta(cronaca, distinta):
     p["giornata"] = info.get("giornata") or p.get("giornata", "")
     p["data"] = info.get("data") or p.get("data", "")
     p["arbitro"] = info.get("arbitro") or p.get("arbitro", "")
+    p["stagione"] = info.get("stagione") or p.get("stagione", "")
     if nuova:
         _copia_foto_distinte(cronaca)
     salva_cronaca(cronaca)

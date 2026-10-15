@@ -7,6 +7,7 @@ import streamlit as st
 import archivio_cloud
 from cronaca_manager import carica_cronaca
 from giornata import etichetta_giornata
+from stagioni import impostazioni_stagioni, stagione_partita
 from statistiche import chiave_squadra, risultati_squadra, squadre_presenti, statistiche_squadra
 from statistiche_pdf import PARTI, genera_pdf_statistiche
 
@@ -40,8 +41,18 @@ def render_statistiche(nome_societa=""):
     nostra = chiave_squadra(nome_societa) if nome_societa else ""
     chiave = nostra if any(k == nostra for k, _ in squadre) else squadre[0][0]
     st.caption(f"Giocatori di {dict(squadre)[chiave]}")
+    # Anno sportivo e campionato: ogni squadra della società (prima squadra, giovanili) ha le sue statistiche
+    corrente = impostazioni_stagioni()["corrente"]
+    anni = sorted({stagione_partita(p.get("partita")) for p in partite} - {""}, reverse=True)
+    c1, c2 = st.columns(2)
+    scelte_anni = ["Tutti gli anni"] + anni
+    anno = c1.selectbox("📅 Anno sportivo", scelte_anni, key="stat_anno",
+                        index=scelte_anni.index(corrente) if corrente in anni else 0)
+    if anno != "Tutti gli anni":
+        partite = [p for p in partite if stagione_partita(p.get("partita")) == anno]
     campionati = sorted({(p.get("partita") or {}).get("campionato") or "" for p in partite} - {""})
-    campionato = st.selectbox("Campionato", ["Tutti"] + campionati, key="stat_campionato")
+    campionato = c2.selectbox("🏆 Campionato", ["Tutti"] + campionati, key="stat_campionato",
+                              index=1 if len(campionati) == 1 else 0)
     if campionato != "Tutti":
         partite = [p for p in partite if (p.get("partita") or {}).get("campionato") == campionato]
 
@@ -91,11 +102,11 @@ def render_statistiche(nome_societa=""):
     with st.expander("🖨️ Crea PDF delle statistiche"):
         scelte = [k for k, testo in PARTI.items() if st.checkbox(testo, value=k != "minuti", key=f"stat_pdf_{k}")]
         if st.button("🖨️ Crea PDF", type="primary", use_container_width=True, disabled=not scelte):
-            st.session_state["stat_pdf"] = (campionato, scelte, genera_pdf_statistiche(
-                dict(squadre)[chiave], "" if campionato == "Tutti" else campionato,
+            st.session_state["stat_pdf"] = ((anno, campionato), scelte, genera_pdf_statistiche(
+                dict(squadre)[chiave], " · ".join(x for x in (anno, campionato) if not x.startswith("Tutt")),
                 riepilogo, per_partita, risultati, scelte))
         pronto = st.session_state.get("stat_pdf")
-        if pronto and pronto[:2] == (campionato, scelte):  # cambiate le scelte: si ricrea
+        if pronto and pronto[:2] == ((anno, campionato), scelte):  # cambiate le scelte: si ricrea
             st.download_button("⬇️ Scarica il PDF", pronto[2], mime="application/pdf",
                                file_name=f"Statistiche_{datetime.now():%Y-%m-%d}.pdf", use_container_width=True)
 
