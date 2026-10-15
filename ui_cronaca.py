@@ -55,6 +55,8 @@ from cronaca_manager import (
 )
 from cronaca_pdf import genera_pdf_resoconto
 from giornata import normalizza_giornata
+from stagioni import stagione_da_data
+from ui_components import scegli_campionato
 from nomi_file import nome_file_gara
 from pdf_immagini import immagini_jpeg
 
@@ -627,7 +629,8 @@ def render_cronaca(api_key, macro_info=None, loghi_sponsor=lambda: None, leggi_d
         casa = c1.text_input("Squadra di casa", p.get("casa") or info.get("nome_casa", ""))
         ospite = c2.text_input("Squadra ospite", p.get("ospite") or info.get("nome_ospite", ""))
         c3, c6, c4, c5 = st.columns([2, 1, 1, 1])
-        campionato = c3.text_input("Campionato", p.get("campionato") or info.get("campionato", ""))
+        with c3:
+            stagione, campionato = scegli_campionato(p.get("campionato") or info.get("campionato", ""))
         giornata = normalizza_giornata(c6.text_input("Giornata", p.get("giornata") or info.get("giornata", ""),
                                                      placeholder="es. 5"))
         data = c4.text_input("Data", p.get("data") or info.get("data", ""))
@@ -635,7 +638,7 @@ def render_cronaca(api_key, macro_info=None, loghi_sponsor=lambda: None, leggi_d
         arbitro = st.text_input("🏁 Arbitro", p.get("arbitro") or info.get("arbitro", ""),
                                 help="Esce nel PDF del resoconto; se manca sulla distinta scrivilo qui")
         nuovi = {"casa": casa, "ospite": ospite, "campionato": campionato, "giornata": giornata, "data": data,
-                 "arbitro": arbitro}
+                 "arbitro": arbitro, "stagione": p.get("stagione") or stagione_da_data(data) or stagione}
         if nuovi != p or durata != cronaca.get("durata_tempo"):
             cronaca["partita"], cronaca["durata_tempo"] = nuovi, int(durata)
             salva_cronaca(cronaca)

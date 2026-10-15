@@ -45,6 +45,8 @@ from squadra_manager import (
     render_colonna_squadra,
     reset_stato_squadra,
 )
+from stagioni import campionati_correnti
+from ui_stagioni import render_opzioni_campionati
 from ui_components import render_download_buttons, render_info_match
 from ui_cronaca import render_cronaca
 from ui_sponsor import loghi_per_pdf, render_gestione_sponsor
@@ -384,7 +386,7 @@ def azzera_sezione_distinta():
 
 
 SEZIONI = ["📋 Distinta", "🎙️ Cronaca partita", "📚 Archivio", "📊 Statistiche", "⚙️ Opzioni"]
-SOTTOSEZIONI_OPZIONI = ["🤖 Lettura AI", "🏷️ Sponsor", "👥 Utenti"]  # per una nuova impostazione basta aggiungerla qui
+SOTTOSEZIONI_OPZIONI = ["🏆 Campionati", "🤖 Lettura AI", "🏷️ Sponsor", "👥 Utenti"]  # per una nuova impostazione basta aggiungerla qui
 SEZIONI_PER_RUOLO = {"admin": SEZIONI, "user": SEZIONI[:2]}
 
 
@@ -463,6 +465,9 @@ def render_segreteria():
         sotto = st.segmented_control("Opzioni", SOTTOSEZIONI_OPZIONI, key="sottosezione_opzioni",
                                      default=SOTTOSEZIONI_OPZIONI[0], label_visibility="collapsed")
         sotto = sotto or SOTTOSEZIONI_OPZIONI[0]  # un secondo clic sul pulsante scelto lo deseleziona
+        if sotto == "🏆 Campionati":
+            render_opzioni_campionati()
+            return
         if sotto == "🤖 Lettura AI":
             render_opzioni_lettura()
             return
@@ -538,6 +543,8 @@ def render_segreteria():
                             pulisci_widget_squadra("griglia_casa")
                             pulisci_widget_squadra("griglia_ospite")
                             st.session_state["macro_info"] = unisci_scansioni(casa_raw, ospite_raw)
+                            if campionati_correnti()[1]:  # il campionato si sceglie dall'elenco delle Opzioni
+                                st.session_state["macro_info"]["campionato"] = ""
                             st.session_state["macro_info"]["lettura"] = descrizione_lettura(modello, ingrandita)
                             costo = sum(r.get("consumo", {}).get("costo", 0) for r in (casa_raw, ospite_raw))
                             st.session_state["macro_info"]["costo_lettura"] = costo
@@ -581,6 +588,8 @@ def render_segreteria():
                                    ("nome squadra ospite", inf.get("nome_ospite"))) if not v]
         if mancanti:
             st.info("Non sono riuscito a leggere dalle distinte: " + ", ".join(mancanti) + ". Compilali a mano prima di pubblicare.")
+        if not info_gara["campionato"]:
+            st.info("🏆 Scegli il campionato: serve per archivio e statistiche di ogni squadra.")
         for avviso in inf.get("avvisi", []):
             st.warning(avviso)
         render_controllo_liste(dati_c, dati_o)

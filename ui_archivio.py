@@ -25,6 +25,7 @@ from cronaca_manager import (
 )
 from cronaca_pdf import genera_pdf_resoconto
 from giornata import normalizza_giornata
+from stagioni import impostazioni_stagioni, stagione_partita
 from nomi_file import nome_file_gara
 
 # Limiti del piano gratuito di Supabase
@@ -119,6 +120,29 @@ def ordina_partite(partite, per="data"):
         data = data_ordinabile(p.get("data"))
         return (giornata, data) if per == "giornata" else (data, giornata)
     return sorted(partite, key=chiave, reverse=True)
+
+
+def _filtri(partite):
+    """Anno sportivo e campionato: ogni squadra della società ha le sue partite.
+    Restituisce (partite filtrate, firma del filtro per la tabella)."""
+    for p in partite:
+        p["stagione"] = stagione_partita(p)
+    corrente = impostazioni_stagioni()["corrente"]
+    anni = sorted({p["stagione"] for p in partite if p["stagione"]}, reverse=True)
+    c1, c2 = st.columns(2)
+    scelte_anni = ["Tutti gli anni"] + anni
+    anno = c1.selectbox("📅 Anno sportivo", scelte_anni, key="arch_anno",
+                        index=scelte_anni.index(corrente) if corrente in anni else 0)
+    if anno != "Tutti gli anni":
+        partite = [p for p in partite if p["stagione"] == anno]
+    campionati = sorted({p.get("campionato") or "" for p in partite} - {""})
+    scelte = ["Tutti i campionati"] + campionati + (["Senza campionato"] if any(not p.get("campionato") for p in partite) else [])
+    campionato = c2.selectbox("🏆 Campionato", scelte, key="arch_campionato")
+    if campionato == "Senza campionato":
+        partite = [p for p in partite if not p.get("campionato")]
+    elif campionato != "Tutti i campionati":
+        partite = [p for p in partite if p.get("campionato") == campionato]
+    return partite, f"{anno}|{campionato}"
 
 
 def _tabella_partite(partite, dettagli, file_online, ordine):
@@ -286,13 +310,16 @@ def render_archivio(loghi_sponsor=lambda: None):
     if not partite:
         st.caption("Nessuna partita in archivio: ci finiscono con \"🆕 Nuova partita\" nella Cronaca.")
     else:
-        c1, c2 = st.columns([3, 2], vertical_alignment="center")
-        c1.caption("Le partite chiuse; quella aperta è nella Cronaca. Spunta una o più righe per riaprirle, "
+        st.caption("Le partite chiuse; quella aperta è nella Cronaca. Spunta una o più righe per riaprirle, "
                    "eliminarle o farne il backup.")
-        ordine = c2.segmented_control("Ordina per", list(ORDINI), default="📅 Data", key="arch_ordine",
+        partite, filtro = _filtri(partite)
+        ordine = st.segmented_control("Ordina per", list(ORDINI), default="📅 Data", key="arch_ordine",
                                       label_visibility="collapsed") or "📅 Data"
         partite = ordina_partite(partite, ORDINI[ordine])
-        selezionate = _tabella_partite(partite, dettagli, file_online, ORDINI[ordine])
+        if not partite:
+            st.caption("Nessuna partita con questi filtri.")
+            return
+        selezionate = _tabella_partite(partite, dettagli, file_online, f"{ORDINI[ordine]}_{filtro}")
         if selezionate:
             _azioni_selezione(selezionate, loghi_sponsor, cronaca)
     st.markdown("---")
