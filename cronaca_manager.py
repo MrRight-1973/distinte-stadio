@@ -143,8 +143,23 @@ def ha_contenuto(cronaca):
     return bool(cronaca.get("note") or cronaca.get("referto") or cronaca.get("foto_partita") or cronaca.get("resoconto"))
 
 
+def _file_archivio(cronaca):
+    """Foto e note vocali che appartengono anche alla partita d'archivio da cui la cronaca è stata riaperta:
+    non si cancellano mai da qui, altrimenti l'archivio le perderebbe."""
+    return set(cronaca.get("file_archivio") or [])
+
+
 def _metti_in_archivio(cronaca):
-    """La cronaca aperta passa in archivio (se ha qualcosa); quella vuota si scarta."""
+    """La cronaca aperta passa in archivio (se ha qualcosa); quella vuota si scarta.
+    Una partita riaperta dall'archivio sovrascrive quella di partenza (e la sua copia di lavoro sparisce)."""
+    originale = cronaca.get("archivio_id")
+    if originale:
+        if ha_contenuto(cronaca):
+            dati = {k: v for k, v in cronaca.items() if k not in ("archivio_id", "file_archivio")}
+            dati["id"] = originale
+            _online(cloud.salva_partita, dati, False, punteggio(cronaca))
+        _online(cloud.elimina_partita, cronaca["id"])
+        return
     if cronaca.get("note"):
         nome = datetime.now().strftime("cronaca_%Y%m%d_%H%M%S.json")
         with open(os.path.join(_cartella_dati(), nome), "w", encoding="utf-8") as f:
@@ -170,8 +185,9 @@ def archivia_e_azzera(cronaca, **partita):
 def cancella_e_azzera(cronaca):
     """Butta via la partita aperta senza archiviarla (note, foto, note vocali, foto delle
     distinte caricate) e ne apre una nuova vuota, in attesa delle nuove distinte."""
-    _cancella_foto([n for e in ELENCHI_FOTO for n in cronaca.get(e) or []])
-    audio = [n["audio"] for n in cronaca.get("note") or [] if n.get("audio")]
+    proteggi = _file_archivio(cronaca)  # partita riaperta: la versione in archivio resta com'era
+    _cancella_foto([n for e in ELENCHI_FOTO for n in cronaca.get(e) or [] if n not in proteggi])
+    audio = [n["audio"] for n in cronaca.get("note") or [] if n.get("audio") and n["audio"] not in proteggi]
     for nome in audio:
         try:
             os.remove(os.path.join(_cartella_dati(), "audio", nome))
@@ -198,17 +214,26 @@ def cancella_e_azzera(cronaca):
 # --- Archivio delle partite (solo con Supabase) ---------------------------------
 
 def partite_archiviate(cronaca_aperta):
-    """Elenco per l'archivio: tutte le partite salvate online tranne quella aperta."""
+    """Elenco per l'archivio: tutte le partite salvate online tranne quella aperta.
+    La partita riaperta resta nell'elenco: è la versione d'archivio, la Cronaca ne ha una copia."""
     return cloud.elenco_partite(cronaca_aperta.get("id", ""))
 
 
 def riapri_partita(cronaca_aperta, id_partita):
-    """Riapre una partita dell'archivio; quella aperta finisce in archivio, non si perde."""
+    """Riapre in Cronaca una copia di lavoro della partita d'archivio; quella aperta finisce in archivio.
+    La partita in archivio resta com'è finché non si archivia di nuovo (allora viene sovrascritta):
+    con «Cancella tutto» si buttano solo le modifiche."""
     dati = cloud.leggi_partita(id_partita)
     if not dati:
         raise cloud.ArchivioErrore("Partita non trovata nell'archivio.")
     _metti_in_archivio(cronaca_aperta)
+    if cronaca_aperta.get("archivio_id") == id_partita:  # la stessa partita: si riparte da quanto appena archiviato
+        dati = cloud.leggi_partita(id_partita) or dati
     cronaca = _completa(dati)
+    cronaca["archivio_id"] = dati.get("archivio_id") or id_partita
+    cronaca["file_archivio"] = sorted({n for e in ELENCHI_FOTO for n in dati.get(e) or []}
+                                      | {n["audio"] for n in dati.get("note") or [] if n.get("audio")})
+    cronaca["id"] = uuid.uuid4().hex
     salva_cronaca(cronaca)
     cloud.togli_corrente_alle_altre(cronaca["id"])
     return cronaca
@@ -909,7 +934,7 @@ def leggi_foto_referto(nome):
 def togli_foto_referto(cronaca, nome, elenco="referto"):
     cronaca[elenco] = [n for n in cronaca.get(elenco, []) if n != nome]
     salva_cronaca(cronaca)
-    if not any(nome in (cronaca.get(e) or []) for e in ELENCHI_FOTO):
+    if not any(nome in (cronaca.get(e) or []) for e in ELENCHI_FOTO) and nome not in _file_archivio(cronaca):
         _cancella_foto([nome])
 
 
@@ -960,7 +985,8 @@ def _copia_foto_distinte(cronaca):
         except OSError:
             pass  # foto di quella squadra non caricata
     if nuove:
-        _cancella_foto(cronaca.get("foto_distinte") or [])  # le copie vecchie non servono più
+        # le copie vecchie non servono più (tranne quelle della partita in archivio, se riaperta)
+        _cancella_foto([n for n in cronaca.get("foto_distinte") or [] if n not in _file_archivio(cronaca)])
         cronaca["foto_distinte"] = []
         for dati in nuove:
             aggiungi_foto_referto(cronaca, dati, "foto_distinte")

@@ -25,6 +25,7 @@ def _partite():
         except archivio_cloud.ArchivioErrore as e:
             st.warning(f"Archivio online non raggiungibile, conto solo la partita aperta: {e}")
     aperta = carica_cronaca()
+    partite.pop(aperta.get("archivio_id"), None)  # partita riaperta dall'archivio: conta la copia in Cronaca
     partite[aperta.get("id")] = aperta
     return [p for p in partite.values() if p]
 
