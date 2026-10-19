@@ -639,6 +639,12 @@ def render_cronaca(api_key, macro_info=None, loghi_sponsor=lambda: None, leggi_d
                                 help="Esce nel PDF del resoconto; se manca sulla distinta scrivilo qui")
         nuovi = {"casa": casa, "ospite": ospite, "campionato": campionato, "giornata": giornata, "data": data,
                  "arbitro": arbitro, "stagione": p.get("stagione") or stagione_da_data(data) or stagione}
+        diretta = st.toggle("📡 Diretta sulla pagina spettatori", value=cronaca.get("diretta", True),
+                            help="Risultato, gol, cartellini e cambi compaiono sulla pagina del QR code mentre li "
+                                 "segni (senza i commenti scritti). Spegnila se non vuoi mostrarli.")
+        if diretta != cronaca.get("diretta", True):
+            cronaca["diretta"] = diretta
+            salva_cronaca(cronaca)
         if nuovi != p or durata != cronaca.get("durata_tempo"):
             cronaca["partita"], cronaca["durata_tempo"] = nuovi, int(durata)
             salva_cronaca(cronaca)

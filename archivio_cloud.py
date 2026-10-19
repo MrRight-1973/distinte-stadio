@@ -159,3 +159,35 @@ def dati_partite():
     """{id partita: dati} di tutte le partite, in una sola richiesta."""
     r = _chiama("GET", f"/rest/v1/{TABELLA}", params={"select": "id,dati"})
     return {riga["id"]: riga["dati"] for riga in r.json()}
+
+
+# --- Spazio pubblico per la diretta della pagina spettatori -------------------------
+# Un solo file (live.json) con risultato ed eventi, leggibile da chiunque: niente foto né note.
+
+SPAZIO_PUBBLICO = "live"
+
+
+def url_pubblico(nome):
+    return f"{_config['url']}/storage/v1/object/public/{SPAZIO_PUBBLICO}/{nome}" if attivo() else ""
+
+
+def carica_pubblico(nome, dati, tipo="application/json"):
+    """Carica un file nello spazio pubblico (lo crea la prima volta). True se è andato.
+    Non tocca ultimo_errore(): un problema della diretta non è un problema dell'archivio."""
+    if not attivo():
+        return False
+    intestazioni = _intestazioni({"Content-Type": tipo, "x-upsert": "true", "cache-control": "max-age=5"})
+    indirizzo = f"{_config['url']}/storage/v1/object/{SPAZIO_PUBBLICO}/{nome}"
+    try:
+        for tentativo in range(2):
+            r = requests.post(indirizzo, data=dati, headers=intestazioni, timeout=TIMEOUT)
+            if r.status_code < 400:
+                return True
+            if tentativo == 0 and "bucket not found" in r.text.lower():
+                requests.post(f"{_config['url']}/storage/v1/bucket", headers=_intestazioni(), timeout=TIMEOUT,
+                              json={"id": SPAZIO_PUBBLICO, "name": SPAZIO_PUBBLICO, "public": True})
+                continue
+            return False
+    except requests.RequestException:
+        return False
+    return False

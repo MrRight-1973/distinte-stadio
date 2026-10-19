@@ -46,6 +46,7 @@ from squadra_manager import (
     reset_stato_squadra,
 )
 from stagioni import campionati_correnti
+from diretta import url_diretta
 from rose import correggi_con_rosa, lato_nostro, rosa_squadra
 from ui_rose import render_opzioni_rose, render_prepara_da_rosa
 from ui_stagioni import render_opzioni_campionati
@@ -272,6 +273,8 @@ def pubblica_distinta(info_gara, dati_c, dati_o):
         "ospite": dati_o,
         "aggiornato": datetime.now(timezone.utc).isoformat(timespec="seconds"),
     }
+    if url_diretta():  # la pagina spettatori legge da qui risultato ed eventi in tempo reale
+        pacchetto["live"] = url_diretta()
     st.session_state["ultima_distinta"] = pacchetto  # la usa anche la cronaca della partita
     file_da_pubblicare = {
         "distinta.json": json.dumps(pacchetto, ensure_ascii=False, indent=2).encode("utf-8"),
