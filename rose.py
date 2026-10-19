@@ -1,4 +1,5 @@
-"""Rosa dei giocatori di ogni squadra della società (una per campionato e anno sportivo).
+"""Rosa dei giocatori di ogni gruppo squadra della società (una per gruppo e anno sportivo,
+vale per tutte le sue competizioni: campionato, coppa...).
 
 Serve a preparare la distinta spuntando i convocati, senza scansione, e a scrivere i nomi
 sempre allo stesso modo: anche quando la lista si legge dalla foto, i nomi della nostra squadra
@@ -17,8 +18,8 @@ from statistiche import chiave_giocatore, chiave_squadra
 PERCORSO_ONLINE = "impostazioni/rose.json"
 
 
-def _chiave(stagione, campionato):
-    return f"{stagione}|{campionato}"
+def _chiave(stagione, gruppo):
+    return f"{stagione}|{gruppo}"
 
 
 def _percorso():
@@ -40,9 +41,16 @@ def _numero(valore):
     return n if 1 <= n <= 99 else None
 
 
-def rosa_squadra(stagione, campionato):
-    """[{giocatore, anno, numero}] nell'ordine salvato."""
-    return list(_tutte().get(_chiave(stagione, campionato)) or [])
+def rosa_squadra(stagione, gruppo):
+    """[{giocatore, anno, numero}] nell'ordine salvato. Le rose salvate prima dei gruppi (una per
+    campionato) valgono per il gruppo che contiene quel campionato, finché non si salva quella del gruppo."""
+    tutte = _tutte()
+    if _chiave(stagione, gruppo) in tutte:
+        return list(tutte[_chiave(stagione, gruppo)] or [])
+    from stagioni import impostazioni_stagioni
+    competizioni = next((g["competizioni"] for g in impostazioni_stagioni()["stagioni"].get(stagione, [])
+                         if g["gruppo"] == gruppo), [])
+    return pulisci_rosa([x for c in competizioni for x in tutte.get(_chiave(stagione, c)) or []])
 
 
 def pulisci_rosa(giocatori):
@@ -59,13 +67,13 @@ def pulisci_rosa(giocatori):
     return pulita
 
 
-def salva_rosa(stagione, campionato, giocatori):
+def salva_rosa(stagione, gruppo, giocatori):
     tutte = _tutte()
-    tutte[_chiave(stagione, campionato)] = pulisci_rosa(giocatori)
+    tutte[_chiave(stagione, gruppo)] = pulisci_rosa(giocatori)
     with open(_percorso(), "w", encoding="utf-8") as f:
         json.dump(tutte, f, ensure_ascii=False, indent=1)
     _carica_online(PERCORSO_ONLINE, _percorso(), "application/json")
-    return tutte[_chiave(stagione, campionato)]
+    return tutte[_chiave(stagione, gruppo)]
 
 
 def griglia_convocati(titolari, panchina):
@@ -113,13 +121,13 @@ def lato_nostro(nome_casa, nome_ospite, nome_societa):
     return None
 
 
-def ultima_lista(partite, campionato, nome_societa):
-    """I giocatori della nostra squadra nell'ultima partita (per data) di quel campionato: per riempire la rosa."""
+def ultima_lista(partite, competizioni, nome_societa):
+    """I giocatori della nostra squadra nell'ultima partita (per data) di quelle competizioni: per riempire la rosa."""
     from statistiche import data_ordinabile, lato_della_squadra
     from cronaca_manager import rosa as lista_partita
 
     chiave = chiave_squadra(nome_societa)
-    candidate = [p for p in partite if (p.get("partita") or {}).get("campionato") == campionato
+    candidate = [p for p in partite if (p.get("partita") or {}).get("campionato") in competizioni
                  and lato_della_squadra(p, chiave)]
     if not candidate:
         return []
