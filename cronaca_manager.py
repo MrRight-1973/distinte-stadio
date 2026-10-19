@@ -128,6 +128,8 @@ def salva_cronaca(cronaca):
     _scrivi_locale(cronaca)
     if _online(cloud.salva_partita, cronaca, True, punteggio(cronaca)):
         _riprova_caricamenti()
+    from diretta import pubblica_diretta
+    pubblica_diretta(cronaca)  # pagina spettatori: risultato ed eventi in tempo reale
 
 
 def stato_archivio_online():
