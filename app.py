@@ -638,6 +638,12 @@ def render_segreteria():
         with c_sq2:
             dati_o = render_colonna_squadra("🚀 SQUADRA OSPITE", "griglia_ospite", inf["all_ospite"], inf.get("nome_ospite", ""))
 
+        # Quello che si scrive torna in macro_info: uscendo dalla pagina (es. verso la Cronaca) Streamlit
+        # dimentica i campi, e al ritorno ripartirebbero dai valori letti dalla scansione
+        inf.update({"campionato": info_gara["campionato"], "giornata": info_gara["giornata"], "data": info_gara["data"],
+                    "arbitro": info_gara["arbitro"], "ass_casa": info_gara["assistente1"],
+                    "ass_ospite": info_gara["assistente2"], "nome_casa": dati_c["squadra"],
+                    "all_casa": dati_c["allenatore"], "nome_ospite": dati_o["squadra"], "all_ospite": dati_o["allenatore"]})
         salva_liste_se_cambiate(info_gara, dati_c, dati_o)
 
         mancanti = [n for n, v in (("data", inf.get("data")), ("nome squadra casa", inf.get("nome_casa")),
