@@ -42,8 +42,13 @@ def _numero(valore):
 
 
 def rosa_squadra(stagione, gruppo):
-    """[{giocatore, anno, numero}] nell'ordine salvato. Le rose salvate prima dei gruppi (una per
-    campionato) valgono per il gruppo che contiene quel campionato, finché non si salva quella del gruppo."""
+    """[{giocatore, anno, numero}] nell'ordine salvato. Se il gruppo ha ragazzi nell'anagrafica, la rosa
+    è quella. Le rose salvate prima dei gruppi (una per campionato) valgono per il gruppo che contiene
+    quel campionato, finché non si salva quella del gruppo."""
+    from anagrafica import rosa_da_anagrafica
+    dall_anagrafica = rosa_da_anagrafica(stagione, gruppo)
+    if dall_anagrafica:
+        return dall_anagrafica
     tutte = _tutte()
     if _chiave(stagione, gruppo) in tutte:
         return list(tutte[_chiave(stagione, gruppo)] or [])

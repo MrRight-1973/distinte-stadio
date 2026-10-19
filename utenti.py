@@ -1,7 +1,8 @@
 """Utenti della segreteria, salvati su Supabase con la password cifrata (mai in chiaro).
 
-Due livelli: "admin" vede tutte le sezioni e gestisce gli utenti, "user" vede solo
-Distinta e Cronaca partita. La password SEGRETERIA_PASSWORD dei secrets resta sempre
+Tre livelli: "admin" vede tutte le sezioni e gestisce gli utenti, "user" (segreteria) vede
+Distinta, Cronaca partita e tutta l'Anagrafica, "allenatore" vede Distinta, Cronaca e
+nell'Anagrafica solo i ragazzi dei suoi gruppi squadra. La password SEGRETERIA_PASSWORD dei secrets resta sempre
 valida come accesso admin di emergenza (utente "admin" o nome vuoto).
 """
 import hashlib
@@ -13,7 +14,8 @@ import secrets
 
 from cronaca_manager import _cartella_dati, _carica_online, _leggi_file
 
-RUOLI = {"admin": "Amministratore (tutto)", "user": "Utente (Distinta e Cronaca)"}
+RUOLI = {"admin": "Amministratore (tutto)", "user": "Segreteria (Distinta, Cronaca, Anagrafica)",
+         "allenatore": "Allenatore (solo i suoi ragazzi)"}
 ITERAZIONI = 200_000
 LUNGHEZZA_MINIMA = 8
 PERCORSO_ONLINE = "utenti/utenti.json"
@@ -93,6 +95,29 @@ def cambia_ruolo(nome, ruolo):
     utenti = elenco_utenti()
     if nome in utenti and ruolo in RUOLI:
         utenti[nome]["ruolo"] = ruolo
+        _salva(utenti)
+
+
+def cambia_gruppi(nome, gruppi):
+    """I gruppi squadra di un allenatore: nell'Anagrafica vede solo i ragazzi di questi gruppi."""
+    utenti = elenco_utenti()
+    if nome in utenti:
+        utenti[nome]["gruppi"] = sorted(set(gruppi))
+        _salva(utenti)
+
+
+def gruppi_utente(nome):
+    return list((elenco_utenti().get(nome) or {}).get("gruppi") or [])
+
+
+def rinomina_gruppo_allenatori(vecchio, nuovo):
+    utenti = elenco_utenti()
+    cambiati = False
+    for dati in utenti.values():
+        if vecchio in (dati.get("gruppi") or []):
+            dati["gruppi"] = sorted({nuovo if g == vecchio else g for g in dati["gruppi"]})
+            cambiati = True
+    if cambiati:
         _salva(utenti)
 
 
