@@ -45,7 +45,7 @@ from squadra_manager import (
     render_colonna_squadra,
     reset_stato_squadra,
 )
-from stagioni import campionati_correnti
+from stagioni import campionati_correnti, gruppi_correnti
 from diretta import url_diretta
 from rose import correggi_con_rosa, lato_nostro, rosa_squadra
 from ui_rose import render_opzioni_rose, render_prepara_da_rosa
@@ -375,8 +375,8 @@ def nomi_come_in_rosa(casa_raw, ospite_raw):
     """Dopo la scansione: i nomi della nostra squadra scritti come nella rosa (accenti, doppie, ordine)."""
     info = st.session_state["macro_info"]
     lato = lato_nostro(info.get("nome_casa"), info.get("nome_ospite"), nome_societa())
-    stagione, elenco = campionati_correnti()
-    rosa = [g for c in elenco for g in rosa_squadra(stagione, c)]
+    stagione, gruppi = gruppi_correnti()
+    rosa = [g for gr in gruppi for g in rosa_squadra(stagione, gr["gruppo"])]
     if not lato or not rosa:
         return
     giocatori = (casa_raw if lato == "casa" else ospite_raw)["giocatori"]

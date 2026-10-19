@@ -25,7 +25,7 @@ from cronaca_manager import (
 )
 from cronaca_pdf import genera_pdf_resoconto
 from giornata import normalizza_giornata
-from stagioni import impostazioni_stagioni, stagione_partita
+from stagioni import gruppo_di, impostazioni_stagioni, stagione_partita
 from nomi_file import nome_file_gara
 
 # Limiti del piano gratuito di Supabase
@@ -123,26 +123,31 @@ def ordina_partite(partite, per="data"):
 
 
 def _filtri(partite):
-    """Anno sportivo e campionato: ogni squadra della società ha le sue partite.
+    """Anno sportivo, gruppo squadra e competizione: ogni squadra della società ha le sue partite.
     Restituisce (partite filtrate, firma del filtro per la tabella)."""
     for p in partite:
         p["stagione"] = stagione_partita(p)
+        p["gruppo"] = gruppo_di(p.get("campionato"), p["stagione"])
     corrente = impostazioni_stagioni()["corrente"]
     anni = sorted({p["stagione"] for p in partite if p["stagione"]}, reverse=True)
-    c1, c2 = st.columns(2)
+    c1, c2, c3 = st.columns(3)
     scelte_anni = ["Tutti gli anni"] + anni
     anno = c1.selectbox("📅 Anno sportivo", scelte_anni, key="arch_anno",
                         index=scelte_anni.index(corrente) if corrente in anni else 0)
     if anno != "Tutti gli anni":
         partite = [p for p in partite if p["stagione"] == anno]
+    gruppi = sorted({p["gruppo"] for p in partite} - {""})
+    gruppo = c2.selectbox("👥 Squadra", ["Tutte le squadre"] + gruppi, key="arch_gruppo")
+    if gruppo != "Tutte le squadre":
+        partite = [p for p in partite if p["gruppo"] == gruppo]
     campionati = sorted({p.get("campionato") or "" for p in partite} - {""})
-    scelte = ["Tutti i campionati"] + campionati + (["Senza campionato"] if any(not p.get("campionato") for p in partite) else [])
-    campionato = c2.selectbox("🏆 Campionato", scelte, key="arch_campionato")
+    scelte = ["Tutte le competizioni"] + campionati + (["Senza campionato"] if any(not p.get("campionato") for p in partite) else [])
+    campionato = c3.selectbox("🏆 Competizione", scelte, key=f"arch_campionato_{gruppo}")
     if campionato == "Senza campionato":
         partite = [p for p in partite if not p.get("campionato")]
-    elif campionato != "Tutti i campionati":
+    elif campionato != "Tutte le competizioni":
         partite = [p for p in partite if p.get("campionato") == campionato]
-    return partite, f"{anno}|{campionato}"
+    return partite, f"{anno}|{gruppo}|{campionato}"
 
 
 def _tabella_partite(partite, dettagli, file_online, ordine, aperta_da=None):

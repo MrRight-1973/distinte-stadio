@@ -4,7 +4,7 @@ import streamlit as st
 
 from rose import griglia_convocati, pulisci_rosa, rosa_squadra, salva_rosa, ultima_lista
 from squadra_manager import NUM_RIGHE
-from stagioni import campionati_correnti
+from stagioni import gruppi_correnti
 
 COLONNE_ROSA = {"giocatore": "Giocatore", "anno": "Anno", "numero": "N° abituale"}
 
@@ -25,40 +25,43 @@ def render_opzioni_rose(nome_societa, partite):
     st.subheader("👕 Rose delle squadre")
     for tipo, testo in st.session_state.pop("rose_messaggi", []):
         getattr(st, tipo)(testo)
-    stagione, elenco = campionati_correnti()
-    if not elenco:
-        st.info("Prima imposta i campionati dell'anno in ⚙️ Opzioni → 🏆 Campionati: ogni campionato ha la sua rosa.")
+    stagione, gruppi = gruppi_correnti()
+    if not gruppi:
+        st.info("Prima imposta squadre e competizioni dell'anno in ⚙️ Opzioni → 🏆 Campionati: ogni gruppo squadra ha la sua rosa.")
         return
     st.caption("I giocatori di ogni squadra, una volta per tutte: nella Distinta si spuntano i convocati e, "
                "quando la lista si legge dalla foto, i nomi vengono scritti come qui.")
-    campionato = st.selectbox(f"Squadra / campionato ({stagione})", elenco, key="rose_campionato")
-    rosa = rosa_squadra(stagione, campionato)
+    competizioni = {g["gruppo"]: g["competizioni"] for g in gruppi}
+    gruppo = st.selectbox(f"Gruppo squadra ({stagione})", list(competizioni), key="rose_gruppo",
+                              help="La stessa rosa vale per tutte le competizioni del gruppo")
+    st.caption("Competizioni: " + " · ".join(competizioni[gruppo]))
+    rosa = rosa_squadra(stagione, gruppo)
     n = st.session_state.get("rose_n", 0)
 
-    with st.popover("📥 Riempi dall'ultima partita di questo campionato", use_container_width=True):
-        ultima = ultima_lista(partite(), campionato, nome_societa)
+    with st.popover("📥 Riempi dall'ultima partita di questa squadra", use_container_width=True):
+        ultima = ultima_lista(partite(), competizioni[gruppo], nome_societa)
         if not ultima:
-            st.caption("Nessuna partita di questo campionato con la distinta collegata.")
+            st.caption("Nessuna partita di questo gruppo con la distinta collegata.")
         else:
             st.caption(f"Aggiunge alla rosa i {len(ultima)} giocatori dell'ultima distinta (chi c'è già resta).")
             if st.button("📥 Aggiungi", use_container_width=True, key="rose_aggiungi"):
-                nuova = salva_rosa(stagione, campionato, rosa + ultima)
+                nuova = salva_rosa(stagione, gruppo, rosa + ultima)
                 st.session_state["rose_n"] = n + 1
-                st.session_state["rose_messaggi"] = [("success", f"Rosa di {campionato}: {len(nuova)} giocatori.")]
+                st.session_state["rose_messaggi"] = [("success", f"Rosa di {gruppo}: {len(nuova)} giocatori.")]
                 st.rerun()
 
     tabella = st.data_editor(
         _tabella_rosa(rosa), num_rows="dynamic", hide_index=True, use_container_width=True,
-        key=f"rose_tabella_{stagione}_{campionato}_{n}",
+        key=f"rose_tabella_{stagione}_{gruppo}_{n}",
         column_config={"Giocatore": st.column_config.TextColumn(max_chars=40, width="large"),
                        "Anno": st.column_config.TextColumn(max_chars=4),
                        "N° abituale": st.column_config.NumberColumn(min_value=1, max_value=99, step=1)})
     nuova = pulisci_rosa(_da_tabella(tabella))
     if nuova != rosa:
         if st.button("💾 Salva la rosa", type="primary", use_container_width=True):
-            salva_rosa(stagione, campionato, nuova)
+            salva_rosa(stagione, gruppo, nuova)
             st.session_state["rose_n"] = n + 1
-            st.session_state["rose_messaggi"] = [("success", f"Rosa di {campionato} salvata: {len(nuova)} giocatori.")]
+            st.session_state["rose_messaggi"] = [("success", f"Rosa di {gruppo} salvata: {len(nuova)} giocatori.")]
             st.rerun()
         st.caption("Modifiche non ancora salvate.")
     else:
@@ -68,20 +71,21 @@ def render_opzioni_rose(nome_societa, partite):
 def render_prepara_da_rosa():
     """Nella Distinta: la nostra lista dalla rosa, spuntando convocati e titolari.
     Restituisce (lato, griglia, campionato) quando si preme «Metti nella distinta», altrimenti None."""
-    stagione, elenco = campionati_correnti()
-    con_rosa = [c for c in elenco if rosa_squadra(stagione, c)]
+    stagione, gruppi = gruppi_correnti()
+    con_rosa = {g["gruppo"]: g["competizioni"] for g in gruppi if rosa_squadra(stagione, g["gruppo"])}
     if not con_rosa:
         return None
     with st.expander("👕 Prepara la nostra lista dalla rosa (senza scansione)"):
-        c1, c2 = st.columns([3, 2])
-        campionato = c1.selectbox("Squadra", con_rosa, key="conv_campionato")
-        lato = c2.radio("Giochiamo", ["casa", "ospite"], horizontal=True, key="conv_lato",
+        c1, c2, c3 = st.columns([2, 3, 2])
+        gruppo = c1.selectbox("Squadra", list(con_rosa), key="conv_gruppo")
+        campionato = c2.selectbox("Competizione", con_rosa[gruppo], key=f"conv_campionato_{gruppo}")
+        lato = c3.radio("Giochiamo", ["casa", "ospite"], horizontal=True, key="conv_lato",
                         format_func={"casa": "🏠 In casa", "ospite": "🚌 In trasferta"}.get)
-        rosa = rosa_squadra(stagione, campionato)
+        rosa = rosa_squadra(stagione, gruppo)
         df = pd.DataFrame([{"Conv.": False, "Tit.": False, "N°": g.get("numero"), "Giocatore": g["giocatore"],
                             "Anno": g.get("anno") or ""} for g in rosa])
         df["N°"] = pd.array(df["N°"], dtype="Int64")
-        scelta = st.data_editor(df, hide_index=True, use_container_width=True, key=f"conv_tabella_{campionato}",
+        scelta = st.data_editor(df, hide_index=True, use_container_width=True, key=f"conv_tabella_{gruppo}",
                                 disabled=["Giocatore", "Anno"],
                                 column_config={"Conv.": st.column_config.CheckboxColumn(help="Convocato"),
                                                "Tit.": st.column_config.CheckboxColumn(help="Titolare (gli 11 in alto)"),

@@ -7,7 +7,7 @@ import streamlit as st
 import archivio_cloud
 from cronaca_manager import carica_cronaca
 from giornata import etichetta_giornata
-from stagioni import impostazioni_stagioni, stagione_partita
+from stagioni import gruppo_di, impostazioni_stagioni, stagione_partita
 from statistiche import chiave_squadra, risultati_squadra, squadre_presenti, statistiche_squadra
 from statistiche_pdf import PARTI, genera_pdf_statistiche
 
@@ -42,20 +42,30 @@ def render_statistiche(nome_societa=""):
     nostra = chiave_squadra(nome_societa) if nome_societa else ""
     chiave = nostra if any(k == nostra for k, _ in squadre) else squadre[0][0]
     st.caption(f"Giocatori di {dict(squadre)[chiave]}")
-    # Anno sportivo e campionato: ogni squadra della società (prima squadra, giovanili) ha le sue statistiche
+    # Anno sportivo, gruppo squadra e competizione: ogni squadra della società (prima squadra, giovanili)
+    # ha le sue statistiche, sommando campionato e coppa oppure una competizione sola
     corrente = impostazioni_stagioni()["corrente"]
     anni = sorted({stagione_partita(p.get("partita")) for p in partite} - {""}, reverse=True)
-    c1, c2 = st.columns(2)
+    c1, c2, c3 = st.columns(3)
     scelte_anni = ["Tutti gli anni"] + anni
     anno = c1.selectbox("📅 Anno sportivo", scelte_anni, key="stat_anno",
                         index=scelte_anni.index(corrente) if corrente in anni else 0)
     if anno != "Tutti gli anni":
         partite = [p for p in partite if stagione_partita(p.get("partita")) == anno]
+    for p in partite:
+        info = p.get("partita") or {}
+        p["_gruppo"] = gruppo_di(info.get("campionato"), stagione_partita(info))
+    gruppi = sorted({p["_gruppo"] for p in partite} - {""})
+    gruppo = c2.selectbox("👥 Squadra", ["Tutte"] + gruppi, key="stat_gruppo", index=1 if len(gruppi) == 1 else 0)
+    if gruppo != "Tutte":
+        partite = [p for p in partite if p["_gruppo"] == gruppo]
     campionati = sorted({(p.get("partita") or {}).get("campionato") or "" for p in partite} - {""})
-    campionato = c2.selectbox("🏆 Campionato", ["Tutti"] + campionati, key="stat_campionato",
+    campionato = c3.selectbox("🏆 Competizione", ["Tutte"] + campionati, key=f"stat_campionato_{gruppo}",
                               index=1 if len(campionati) == 1 else 0)
-    if campionato != "Tutti":
+    if campionato != "Tutte":
         partite = [p for p in partite if (p.get("partita") or {}).get("campionato") == campionato]
+    # Per il titolo del PDF: es. "2026/27 · Prima Squadra · Coppa Veneto" (il gruppo non si ripete se è la competizione)
+    filtro = tuple(x for x in dict.fromkeys((anno, gruppo, campionato)) if not x.startswith("Tutt"))
 
     riepilogo, per_partita = statistiche_squadra(partite, chiave)
     risultati = risultati_squadra(partite, chiave)
@@ -103,11 +113,11 @@ def render_statistiche(nome_societa=""):
     with st.expander("🖨️ Crea PDF delle statistiche"):
         scelte = [k for k, testo in PARTI.items() if st.checkbox(testo, value=k != "minuti", key=f"stat_pdf_{k}")]
         if st.button("🖨️ Crea PDF", type="primary", use_container_width=True, disabled=not scelte):
-            st.session_state["stat_pdf"] = ((anno, campionato), scelte, genera_pdf_statistiche(
-                dict(squadre)[chiave], " · ".join(x for x in (anno, campionato) if not x.startswith("Tutt")),
+            st.session_state["stat_pdf"] = (filtro, scelte, genera_pdf_statistiche(
+                dict(squadre)[chiave], " · ".join(filtro),
                 riepilogo, per_partita, risultati, scelte))
         pronto = st.session_state.get("stat_pdf")
-        if pronto and pronto[:2] == ((anno, campionato), scelte):  # cambiate le scelte: si ricrea
+        if pronto and pronto[:2] == (filtro, scelte):  # cambiate le scelte: si ricrea
             st.download_button("⬇️ Scarica il PDF", pronto[2], mime="application/pdf",
                                file_name=f"Statistiche_{datetime.now():%Y-%m-%d}.pdf", use_container_width=True)
 
