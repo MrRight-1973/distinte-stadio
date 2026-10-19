@@ -137,3 +137,14 @@ def ultima_lista(partite, competizioni, nome_societa):
             for g in (((ultima.get("distinta") or {}).get(lato) or {}).get("giocatori") or [])}
     return [{"giocatore": nome, "anno": anni.get(nome, ""), "numero": _numero(numero)}
             for numero, nome in lista_partita(ultima, lato)]
+
+
+def rinomina_rosa(stagione, vecchio, nuovo):
+    """Quando si rinomina un gruppo squadra la sua rosa lo segue."""
+    tutte = _tutte()
+    if _chiave(stagione, vecchio) not in tutte or _chiave(stagione, nuovo) in tutte:
+        return
+    tutte[_chiave(stagione, nuovo)] = tutte.pop(_chiave(stagione, vecchio))
+    with open(_percorso(), "w", encoding="utf-8") as f:
+        json.dump(tutte, f, ensure_ascii=False, indent=1)
+    _carica_online(PERCORSO_ONLINE, _percorso(), "application/json")
