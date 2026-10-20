@@ -1,6 +1,9 @@
+import base64
 import hashlib
+import html
 import io
 import json
+import os
 import time
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
@@ -61,7 +64,30 @@ from ui_sponsor import loghi_per_pdf, render_gestione_sponsor
 from ui_statistiche import render_statistiche
 
 # Deve essere il PRIMO comando Streamlit
-st.set_page_config(page_title="Segreteria - Distinta Digitale Azzurra", page_icon="⚽", layout="wide")
+LOGO_SOCIETA = os.path.join(os.path.dirname(os.path.abspath(__file__)), "logo_azzurra.png")
+TITOLO_PORTALE = "Portale Gestione Sportiva"
+st.set_page_config(page_title=f"{TITOLO_PORTALE} - Azzurra Due Carrare",
+                   page_icon=LOGO_SOCIETA if os.path.exists(LOGO_SOCIETA) else "⚽", layout="wide")
+
+
+@st.cache_data
+def _logo_base64():
+    try:
+        with open(LOGO_SOCIETA, "rb") as f:
+            return base64.b64encode(f.read()).decode()
+    except OSError:
+        return ""
+
+
+def titolo_con_logo(testo):
+    """Il titolo della pagina con lo stemma della società al posto del pallone."""
+    logo = _logo_base64()
+    if not logo:
+        st.title(f"⚽ {testo}")
+        return
+    st.markdown(f'<h1 style="display:flex;align-items:center;gap:0.5rem;padding-top:0">'
+                f'<img src="data:image/png;base64,{logo}" style="height:2.6rem;width:auto;margin-right:0.6rem" alt="">'
+                f'<span>{html.escape(testo)}</span></h1>', unsafe_allow_html=True)
 
 # Menu, Deploy e barra superiore si nascondono da .streamlit/config.toml
 st.markdown("<style>.block-container { padding-top: 1rem !important; }</style>", unsafe_allow_html=True)
@@ -412,7 +438,7 @@ def distinta_pubblicata():
 def render_login():
     _, centro, _ = st.columns([1, 2, 1])
     with centro:
-        st.title("⚽ Segreteria - Distinta Digitale")
+        titolo_con_logo(TITOLO_PORTALE)
         st.caption("A.S.D. Azzurra Due Carrare")
         password_emergenza = leggi_secret("SEGRETERIA_PASSWORD")
         nome = st.text_input("Utente", key="utente_segreteria",
@@ -553,7 +579,7 @@ def render_segreteria():
     sezione_attuale = st.session_state["sezione_segreteria"]
     col_titolo, col_esci = st.columns([5, 1])
     with col_titolo:
-        st.title(f"⚽ Centro Gestione Gara - {sezione_attuale.split(' ', 1)[1]}")
+        titolo_con_logo(f"{TITOLO_PORTALE} - {sezione_attuale.split(' ', 1)[1]}")
     with col_esci:
         st.write("")
         if st.button("Esci", type="secondary", use_container_width=True):

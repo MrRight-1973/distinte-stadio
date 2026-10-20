@@ -158,67 +158,81 @@ def genera_pdf_statistiche(squadra, campionato, riepilogo, per_partita, risultat
     return buffer.getvalue()
 
 
-SIGLE_PRESENZE = {"presente": "P", "differenziato": "D", "infortunato": "I", "assente": "A", "giustificato": "G"}
-ALLENAMENTI_PER_TABELLA = 22
+
+LEGENDA_PRESENZE = {"C": "COMPLETO", "A": "ASSENTE", "P": "PARZIALE", "D": "DIFFERENZIATO", "Z": "PRESENZA",
+                    "I": "INFORTUNATO", "G": "GIUSTIFICATO"}
+SEDUTE_PER_TABELLA = 22
 
 
-def genera_pdf_presenze(squadra, stagione, periodo, righe, allenamenti, griglia):
-    """PDF delle presenze agli allenamenti.
-    righe: [{"Ragazzo", "Presenze %", <uno per stato>, "Allenamenti"}] già ordinate;
-    allenamenti: ["dd/mm/yyyy"] in ordine; griglia: {ragazzo: [sigla o "" per ogni allenamento]}."""
+def genera_pdf_presenze(squadra, stagione, periodo, righe, sedute, sigle):
+    """PDF delle presenze come le tabelle del mister: una riga per ragazzo con la sigla di ogni allenamento,
+    poi quante volte e in che percentuale per ogni sigla.
+    righe: [(nome, anno, [sigla o "" per ogni seduta])]; sedute: intestazioni ("01-set");
+    sigle: le sigle di cui mostrare i totali, nell'ordine (es. ["C", "A", "P", "D", "Z"])."""
     buffer = io.BytesIO()
-    verticale, orizzontale = A4, landscape(A4)
-    doc = BaseDocTemplate(buffer, pagesize=verticale, title=f"Presenze {squadra}",
+    pagina = landscape(A4)
+    doc = BaseDocTemplate(buffer, pagesize=pagina, title=f"Presenze {squadra}",
                           leftMargin=MARGINE, rightMargin=MARGINE, topMargin=MARGINE, bottomMargin=MARGINE)
-    doc.addPageTemplates([
-        PageTemplate("verticale", [Frame(MARGINE, MARGINE, verticale[0] - 2 * MARGINE, verticale[1] - 2 * MARGINE)],
-                     pagesize=verticale),
-        PageTemplate("orizzontale", [Frame(MARGINE, MARGINE, orizzontale[0] - 2 * MARGINE,
-                                           orizzontale[1] - 2 * MARGINE)], pagesize=orizzontale),
-    ])
-    larghezza = verticale[0] - 2 * MARGINE
+    doc.addPageTemplates([PageTemplate("orizzontale", [Frame(MARGINE, MARGINE, pagina[0] - 2 * MARGINE,
+                                                              pagina[1] - 2 * MARGINE)], pagesize=pagina)])
+    larga = pagina[0] - 2 * MARGINE
     stili = getSampleStyleSheet()
-    s_titolo = ParagraphStyle("T", parent=stili["Heading1"], fontSize=16, leading=19, textColor=BLU, spaceAfter=2)
-    s_sezione = ParagraphStyle("S", parent=stili["Heading2"], fontSize=12, leading=14, textColor=BLU,
-                               spaceBefore=10, spaceAfter=5)
+    s_titolo = ParagraphStyle("T", parent=stili["Heading1"], fontSize=15, leading=18, textColor=BLU, spaceAfter=2)
     s_info = ParagraphStyle("I", parent=stili["Normal"], fontSize=8.5, leading=11, textColor=GRIGIO)
-    s_cella = ParagraphStyle("C", parent=stili["Normal"], fontSize=8, leading=9.5)
-    s_testa = ParagraphStyle("H", parent=s_cella, fontSize=7, leading=8.5, alignment=1)
+    s_cella = ParagraphStyle("C", parent=stili["Normal"], fontSize=7.5, leading=9)
+    s_testa = ParagraphStyle("H", parent=s_cella, fontSize=6.5, leading=8, alignment=1)
 
+    legenda = "<br/>".join(f"<b>{k}</b> = {LEGENDA_PRESENZE[k]}" for k in sigle)
     logo = _carica_logo()
-    intestazione = [Paragraph(f"<b>PRESENZE ALLENAMENTI {_esc(squadra).upper()}</b>", s_titolo),
-                    Paragraph(_esc(f"{stagione} · {periodo} · {len(allenamenti)} allenamenti"), s_info)]
-    t = Table([[intestazione, logo or ""]], colWidths=[larghezza - 60, 60])
-    t.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "MIDDLE"), ("ALIGN", (1, 0), (1, 0), "RIGHT"),
+    intestazione = [Paragraph(f"<b>PRESENZA ALLENAMENTI {_esc(periodo).upper()}</b>", s_titolo),
+                    Paragraph(_esc(f"{squadra} · stagione {stagione} · numero allenamenti {len(sedute)}"), s_info)]
+    t = Table([[intestazione, Paragraph(legenda, s_info), logo or ""]], colWidths=[larga - 190, 130, 60])
+    t.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "MIDDLE"), ("ALIGN", (2, 0), (2, 0), "RIGHT"),
                            ("LEFTPADDING", (0, 0), (-1, -1), 0), ("LINEBELOW", (0, 0), (-1, -1), 1, LINEA),
                            ("BOTTOMPADDING", (0, 0), (-1, -1), 6)]))
-    story = [t, Paragraph("Ragazzi", s_sezione)]
+    story = [t, Spacer(1, 8)]
 
-    colonne = [c for c in righe[0] if c != "Ragazzo"] if righe else []
-    dati = [["Ragazzo"] + [Paragraph(f"<b>{_esc(c)}</b>", s_testa) for c in colonne]]
-    for r in righe:
-        dati.append([Paragraph(_esc(r["Ragazzo"]), s_cella)]
-                    + [f"{r[c]}%" if c == "Presenze %" else r[c] for c in colonne])
-    tab = Table(dati, colWidths=[larghezza - 50 * len(colonne)] + [50] * len(colonne), repeatRows=1)
-    tab.setStyle(_stile_tabella())
-    story.append(tab)
+    def totali(segnate):
+        n = len([x for x in segnate if x]) or 1
+        celle = []
+        for k in sigle:
+            quante = segnate.count(k)
+            celle += [quante, f"{round(100 * quante / n)}%"]
+        return celle
 
-    if allenamenti:
-        story += [NextPageTemplate("orizzontale"), PageBreak(), Paragraph("Allenamento per allenamento", s_sezione)]
-        larga = orizzontale[0] - 2 * MARGINE
-        for inizio in range(0, len(allenamenti), ALLENAMENTI_PER_TABELLA):
-            date = allenamenti[inizio:inizio + ALLENAMENTI_PER_TABELLA]
-            dati = [["Ragazzo"] + [Paragraph(f"<b>{d[:5]}</b>", s_testa) for d in date]]
-            for nome, sigle in griglia.items():
-                dati.append([Paragraph(_esc(nome), s_cella)] + sigle[inizio:inizio + ALLENAMENTI_PER_TABELLA])
-            colonna = min(32, (larga - 150) / len(date))
-            tab = Table(dati, colWidths=[min(170, larga - colonna * len(date))] + [colonna] * len(date),
-                        repeatRows=1, hAlign="LEFT")
-            tab.setStyle(_stile_tabella())
-            story += [tab, Spacer(1, 8)]
+    testa_totali = [Paragraph(f"<b>{x}</b>", s_testa) for k in sigle for x in (k, f"{k}%")]
+    colonna, nome_l, anno_l, tot_l = 24, 125, 32, 22
+    insieme = nome_l + anno_l + colonna * len(sedute) + tot_l * len(testa_totali) <= larga
+    blocchi = [range(0, len(sedute))] if insieme else \
+        [range(i, min(i + SEDUTE_PER_TABELLA, len(sedute))) for i in range(0, len(sedute), SEDUTE_PER_TABELLA)]
+    for blocco in blocchi:
+        dati = [[Paragraph("<b>NOME E COGNOME</b>", s_cella), Paragraph("<b>ANNO</b>", s_testa)]
+                + [Paragraph("<b>" + _esc(sedute[i]).replace("-", "<br/>") + "</b>", s_testa) for i in blocco]
+                + (testa_totali if insieme else [])]
+        for nome, anno, segnate in righe:
+            dati.append([Paragraph(_esc(nome), s_cella), anno] + [segnate[i] for i in blocco]
+                        + (totali(segnate) if insieme else []))
+        tab = Table(dati, colWidths=[nome_l, anno_l] + [colonna] * len(blocco)
+                    + ([tot_l] * len(testa_totali) if insieme else []), repeatRows=1, hAlign="LEFT")
+        stile = _stile_tabella()
+        stile.add("FONTSIZE", (0, 0), (-1, -1), 7)
+        for i, (_, _, segnate) in enumerate(righe, start=1):
+            for j, b in enumerate(blocco):
+                colore = {"A": "#FED7D7", "D": "#FEFCBF", "P": "#E9D8FD", "Z": "#BEE3F8", "I": "#FBD38D",
+                          "G": "#E2E8F0"}.get(segnate[b])
+                if colore:
+                    stile.add("BACKGROUND", (2 + j, i), (2 + j, i), colors.HexColor(colore))
+        tab.setStyle(stile)
+        story += [tab, Spacer(1, 8)]
+    if not insieme:
+        dati = [[Paragraph("<b>NOME E COGNOME</b>", s_cella), Paragraph("<b>ANNO</b>", s_testa)] + testa_totali]
+        dati += [[Paragraph(_esc(nome), s_cella), anno] + totali(segnate) for nome, anno, segnate in righe]
+        tab = Table(dati, colWidths=[nome_l, anno_l] + [30] * len(testa_totali), repeatRows=1, hAlign="LEFT")
+        tab.setStyle(_stile_tabella())
+        story.append(tab)
 
-    story += [Spacer(1, 10), Paragraph(
-        "P presente · D differenziato · I infortunato · A assente · G giustificato. La percentuale conta presenti e "
-        f"differenziati. Stampato il {datetime.now(ORA_ITALIANA):%d/%m/%Y alle %H:%M}.", s_info)]
+    story += [Spacer(1, 6), Paragraph(
+        f"Le percentuali sono sugli allenamenti in cui il ragazzo è segnato. "
+        f"Stampato il {datetime.now(ORA_ITALIANA):%d/%m/%Y alle %H:%M}.", s_info)]
     doc.build(story)
     return buffer.getvalue()
