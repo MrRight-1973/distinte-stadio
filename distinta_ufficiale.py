@@ -31,6 +31,7 @@ RUOLI_PANCHINA = [("accompagnatore", "Dirigente Accompagnatore Sig."),
                   ("allenatore2", "Allenatore in seconda Sig."),
                   ("sanitario", "Operatore Sanitario Sig.")]
 ASSISTENTE = ("assistente", "Assistente")  # l'assistente dell'arbitro messo dalla società
+MASSAGGIATORE = ("massaggiatore", "Massaggiatore sportivo")  # prima riga della panchina aggiuntiva
 SIGLE_DOCUMENTO = {"Carta d'identità": "C.I.", "Patente": "PAT", "Passaporto": "PASS"}
 DICHIARAZIONE = ("Il sottoscritto Dirigente accompagnatore ufficiale dichiara, ai sensi dell'Art.61 N.O.I.F., che i "
                  "calciatori sopraindicati sono regolarmente tesserati e partecipano alla gara sotto la "
@@ -121,6 +122,9 @@ def controlli(distinta, persone):
     giocatori = distinta.get("giocatori") or []
     if len(giocatori) > MAX_GIOCATORI:
         problemi.append(f"Ci sono {len(giocatori)} giocatori: il modulo ne contiene al massimo {MAX_GIOCATORI}.")
+    ids = [g["id"] for g in giocatori]
+    if len(set(ids)) < len(ids):
+        problemi.append("Lo stesso giocatore è in più righe.")
     numeri = [g.get("numero") for g in giocatori if g.get("numero")]
     doppi = sorted({n for n in numeri if numeri.count(n) > 1})
     if doppi:
@@ -162,7 +166,9 @@ def genera_pdf_distinta(distinta, persone, nome_societa):
     s_testa = ParagraphStyle("H", fontName="Helvetica-Bold", fontSize=6.5, leading=7.5, alignment=1)
     s_piccolo = ParagraphStyle("P", fontName="Helvetica", fontSize=6, leading=6.5, alignment=1)
     s_mini = ParagraphStyle("m", parent=s_piccolo, fontSize=5, leading=5.5)
-    s_nome = ParagraphStyle("N", fontName="Helvetica", fontSize=10, leading=11)
+    s_cella = ParagraphStyle("c", fontName="Helvetica", fontSize=7.5, leading=7.5, alignment=1)
+    s_num = ParagraphStyle("n", fontName="Helvetica-Bold", fontSize=11, leading=12, alignment=1)
+    s_nome = ParagraphStyle("N", fontName="Helvetica", fontSize=10, leading=10)
     s_riga = ParagraphStyle("R", fontName="Helvetica", fontSize=7.5, leading=9)
     s_dich = ParagraphStyle("D", fontName="Helvetica", fontSize=7.5, leading=9)
     nero = colors.black
@@ -211,9 +217,12 @@ def genera_pdf_distinta(distinta, persone, nome_societa):
         if i < len(giocatori) and giocatori[i]["id"] in persone:
             g = giocatori[i]
             r = persone[g["id"]]
-            dati.append([str(g.get("numero") or ""), *nascita_gma(r), Paragraph(_esc(nome_stampa(r)), s_nome),
-                         g.get("cap") or "", r.get("matricola", ""), "",
-                         SIGLE_DOCUMENTO.get(r.get("documento_tipo"), ""), r.get("documento_numero", ""),
+            # celle come paragrafi centrati: data di nascita e numeri stanno a metà riga
+            celle = [*nascita_gma(r), None, g.get("cap") or "", r.get("matricola", ""), "",
+                     SIGLE_DOCUMENTO.get(r.get("documento_tipo"), ""), r.get("documento_numero", "")]
+            celle = [Paragraph(_esc(c), s_cella) if c is not None else Paragraph(_esc(nome_stampa(r)), s_nome)
+                     for c in celle]
+            dati.append([Paragraph(_esc(g.get("numero") or ""), s_num), *celle,
                          Paragraph(_esc(rilasciato(r)), s_piccolo), "", ""])
         else:
             dati.append([""] * len(larghezze))
@@ -268,9 +277,13 @@ def genera_pdf_distinta(distinta, persone, nome_societa):
     ruoli = distinta.get("ruoli") or {}
     recinto = ammessi("Persone ammesse al recinto di gioco",
                       [(etichetta_, persone.get(ruoli.get(chiave))) for chiave, etichetta_ in RUOLI_PANCHINA])
-    extra = [persone[i] for i in distinta.get("panchina") or [] if i in persone][:RIGHE_PANCHINA_AGGIUNTIVA]
+    massaggiatore = ruoli.get(MASSAGGIATORE[0])
+    extra = ([(MASSAGGIATORE[1], persone[massaggiatore])] if massaggiatore in persone else []) + \
+        [(persone[i].get("qualifica") or persone[i].get("tipo", ""), persone[i])
+         for i in distinta.get("panchina") or [] if i in persone and i != massaggiatore]
+    extra = extra[:RIGHE_PANCHINA_AGGIUNTIVA]
     aggiuntiva = ammessi("Panchina Aggiuntiva",
-                         [(r.get("qualifica") or r.get("tipo", ""), r) for r in extra]
+                         extra
                          + [("", None)] * (RIGHE_PANCHINA_AGGIUNTIVA - len(extra)))
 
     riga_firma, spazio = 180, 90
