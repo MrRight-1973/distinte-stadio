@@ -11,7 +11,7 @@ from datetime import date
 import pandas as pd
 import streamlit as st
 
-from anagrafica import (anno_di, data_da_iso, elenco_ragazzi, nome_completo, nuova_da_nome, ragazzi_del_gruppo,
+from anagrafica import (anno_di, calciatori, data_da_iso, elenco_ragazzi, nome_completo, nuova_da_nome, ragazzi_del_gruppo,
                         salva_scheda, trova_per_nome)
 from presenze import (DA_SIGLA, IN_CAMPO, SIGLE, SIGLE_TABELLA, STATI, aggiungi_allenamenti, elimina_allenamento, etichetta_corta, giorno_di,
                       leggi_tabella, mesi_della_stagione, nel_periodo, numero_di, ordina, presenze_gruppo,
@@ -266,7 +266,7 @@ def _importa(stagione, gruppo, ragazzi, allenamenti):
             tabelle.append((f.name, leggi_tabella(testo_da_file(f.name, f.getvalue()), stagione)))
         except Exception as e:  # PDF rovinato o non di testo
             st.error(f"{f.name}: non riesco a leggerlo ({e}).")
-    tutti = elenco_ragazzi()
+    tutti = calciatori(elenco_ragazzi())
     preferiti = {r["id"] for r in ragazzi}
     nomi, anni, sedute, problemi = [], {}, {}, []
     for nome_file, t in tabelle:

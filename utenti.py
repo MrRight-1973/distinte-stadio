@@ -1,8 +1,8 @@
 """Utenti della segreteria, salvati su Supabase con la password cifrata (mai in chiaro).
 
-Quattro ruoli: "admin" vede tutto e gestisce gli utenti; "segreteria" l'Anagrafica (tutti i ragazzi);
+Cinque ruoli: "admin" vede tutto e gestisce gli utenti; "segreteria" l'Anagrafica (tutti i ragazzi);
 "reporter" Distinta, Cronaca partita e Archivio; "allenatore" Allenamenti e Statistiche (solo i ragazzi
-dei suoi gruppi squadra). Per ogni utente non amministratore si possono scegliere a mano le aree
+dei suoi gruppi squadra); "distinte" solo Crea distinta (le distinte da stampare per l'arbitro). Per ogni utente non amministratore si possono scegliere a mano le aree
 visibili ("aree"); il ruolo decide comunque quali ragazzi vede. La password SEGRETERIA_PASSWORD dei secrets resta sempre
 valida come accesso admin di emergenza (utente "admin" o nome vuoto).
 """
@@ -16,7 +16,8 @@ import secrets
 from cronaca_manager import _cartella_dati, _carica_online, _leggi_file
 
 RUOLI = {"admin": "Amministratore (tutto)", "segreteria": "Segreteria (Anagrafica)",
-         "reporter": "Reporter (Distinta, Cronaca, Archivio)", "allenatore": "Allenatore (Allenamenti, Statistiche)"}
+         "reporter": "Reporter (Distinta, Cronaca, Archivio)", "allenatore": "Allenatore (Allenamenti, Statistiche)",
+         "distinte": "Distinte (Crea distinta)"}
 VECCHI_RUOLI = {"user": "reporter"}  # nomi usati prima
 ITERAZIONI = 200_000
 LUNGHEZZA_MINIMA = 8

@@ -58,6 +58,7 @@ from ui_rose import render_opzioni_rose, render_prepara_da_rosa
 from ui_stagioni import render_opzioni_campionati
 from ui_components import render_download_buttons, render_info_match
 from ui_anagrafica import render_anagrafica
+from ui_crea_distinta import render_crea_distinta
 from ui_presenze import render_presenze
 from ui_cronaca import render_cronaca
 from ui_sponsor import loghi_per_pdf, render_gestione_sponsor
@@ -478,11 +479,12 @@ def azzera_sezione_distinta():
     reset_stato_squadra("griglia_ospite")
 
 
-SEZIONI = ["📋 Distinta", "🎙️ Cronaca partita", "👦 Anagrafica", "🏃 Allenamenti", "📚 Archivio", "📊 Statistiche", "⚙️ Opzioni"]
+SEZIONI = ["📋 Distinta", "📝 Crea distinta", "🎙️ Cronaca partita", "👦 Anagrafica", "🏃 Allenamenti", "📚 Archivio",
+           "📊 Statistiche", "⚙️ Opzioni"]
 SOTTOSEZIONI_OPZIONI = ["🏆 Campionati", "👕 Rose", "🤖 Lettura AI", "🏷️ Sponsor", "👥 Utenti"]  # per una nuova impostazione basta aggiungerla qui
 SEZIONI_PER_RUOLO = {"admin": SEZIONI, "segreteria": ["👦 Anagrafica"],
                      "reporter": ["📋 Distinta", "🎙️ Cronaca partita", "📚 Archivio"],
-                     "allenatore": ["🏃 Allenamenti", "📊 Statistiche"]}
+                     "allenatore": ["🏃 Allenamenti", "📊 Statistiche"], "distinte": ["📝 Crea distinta"]}
 # Aree assegnabili a mano a un utente: le sezioni e le pagine di Opzioni (gli utenti li gestisce solo l'admin)
 OPZIONI_ASSEGNABILI = [s for s in SOTTOSEZIONI_OPZIONI if s != "👥 Utenti"]
 AREE = SEZIONI[:-1] + [f"⚙️ {s}" for s in OPZIONI_ASSEGNABILI]
@@ -625,6 +627,9 @@ def render_segreteria():
             return
         st.subheader("🏷️ Sponsor")
         render_gestione_sponsor(leggi_secret("GITHUB_TOKEN"), leggi_secret("GITHUB_REPO"), leggi_secret("GITHUB_BRANCH"))
+        return
+    if sezione == "📝 Crea distinta":
+        render_crea_distinta(st.session_state.get("utente", ""), st.session_state.get("ruolo"), nome_societa())
         return
     if sezione == "👦 Anagrafica":
         render_anagrafica(st.session_state.get("utente", ""), st.session_state.get("ruolo"))

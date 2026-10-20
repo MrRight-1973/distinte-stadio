@@ -1,8 +1,9 @@
-"""Anagrafica dei ragazzi della società: dati di tesseramento e scadenze.
+"""Anagrafica della società: ragazzi, dirigenti e allenatori, con i dati di tesseramento e le scadenze.
 
 Una scheda per ragazzo, che resta negli anni: in ogni anno sportivo il ragazzo sta in un gruppo
 squadra (Prima Squadra, Under 17...). Per i gruppi che hanno ragazzi in anagrafica, la rosa usata
-dalla Distinta viene da qui.
+dalla Distinta viene da qui. Il "tipo" distingue i calciatori da dirigenti, allenatori e staff (che
+servono per le persone ammesse in panchina nella distinta da stampare); senza tipo è un calciatore.
 
 Dati di minori: si salva solo il necessario. Del documento e del certificato medico solo tipo,
 numero e scadenza, mai la scansione. Il file sta nello spazio privato di Supabase
@@ -20,9 +21,11 @@ from statistiche import chiave_giocatore
 PERCORSO_ONLINE = "impostazioni/anagrafica.json"
 RUOLI_CAMPO = ["", "Portiere", "Difensore", "Centrocampista", "Attaccante"]
 TIPI_DOCUMENTO = ["", "Carta d'identità", "Passaporto", "Patente", "Altro"]
+CALCIATORE = "Calciatore"
+TIPI_PERSONA = [CALCIATORE, "Dirigente", "Allenatore", "Staff sanitario", "Altro staff"]
 GIORNI_AVVISO = 30  # scadenze segnalate con un mese di anticipo
 CAMPI_TESTO = ("cognome", "nome", "matricola", "documento_tipo", "documento_numero", "documento_rilascio",
-               "ruolo", "genitore", "telefono")
+               "ruolo", "genitore", "telefono", "tipo", "qualifica")
 CAMPI_DATA = ("nascita", "documento_scadenza", "certificato_scadenza")
 
 
@@ -73,6 +76,7 @@ def pulisci_scheda(scheda):
     """Testi in ordine (cognome e nome in maiuscolo), date in formato yyyy-mm-dd."""
     pulita = {k: _testo(scheda.get(k)) for k in CAMPI_TESTO}
     pulita["cognome"], pulita["nome"] = pulita["cognome"].upper(), pulita["nome"].upper()
+    pulita["tipo"] = pulita["tipo"] if pulita["tipo"] in TIPI_PERSONA else CALCIATORE
     pulita["matricola"] = re.sub(r"\s+", "", pulita["matricola"]).upper()
     pulita["documento_numero"] = re.sub(r"\s+", "", pulita["documento_numero"]).upper()
     pulita.update({k: data_iso(scheda.get(k)) for k in CAMPI_DATA})
@@ -82,6 +86,18 @@ def pulisci_scheda(scheda):
     pulita["gruppi"] = {s: g for s, g in (scheda.get("gruppi") or {}).items() if g}
     pulita["id"] = scheda.get("id") or uuid.uuid4().hex[:12]
     return pulita
+
+
+def tipo_di(r):
+    return r.get("tipo") or CALCIATORE
+
+
+def e_calciatore(r):
+    return tipo_di(r) == CALCIATORE
+
+
+def calciatori(persone):
+    return [r for r in persone if e_calciatore(r)]
 
 
 def nome_completo(r):
@@ -111,9 +127,9 @@ def elimina_scheda(id_ragazzo):
     _scrivi([r for r in elenco_ragazzi() if r["id"] != id_ragazzo])
 
 
-def ragazzi_del_gruppo(stagione, gruppo, ragazzi=None):
+def ragazzi_del_gruppo(stagione, gruppo, ragazzi=None, solo_calciatori=True):
     return [r for r in (ragazzi if ragazzi is not None else elenco_ragazzi())
-            if (r.get("gruppi") or {}).get(stagione) == gruppo]
+            if (r.get("gruppi") or {}).get(stagione) == gruppo and (e_calciatore(r) or not solo_calciatori)]
 
 
 def rosa_da_anagrafica(stagione, gruppo):
