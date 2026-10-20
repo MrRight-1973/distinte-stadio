@@ -2,7 +2,9 @@
 
 Quattro livelli: "admin" vede tutte le sezioni e gestisce gli utenti; "segreteria" vede Distinta,
 Cronaca partita e tutta l'Anagrafica; "allenatore" vede Distinta, Cronaca e nell'Anagrafica solo i
-ragazzi dei suoi gruppi squadra; "user" vede solo Distinta e Cronaca partita (niente dati dei ragazzi). La password SEGRETERIA_PASSWORD dei secrets resta sempre
+ragazzi dei suoi gruppi squadra; "user" vede solo Distinta e Cronaca partita (niente dati dei ragazzi).
+Per ogni utente non amministratore si possono scegliere a mano le aree visibili ("aree"); il ruolo
+decide comunque quali ragazzi vede (tutti per la segreteria, solo i suoi gruppi per gli altri). La password SEGRETERIA_PASSWORD dei secrets resta sempre
 valida come accesso admin di emergenza (utente "admin" o nome vuoto).
 """
 import hashlib
@@ -92,10 +94,29 @@ def cambia_password(nome, password):
 
 
 def cambia_ruolo(nome, ruolo):
+    """Cambiando ruolo, le aree tornano quelle del nuovo ruolo."""
     utenti = elenco_utenti()
     if nome in utenti and ruolo in RUOLI:
         utenti[nome]["ruolo"] = ruolo
+        utenti[nome].pop("aree", None)
         _salva(utenti)
+
+
+def cambia_aree(nome, aree):
+    """Le aree (sezioni e pagine di Opzioni) che l'utente vede; None = quelle del suo ruolo."""
+    utenti = elenco_utenti()
+    if nome in utenti:
+        if aree is None:
+            utenti[nome].pop("aree", None)
+        else:
+            utenti[nome]["aree"] = list(aree)
+        _salva(utenti)
+
+
+def aree_utente(nome):
+    """Le aree scelte per l'utente, oppure None se valgono quelle del ruolo."""
+    aree = (elenco_utenti().get(nome) or {}).get("aree")
+    return list(aree) if isinstance(aree, list) else None
 
 
 def cambia_gruppi(nome, gruppi):
