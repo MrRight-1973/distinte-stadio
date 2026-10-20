@@ -236,23 +236,33 @@ def importa_schede(righe, stagione, gruppo):
     return aggiunti, aggiornati
 
 
-def trova_per_nome(nome, anno, ragazzi):
+def anno_di(r):
+    return r.get("anno_nascita") or (r.get("nascita") or "")[:4]
+
+
+def trova_per_nome(nome, anno, ragazzi, preferiti=()):
     """Il ragazzo che corrisponde a un nome scritto a mano ("ANDERSON PIVA MILANES" trova PIVA ANDERSON):
-    stesse parole in qualsiasi ordine, oppure tutte le parole della scheda dentro il nome (una sola scheda).
-    Se l'anno di nascita c'è da tutte e due le parti, deve essere lo stesso. None se non è sicuro."""
+    stesse parole in qualsiasi ordine, oppure tutte le parole della scheda dentro il nome. Prima con lo
+    stesso anno di nascita, poi senza; tra più schede uguali sceglie quella con l'id in "preferiti"
+    (es. i ragazzi della squadra). None se resta il dubbio."""
     chiave = chiave_giocatore(nome)
     parole = set(chiave.split())
 
-    def anno_ok(r):
-        suo = r.get("anno_nascita") or (r.get("nascita") or "")[:4]
-        return not anno or not suo or str(anno) == suo
+    def una(lista):
+        if len(lista) == 1:
+            return lista[0]
+        scelti = [r for r in lista if r["id"] in preferiti]
+        return scelti[0] if len(scelti) == 1 else None
 
-    candidati = [r for r in ragazzi if anno_ok(r)]
-    uguali = [r for r in candidati if chiave_giocatore(nome_completo(r)) == chiave]
-    if len(uguali) == 1:
-        return uguali[0]
-    dentro = [r for r in candidati if set(chiave_giocatore(nome_completo(r)).split()) <= parole]
-    return dentro[0] if len(dentro) == 1 and len(uguali) == 0 else None
+    for con_anno in (True, False):
+        candidati = [r for r in ragazzi if not con_anno or not anno or not anno_di(r) or anno_di(r) == str(anno)]
+        uguali = [r for r in candidati if chiave_giocatore(nome_completo(r)) == chiave]
+        if uguali:
+            return una(uguali)
+        trovato = una([r for r in candidati if set(chiave_giocatore(nome_completo(r)).split()) <= parole])
+        if trovato:
+            return trovato
+    return None
 
 
 def nuova_da_nome(nome, anno, stagione, gruppo):
