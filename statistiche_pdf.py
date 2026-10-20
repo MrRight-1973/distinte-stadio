@@ -162,17 +162,16 @@ def genera_pdf_statistiche(squadra, campionato, riepilogo, per_partita, risultat
     return buffer.getvalue()
 
 
-
 LEGENDA_PRESENZE = {"C": "COMPLETO", "A": "ASSENTE", "P": "PARZIALE", "D": "DIFFERENZIATO", "Z": "PRESENZA",
                     "I": "INFORTUNATO", "G": "GIUSTIFICATO"}
-SEDUTE_PER_TABELLA = 22
 
 
-def genera_pdf_presenze(squadra, stagione, periodo, righe, sedute, sigle):
+def genera_pdf_presenze(squadra, stagione, periodo, righe, sedute, sigle, dal="", al=""):
     """PDF delle presenze come le tabelle del mister: una riga per ragazzo con la sigla di ogni allenamento,
     poi quante volte e in che percentuale per ogni sigla.
     righe: [(nome, anno, [sigla o "" per ogni seduta])]; sedute: intestazioni ("01-set");
-    sigle: le sigle di cui mostrare i totali, nell'ordine (es. ["C", "A", "P", "D", "Z"])."""
+    sigle: le sigle di cui mostrare i totali, nell'ordine (es. ["C", "A", "P", "D", "Z"]);
+    dal, al: le date (gg/mm/aaaa) del periodo scelto prima della stampa."""
     buffer = io.BytesIO()
     pagina = landscape(A4)
     doc = BaseDocTemplate(buffer, pagesize=pagina, title=f"Presenze {squadra}",
@@ -193,6 +192,8 @@ def genera_pdf_presenze(squadra, stagione, periodo, righe, sedute, sigle):
         testo = [Paragraph(f"<b>PRESENZA ALLENAMENTI {_esc(periodo).upper()}</b>", s_titolo),
                  Paragraph(_esc(f"{squadra} · stagione {stagione} · numero allenamenti {len(sedute)} · {cosa}"),
                            s_info)]
+        if dal or al:
+            testo.append(Paragraph(f"<b>Periodo: dal {_esc(dal)} al {_esc(al)}</b>", s_info))
         t = Table([[testo, Paragraph(legenda, s_info), _carica_logo() if logo else ""]],
                   colWidths=[larga - 190, 130, 60])
         t.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "MIDDLE"), ("ALIGN", (2, 0), (2, 0), "RIGHT"),
@@ -209,10 +210,13 @@ def genera_pdf_presenze(squadra, stagione, periodo, righe, sedute, sigle):
         return celle
 
     testa_totali = [Paragraph(f"<b>{x}</b>", s_testa) for k in sigle for x in (k, f"{k}%")]
-    colonna, nome_l, anno_l, tot_l = 24, 125, 32, 22
+    colonna, nome_l, anno_l, tot_l = 21, 125, 30, 22
     insieme = nome_l + anno_l + colonna * len(sedute) + tot_l * len(testa_totali) <= larga
+    per_foglio = int((larga - nome_l - anno_l) // colonna)  # quanti allenamenti stanno in un foglio
+    n_blocchi = max(1, -(-len(sedute) // per_foglio))
+    passo = -(-len(sedute) // n_blocchi) or 1  # fogli riempiti in modo uguale
     blocchi = [range(0, len(sedute))] if insieme else \
-        [range(i, min(i + SEDUTE_PER_TABELLA, len(sedute))) for i in range(0, len(sedute), SEDUTE_PER_TABELLA)]
+        [range(i, min(i + passo, len(sedute))) for i in range(0, len(sedute), passo)]
     story = []
     for n_blocco, blocco in enumerate(blocchi, start=1):  # una tabella per foglio
         cosa = "allenamento per allenamento" + (f" ({n_blocco}/{len(blocchi)})" if len(blocchi) > 1 else "")
@@ -226,6 +230,8 @@ def genera_pdf_presenze(squadra, stagione, periodo, righe, sedute, sigle):
                     + ([tot_l] * len(testa_totali) if insieme else []), repeatRows=1, hAlign="LEFT")
         stile = _stile_tabella()
         stile.add("FONTSIZE", (0, 0), (-1, -1), 7)
+        for lato in ("LEFTPADDING", "RIGHTPADDING"):  # colonne strette: date e anno restano su una riga
+            stile.add(lato, (1, 0), (-1, -1), 1)
         for i, (_, _, segnate) in enumerate(righe, start=1):
             for j, b in enumerate(blocco):
                 colore = {"A": "#FED7D7", "D": "#FEFCBF", "P": "#E9D8FD", "Z": "#BEE3F8", "I": "#FBD38D",
@@ -234,14 +240,28 @@ def genera_pdf_presenze(squadra, stagione, periodo, righe, sedute, sigle):
                     stile.add("BACKGROUND", (2 + j, i), (2 + j, i), colors.HexColor(colore))
         tab.setStyle(stile)
         story += intestazione(cosa) + [tab, PageBreak()]
+    ultima = None
     if not insieme:
         dati = [[Paragraph("<b>NOME E COGNOME</b>", s_cella), Paragraph("<b>ANNO</b>", s_testa)] + testa_totali]
         dati += [[Paragraph(_esc(nome), s_cella), anno] + totali(segnate) for nome, anno, segnate in righe]
-        tab = Table(dati, colWidths=[nome_l, anno_l] + [30] * len(testa_totali), repeatRows=1, hAlign="LEFT")
-        tab.setStyle(_stile_tabella())
-        story += intestazione("totali") + [tab, PageBreak()]
-
-    story += intestazione("percentuale di allenamenti svolti") + [_grafico_presenze(righe, larga)]
+        larghezze = [nome_l, anno_l] + [30] * len(testa_totali)
+        ultima = Table(dati, colWidths=larghezze, repeatRows=1, hAlign="LEFT")
+        stile = _stile_tabella()
+        for lato in ("LEFTPADDING", "RIGHTPADDING"):
+            stile.add(lato, (1, 0), (-1, -1), 1)
+        ultima.setStyle(stile)
+        spazio = larga - sum(larghezze) - 16
+        if spazio >= 250 and len(righe) <= 30:  # il grafico sta a destra dei totali, sullo stesso foglio
+            affianco = Table([[ultima, _grafico_presenze(righe, spazio)]], colWidths=[sum(larghezze) + 16, spazio],
+                             hAlign="LEFT")
+            affianco.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "TOP"), ("LEFTPADDING", (0, 0), (-1, -1), 0),
+                                          ("RIGHTPADDING", (0, 0), (-1, -1), 0), ("TOPPADDING", (0, 0), (-1, -1), 0)]))
+            story += intestazione("totali e percentuale di allenamenti svolti") + [affianco]
+        else:
+            story += intestazione("totali") + [ultima, PageBreak()]
+            ultima = None
+    if ultima is None:
+        story += intestazione("percentuale di allenamenti svolti") + [_grafico_presenze(righe, larga)]
     story += [Spacer(1, 6), Paragraph(
         "Allenamenti svolti = completo, parziale o differenziato (C, P, D), sugli allenamenti in cui il ragazzo è "
         f"segnato; la linea tratteggiata è la media. Stampato il {datetime.now(ORA_ITALIANA):%d/%m/%Y alle %H:%M}.",
@@ -259,7 +279,7 @@ def _grafico_presenze(righe, larghezza):
         segnati = [x for x in segnate if x]
         valori.append((nome, round(100 * sum(x in ("C", "P", "D") for x in segnati) / len(segnati)) if segnati else 0))
     valori.sort(key=lambda v: (-v[1], v[0]))
-    riga, etichette, margine = 15, 150, 40
+    riga, etichette, margine = 15, min(150, larghezza * 0.38), 30
     alto = riga * len(valori) + 24
     barra_max = larghezza - etichette - margine
     disegno = Drawing(larghezza, alto)
