@@ -85,12 +85,13 @@ def titolo_con_logo(testo):
     if not logo:
         st.title(f"⚽ {testo}")
         return
-    st.markdown(f'<h1 style="display:flex;align-items:center;gap:0.6rem;line-height:1.25;padding:0.75rem 0 0.5rem">'
-                f'<img src="data:image/png;base64,{logo}" style="height:2.6rem;width:auto;flex:none;margin-right:0.7rem" alt="">'
-                f'<span>{html.escape(testo)}</span></h1>', unsafe_allow_html=True)
+    st.markdown(f'<div role="heading" aria-level="1" style="display:flex;align-items:center;gap:0.7rem;'
+                f'margin:0 0 0.75rem 0;font-size:clamp(1.6rem,4vw,2.6rem);font-weight:700;line-height:1.2">'
+                f'<img src="data:image/png;base64,{logo}" style="height:1.3em;width:auto;flex:none" alt="">'
+                f'<span>{html.escape(testo)}</span></div>', unsafe_allow_html=True)
 
 # Menu, Deploy e barra superiore si nascondono da .streamlit/config.toml
-st.markdown("<style>.block-container { padding-top: 1rem !important; }</style>", unsafe_allow_html=True)
+st.markdown("<style>.block-container { padding-top: 1.5rem !important; }</style>", unsafe_allow_html=True)
 
 
 def leggi_secret(nome, default=None):
