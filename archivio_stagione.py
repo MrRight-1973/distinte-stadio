@@ -13,9 +13,9 @@ import zipfile
 from datetime import datetime
 
 import archivio_cloud
-from anagrafica import anno_di, elenco_ragazzi, nome_completo
+from anagrafica import anno_di, data_da_iso, elenco_ragazzi, nome_completo
 from cronaca_manager import scrivi_partite
-from presenze import (SIGLE, SIGLE_TABELLA, etichetta_corta, ordina, presenze_stagione, statistiche)
+from presenze import (SIGLE, SIGLE_TABELLA, etichetta_corta, giorno_di, ordina, presenze_stagione, statistiche)
 from stagioni import gruppo_di, impostazioni_stagioni, stagione_partita
 from statistiche import chiave_squadra, risultati_squadra, squadre_presenti, statistiche_squadra
 from statistiche_pdf import PARTI, genera_pdf_presenze, genera_pdf_statistiche
@@ -55,8 +55,9 @@ def _pdf_presenze(stagione, gruppo, allenamenti, schede):
     righe = [(nome[i], anno_di(schede.get(i, {})), [SIGLE.get(allenamenti[s].get(i), "") for s in sedute])
              for i in ordine]
     sigle = SIGLE_TABELLA + [SIGLE[s] for s in ("infortunato", "giustificato") if any(v[s] for v in conti.values())]
+    dal, al = (f"{data_da_iso(giorno_di(s)):%d/%m/%Y}" for s in (sedute[0], sedute[-1]))
     return genera_pdf_presenze(gruppo, stagione, f"stagione {stagione}", righe,
-                               [etichetta_corta(s) for s in sedute], sigle)
+                               [etichetta_corta(s) for s in sedute], sigle, dal=dal, al=al)
 
 
 def crea_archivio_stagione(stagione, nome_societa, genera_pdf_resoconto=None):

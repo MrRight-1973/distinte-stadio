@@ -90,8 +90,10 @@ def titolo_con_logo(testo):
                 f'<img src="data:image/png;base64,{logo}" style="height:1.3em;width:auto;flex:none" alt="">'
                 f'<span>{html.escape(testo)}</span></div>', unsafe_allow_html=True)
 
-# Menu, Deploy e barra superiore si nascondono da .streamlit/config.toml
-st.markdown("<style>.block-container { padding-top: 1.5rem !important; }</style>", unsafe_allow_html=True)
+# Menu, Deploy e barra superiore si nascondono da .streamlit/config.toml; su Streamlit Cloud la barra può
+# restare e coprire la parte alta del titolo, quindi la si toglie anche qui e si lascia più spazio sopra.
+st.markdown("<style>header[data-testid='stHeader'], [data-testid='stAppHeader'] { display: none !important; }"
+            ".block-container { padding-top: 2.5rem !important; }</style>", unsafe_allow_html=True)
 
 
 def leggi_secret(nome, default=None):

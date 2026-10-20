@@ -221,7 +221,8 @@ def _statistiche(stagione, gruppo, ragazzi, allenamenti):
         tabella = [(nome_di[i], r["Anno"], [SIGLE.get(allenamenti[s].get(i), "") for s in sedute])
                    for i, r in zip(ordine, righe)]
         st.session_state["pres_pdf_pronto"] = (firma, genera_pdf_presenze(
-            gruppo, stagione, periodo, tabella, [etichetta_corta(s) for s in sedute], sigle))
+            gruppo, stagione, periodo, tabella, [etichetta_corta(s) for s in sedute], sigle,
+            dal=_gg(dal or giorno_di(sedute[0])), al=_gg(al or giorno_di(sedute[-1]))))
     pronto = st.session_state.get("pres_pdf_pronto")
     if pronto and pronto[0] == firma:
         st.download_button("⬇️ Scarica il PDF", pronto[1], mime="application/pdf", key="pres_pdf_scarica",
@@ -245,7 +246,7 @@ def _importa(stagione, gruppo, ragazzi, allenamenti):
             st.error(f"{f.name}: non riesco a leggerlo ({e}).")
     tutti = elenco_ragazzi()
     preferiti = {r["id"] for r in ragazzi}
-    nomi, sedute, problemi = [], {}, []
+    nomi, anni, sedute, problemi = [], {}, {}, []
     for nome_file, t in tabelle:
         if not t["sedute"]:
             problemi.append(f"{nome_file}: non trovo la riga con le date (es. 01-set).")
@@ -254,11 +255,12 @@ def _importa(stagione, gruppo, ragazzi, allenamenti):
             problemi.append(f"{nome_file}: è della stagione {t['stagione']}, non della {stagione}.")
             continue
         problemi += [f"{nome_file}: {p}" for p in t["problemi"]]
-        for nome, anno, stati in t["righe"]:
-            if (nome, anno) not in nomi:
-                nomi.append((nome, anno))
+        for nome, anno, stati in t["righe"]:  # l'anno della tabella non conta: spesso è sbagliato
+            if nome not in nomi:
+                nomi.append(nome)
+            anni[nome] = anni.get(nome) or anno
             for chiave, stato in zip(t["sedute"], stati):
-                sedute.setdefault(chiave, {})[(nome, anno)] = stato
+                sedute.setdefault(chiave, {})[nome] = stato
     for p in problemi:
         st.warning(p)
     if not sedute:
@@ -271,9 +273,11 @@ def _importa(stagione, gruppo, ragazzi, allenamenti):
         contate[base] = contate.get(base, 0) + 1
         etichette[r["id"]] = base if contate[base] == 1 else f"{base} #{contate[base]}"
     da_id = {v: k for k, v in etichette.items()}
-    proposti = {k: trova_per_nome(k[0], k[1], tutti, preferiti) for k in nomi}
-    tabella = pd.DataFrame([{"Nella tabella": f"{n_} ({a})" if a else n_,
-                             "In anagrafica": etichette[r["id"]] if r else NUOVO} for (n_, a), r in proposti.items()])
+    # per nome soltanto; l'anno serve solo a scegliere tra due omonimi
+    proposti = {k: trova_per_nome(k, "", tutti, preferiti) or trova_per_nome(k, anni[k], tutti, preferiti)
+                for k in nomi}
+    tabella = pd.DataFrame([{"Nella tabella": n_, "In anagrafica": etichette[r["id"]] if r else NUOVO}
+                            for n_, r in proposti.items()])
     gia = [s for s in sedute if s in allenamenti]
     st.markdown(f"**{len(sedute)} allenamenti** dal {_gg(min(sedute))} al {_gg(max(sedute))} · {len(nomi)} ragazzi"
                 + (f" · {len(gia)} allenamenti già presenti verranno sostituiti" if gia else ""))
@@ -285,9 +289,6 @@ def _importa(stagione, gruppo, ragazzi, allenamenti):
         column_config={"In anagrafica": st.column_config.SelectboxColumn(
             options=[NUOVO, SALTA] + list(etichette.values()), required=True)})
     scelto = dict(zip(nomi, scelte["In anagrafica"]))
-    avvisi = [f"{n_} ({a}) → {v}" for (n_, a), v in scelto.items() if v in da_id and a and f"({a})" not in v]
-    if avvisi:
-        st.warning("Anno di nascita diverso, controlla che sia la stessa persona: " + "; ".join(avvisi))
     doppi = [v for v in set(scelto.values()) if v in da_id and list(scelto.values()).count(v) > 1]
     if doppi:
         st.error("Lo stesso ragazzo è abbinato a più righe: " + ", ".join(doppi))
@@ -298,7 +299,7 @@ def _importa(stagione, gruppo, ragazzi, allenamenti):
             if v == SALTA:
                 continue
             if v == NUOVO:
-                abbinati[k] = nuova_da_nome(k[0], k[1], stagione, gruppo)
+                abbinati[k] = nuova_da_nome(k, anni[k], stagione, gruppo)
                 nuovi += 1
                 continue
             r = schede[da_id[v]]
