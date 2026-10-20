@@ -2,6 +2,7 @@
 import pandas as pd
 import streamlit as st
 
+from anagrafica import rosa_da_anagrafica
 from rose import griglia_convocati, pulisci_rosa, rosa_squadra, salva_rosa, ultima_lista
 from squadra_manager import NUM_RIGHE
 from stagioni import gruppi_correnti
@@ -36,6 +37,11 @@ def render_opzioni_rose(nome_societa, partite):
                               help="La stessa rosa vale per tutte le competizioni del gruppo")
     st.caption("Competizioni: " + " · ".join(competizioni[gruppo]))
     rosa = rosa_squadra(stagione, gruppo)
+    if rosa_da_anagrafica(stagione, gruppo):
+        st.info(f"La rosa di {gruppo} viene dall'anagrafica ({len(rosa)} ragazzi): si cambia nella sezione "
+                "👦 Anagrafica, assegnando i ragazzi alla squadra.")
+        st.dataframe(_tabella_rosa(rosa), hide_index=True, use_container_width=True)
+        return
     n = st.session_state.get("rose_n", 0)
 
     with st.popover("📥 Riempi dall'ultima partita di questa squadra", use_container_width=True):

@@ -1,7 +1,9 @@
 """⚙️ Opzioni → 🏆 Campionati: anno sportivo in corso, gruppi squadra e loro competizioni."""
 import streamlit as st
 
+from anagrafica import rinomina_gruppo
 from rose import rinomina_rosa
+from utenti import rinomina_gruppo_allenatori
 from stagioni import impostazioni_stagioni, salva_stagioni, stagione_di_oggi
 
 NUOVO_GRUPPO = "➕ Nuovo gruppo squadra"
@@ -67,6 +69,8 @@ def render_opzioni_campionati():
                 st.error(f"«{nuovo}» c'è già.")
             else:
                 rinomina_rosa(corrente, gruppo, nuovo)
+                rinomina_gruppo(corrente, gruppo, nuovo)  # i ragazzi dell'anagrafica
+                rinomina_gruppo_allenatori(gruppo, nuovo)
                 _salva(imp, corrente, [{**g, "gruppo": nuovo} if g["gruppo"] == gruppo else g for g in gruppi],
                        f"Gruppo rinominato in «{nuovo}» (la rosa resta).", {f"opz_gruppo_{corrente}": nuovo})
         if st.button(f"🗑️ Elimina «{gruppo}» e le sue competizioni", key="opz_elimina_gruppo"):
