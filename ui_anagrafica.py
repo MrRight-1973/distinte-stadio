@@ -1,4 +1,5 @@
-"""👦 Anagrafica: i ragazzi della società con matricola, documento e certificato medico.
+"""👦 Anagrafica: i ragazzi della società con matricola, documento e certificato medico, e in una vista a
+parte dirigenti, allenatori e staff (servono per la distinta da stampare in 📝 Crea distinta).
 
 Segreteria e amministratori vedono tutti; un allenatore solo i ragazzi dei gruppi squadra
 che gli sono stati assegnati in ⚙️ Opzioni → 👥 Utenti.
@@ -8,14 +9,15 @@ from datetime import date
 import pandas as pd
 import streamlit as st
 
-from anagrafica import (GIORNI_AVVISO, RUOLI_CAMPO, TIPI_DOCUMENTO, data_da_iso, doppione, elenco_ragazzi,
-                        elimina_scheda, importa_rose, importa_schede, nome_completo, salva_scheda, scadenze,
+from anagrafica import (CALCIATORE, GIORNI_AVVISO, RUOLI_CAMPO, TIPI_DOCUMENTO, TIPI_PERSONA, data_da_iso, doppione,
+                        e_calciatore, elenco_ragazzi, elimina_scheda, importa_rose, importa_schede, nome_completo, salva_scheda, scadenze,
                         stato_scadenza)
 from import_csv import CsvErrore, schede_da_csv
 from stagioni import gruppi_correnti
 from utenti import gruppi_utente
 
-TUTTI, SENZA = "Tutti i ragazzi", "Senza squadra quest'anno"
+TUTTI, SENZA = "Tutti", "Senza squadra quest'anno"
+RAGAZZI, STAFF = "👦 Calciatori", "👔 Dirigenti e staff"
 SEGNI = {"scaduto": "🔴", "in scadenza": "🟠", "ok": "🟢", "": ""}
 
 
@@ -34,7 +36,7 @@ def _messaggio(tipo, testo):
 
 
 def render_anagrafica(utente, ruolo):
-    st.subheader("👦 Anagrafica ragazzi")
+    st.subheader("👦 Anagrafica")
     st.caption("Dati di minori: si scrive solo quello che serve al tesseramento. Del documento e del certificato "
                "medico si salvano tipo, numero e scadenza, mai la foto. Niente di questa pagina va sulla pagina "
                "pubblica.")
@@ -50,7 +52,10 @@ def render_anagrafica(utente, ruolo):
                 "⚙️ Opzioni → 👥 Utenti.")
         return
 
-    tutti = elenco_ragazzi()
+    vista = st.segmented_control("Chi", [RAGAZZI, STAFF], default=RAGAZZI, required=True, key="anag_vista",
+                                 label_visibility="collapsed") or RAGAZZI
+    dello_staff = vista == STAFF
+    tutti = [r for r in elenco_ragazzi() if e_calciatore(r) != dello_staff]
     squadra_di = {r["id"]: (r.get("gruppi") or {}).get(stagione, "") for r in tutti}
     visibili = tutti if staff else [r for r in tutti if squadra_di[r["id"]] in miei]
 
@@ -78,16 +83,29 @@ def render_anagrafica(utente, ruolo):
 
     n = st.session_state.get("anag_n", 0)
     if st.session_state.get("anag_nuovo"):
-        _scheda({}, stagione, miei if not staff else nomi_gruppi, staff, n, nuova=True)
+        _scheda({"tipo": "Dirigente"} if dello_staff else {}, stagione, miei if not staff else nomi_gruppi, staff, n,
+                nuova=True)
         return
 
-    if st.button("➕ Nuovo ragazzo", use_container_width=True):
+    if st.button("➕ Nuovo dirigente, allenatore o staff" if dello_staff else "➕ Nuovo ragazzo",
+                 use_container_width=True):
         st.session_state["anag_nuovo"] = True
         st.rerun()
 
     if not elenco:
-        st.info("Nessun ragazzo con questi filtri." if visibili else
+        st.info("Nessuno con questi filtri." if visibili else
+                "Nessun dirigente o allenatore: aggiungili con ➕." if dello_staff else
                 "L'anagrafica è vuota: aggiungi i ragazzi con ➕ oppure importali dalle rose qui sotto.")
+    elif dello_staff:
+        righe = [{"Nome": nome_completo(r), "Tipo": r.get("tipo", ""), "Qualifica": r.get("qualifica", ""),
+                  "Squadra": squadra_di[r["id"]], "Tessera FIGC": r.get("matricola", ""),
+                  "Documento": _con_segno(r.get("documento_scadenza"))} for r in elenco]
+        scelta = st.dataframe(pd.DataFrame(righe), hide_index=True, use_container_width=True, on_select="rerun",
+                              selection_mode="single-row", key=f"anag_staff_{filtro}_{cerca}_{n}",
+                              height=min(35 * len(righe) + 40, 460))
+        st.caption(f"{len(elenco)} persone. Seleziona una riga per aprire la scheda.")
+        if scelta.selection.rows:
+            _scheda(elenco[scelta.selection.rows[0]], stagione, miei if not staff else nomi_gruppi, staff, n)
     else:
         righe = [{"Ragazzo": nome_completo(r),
                   "Nato": _data(r.get("nascita")) or r.get("anno_nascita", ""),
@@ -102,16 +120,18 @@ def render_anagrafica(utente, ruolo):
         if scelta.selection.rows:
             _scheda(elenco[scelta.selection.rows[0]], stagione, miei if not staff else nomi_gruppi, staff, n)
 
-    if staff:
+    if staff and not dello_staff:
         _importa_csv(stagione, gruppi)
-    if ruolo == "admin":
+    if ruolo == "admin" and not dello_staff:
         _importa(stagione, nomi_gruppi)
 
 
 def _scheda(r, stagione, gruppi_ammessi, staff, n, nuova=False):
     """Il modulo di una scheda, nuova o esistente."""
     st.markdown("---")
-    st.markdown(f"**{'➕ Nuovo ragazzo' if nuova else '✏️ ' + nome_completo(r)}**")
+    persona_staff = not e_calciatore(r)
+    nuovo = "➕ Nuovo dirigente, allenatore o staff" if persona_staff else "➕ Nuovo ragazzo"
+    st.markdown(f"**{nuovo if nuova else '✏️ ' + nome_completo(r)}**")
     squadra = (r.get("gruppi") or {}).get(stagione, "")
     squadre = ([""] if staff else []) + gruppi_ammessi
     if squadra and squadra not in squadre:
@@ -127,9 +147,18 @@ def _scheda(r, stagione, gruppi_ammessi, staff, n, nuova=False):
         gruppo = c2.selectbox(f"Squadra {stagione}", squadre, index=squadre.index(squadra) if squadra in squadre else 0,
                               format_func=lambda g: g or "— nessuna —")
         c1, c2 = st.columns(2)
-        ruolo = c1.selectbox("Ruolo", RUOLI_CAMPO, index=RUOLI_CAMPO.index(r.get("ruolo", "")) if r.get("ruolo", "") in RUOLI_CAMPO else 0,
-                             format_func=lambda x: x or "—")
-        matricola = c2.text_input("Matricola FIGC", value=r.get("matricola", ""))
+        if persona_staff:
+            tipi = TIPI_PERSONA[1:]
+            tipo_persona = c1.selectbox("Tipo", tipi, index=tipi.index(r["tipo"]) if r.get("tipo") in tipi else 0)
+            qualifica = c2.text_input("Qualifica (come in distinta)", value=r.get("qualifica", ""),
+                                      placeholder="Es. Dirigente accompagnatore, Massaggiatore sportivo")
+            ruolo = ""
+            matricola = st.text_input("N° tessera FIGC", value=r.get("matricola", ""))
+        else:
+            tipo_persona, qualifica = CALCIATORE, ""
+            ruolo = c1.selectbox("Ruolo", RUOLI_CAMPO, index=RUOLI_CAMPO.index(r.get("ruolo", "")) if r.get("ruolo", "") in RUOLI_CAMPO else 0,
+                                 format_func=lambda x: x or "—")
+            matricola = c2.text_input("Matricola FIGC", value=r.get("matricola", ""))
         st.markdown("🪪 **Documento d'identità**")
         c1, c2, c3 = st.columns(3)
         tipo = c1.selectbox("Tipo", TIPI_DOCUMENTO, format_func=lambda x: x or "—",
@@ -139,12 +168,15 @@ def _scheda(r, stagione, gruppi_ammessi, staff, n, nuova=False):
                                  min_value=date(2000, 1, 1), max_value=date(2100, 1, 1))
         rilascio = st.text_input("Rilasciato da", value=r.get("documento_rilascio", ""),
                                  placeholder="Es. Comune di Due Carrare")
-        c1, c2, c3 = st.columns(3)
-        scad_cert = c1.date_input("🩺 Certificato medico: scadenza", value=data_da_iso(r.get("certificato_scadenza")),
-                                  format="DD/MM/YYYY", min_value=date(2000, 1, 1), max_value=date(2100, 1, 1),
-                                  )
-        genitore = c2.text_input("Genitore di riferimento", value=r.get("genitore", ""))
-        telefono = c3.text_input("Telefono", value=r.get("telefono", ""))
+        if persona_staff:
+            scad_cert, genitore = data_da_iso(r.get("certificato_scadenza")), ""
+            telefono = st.text_input("Telefono", value=r.get("telefono", ""))
+        else:
+            c1, c2, c3 = st.columns(3)
+            scad_cert = c1.date_input("🩺 Certificato medico: scadenza", value=data_da_iso(r.get("certificato_scadenza")),
+                                      format="DD/MM/YYYY", min_value=date(2000, 1, 1), max_value=date(2100, 1, 1))
+            genitore = c2.text_input("Genitore di riferimento", value=r.get("genitore", ""))
+            telefono = c3.text_input("Telefono", value=r.get("telefono", ""))
         salva, annulla = st.columns(2)
         premuto = salva.form_submit_button("💾 Salva", type="primary", use_container_width=True)
         chiudi = annulla.form_submit_button("✖️ Chiudi", use_container_width=True)
@@ -157,7 +189,8 @@ def _scheda(r, stagione, gruppi_ammessi, staff, n, nuova=False):
             st.error("Cognome e nome sono obbligatori.")
             return
         gruppi = {**(r.get("gruppi") or {}), stagione: gruppo}
-        scheda = {**r, "cognome": cognome, "nome": nome, "nascita": nascita,
+        scheda = {**r, "cognome": cognome, "nome": nome, "nascita": nascita, "tipo": tipo_persona,
+                  "qualifica": qualifica,
                   "ruolo": ruolo, "matricola": matricola, "documento_tipo": tipo, "documento_numero": numero_doc,
                   "documento_rilascio": rilascio,
                   "documento_scadenza": scad_doc, "certificato_scadenza": scad_cert, "genitore": genitore,

@@ -5,7 +5,7 @@ import pandas as pd
 import streamlit as st
 
 import archivio_cloud
-from anagrafica import elenco_ragazzi, trova_per_nome
+from anagrafica import calciatori, elenco_ragazzi, trova_per_nome
 from cronaca_manager import carica_cronaca
 from giornata import etichetta_giornata
 from presenze import allenato_complessivo
@@ -37,7 +37,7 @@ def _allenato(stagioni, gruppi, riepilogo):
     totali = allenato_complessivo(stagioni, gruppi)
     if not totali:
         return {}
-    ragazzi = elenco_ragazzi()
+    ragazzi = calciatori(elenco_ragazzi())
     risultato = {}
     for r in riepilogo:
         scheda = trova_per_nome(r["giocatore"], "", ragazzi, set(totali))

@@ -13,7 +13,7 @@ import zipfile
 from datetime import datetime
 
 import archivio_cloud
-from anagrafica import anno_di, data_da_iso, elenco_ragazzi, nome_completo
+from anagrafica import anno_di, data_da_iso, elenco_ragazzi, nome_completo, tipo_di
 from cronaca_manager import scrivi_partite
 from presenze import (SIGLE, SIGLE_TABELLA, etichetta_corta, giorno_di, ordina, presenze_stagione, statistiche)
 from stagioni import gruppo_di, impostazioni_stagioni, stagione_partita
@@ -39,11 +39,11 @@ def partite_della_stagione(stagione):
 def _csv_anagrafica(stagione):
     testo = io.StringIO()
     w = csv.writer(testo, delimiter=";")
-    w.writerow([t for _, t in CAMPI_CSV] + [f"Squadra {stagione}"])
+    w.writerow([t for _, t in CAMPI_CSV] + [f"Squadra {stagione}", "Calciatore o staff", "Qualifica"])
     for r in elenco_ragazzi():
         squadra = (r.get("gruppi") or {}).get(stagione, "")
         if squadra:
-            w.writerow([r.get(k, "") for k, _ in CAMPI_CSV] + [squadra])
+            w.writerow([r.get(k, "") for k, _ in CAMPI_CSV] + [squadra, tipo_di(r), r.get("qualifica", "")])
     return testo.getvalue().encode("utf-8-sig")
 
 
