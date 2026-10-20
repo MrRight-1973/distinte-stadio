@@ -17,6 +17,8 @@ from utenti import (
     accedi,
     aggiungi_utente,
     cambia_password,
+    aree_utente,
+    cambia_aree,
     cambia_gruppi,
     cambia_ruolo,
     elenco_utenti,
@@ -440,12 +442,32 @@ def azzera_sezione_distinta():
 SEZIONI = ["📋 Distinta", "🎙️ Cronaca partita", "👦 Anagrafica", "🏃 Allenamenti", "📚 Archivio", "📊 Statistiche", "⚙️ Opzioni"]
 SOTTOSEZIONI_OPZIONI = ["🏆 Campionati", "👕 Rose", "🤖 Lettura AI", "🏷️ Sponsor", "👥 Utenti"]  # per una nuova impostazione basta aggiungerla qui
 SEZIONI_PER_RUOLO = {"admin": SEZIONI, "segreteria": SEZIONI[:4], "allenatore": SEZIONI[:4], "user": SEZIONI[:2]}
+# Aree assegnabili a mano a un utente: le sezioni e le pagine di Opzioni (gli utenti li gestisce solo l'admin)
+OPZIONI_ASSEGNABILI = [s for s in SOTTOSEZIONI_OPZIONI if s != "👥 Utenti"]
+AREE = SEZIONI[:-1] + [f"⚙️ {s}" for s in OPZIONI_ASSEGNABILI]
+
+
+def aree_di(nome, ruolo):
+    """Le aree che vede un utente: quelle scelte per lui, altrimenti quelle del suo ruolo."""
+    if ruolo == "admin":
+        return list(SEZIONI[:-1]) + [f"⚙️ {s}" for s in SOTTOSEZIONI_OPZIONI]
+    scelte = aree_utente(nome)
+    return scelte if scelte is not None else list(SEZIONI_PER_RUOLO.get(ruolo, SEZIONI_PER_RUOLO["user"]))
+
+
+def sezioni_e_opzioni():
+    """(sezioni del menu, pagine di Opzioni) per l'utente collegato."""
+    aree = aree_di(st.session_state.get("utente", ""), st.session_state.get("ruolo"))
+    opzioni = [s for s in SOTTOSEZIONI_OPZIONI if f"⚙️ {s}" in aree]
+    sezioni = [s for s in SEZIONI[:-1] if s in aree] + (["⚙️ Opzioni"] if opzioni else [])
+    return sezioni or [SEZIONI[0]], opzioni
 
 
 def render_gestione_utenti():
     st.subheader("👥 Utenti")
     st.caption("Gli amministratori vedono tutte le sezioni; la segreteria anche tutta l'Anagrafica, gli allenatori "
                "solo i ragazzi delle squadre assegnate qui sotto, gli utenti solo Distinta e Cronaca partita. "
+               "Per ogni utente puoi cambiare a mano le aree che vede; i ragazzi visibili restano decisi dal ruolo. "
                "Le password sono salvate cifrate. Con utente vuoto e la password della segreteria "
                "(nei secrets) si entra sempre come amministratore.")
     for tipo, testo in st.session_state.pop("utenti_messaggi", []):
@@ -460,14 +482,28 @@ def render_gestione_utenti():
                                  index=list(RUOLI).index(dati.get("ruolo", "user")))
             if ruolo != dati.get("ruolo"):
                 cambia_ruolo(nome, ruolo)
-                st.success("Ruolo aggiornato.")
-            if ruolo == "allenatore":
+                st.session_state["utenti_messaggi"] = [("success", f"Ruolo di {nome} aggiornato: le aree tornano "
+                                                                   "quelle del ruolo.")]
+                st.rerun()
+            if ruolo != "admin":
+                attuali = [a for a in aree_di(nome, ruolo) if a in AREE]
+                scelte = st.multiselect("Aree che vede e usa", AREE, default=attuali, key=f"aree_{nome}_{ruolo}",
+                                        placeholder="Scegli le aree",
+                                        help="Parte da quelle del ruolo; 👥 Utenti resta solo agli amministratori")
+                if sorted(scelte) != sorted(attuali):
+                    cambia_aree(nome, scelte)
+                    st.success("Aree aggiornate: valgono dal prossimo clic dell'utente.")
+                if aree_utente(nome) is not None and st.button("↩️ Aree del ruolo", key=f"aree_ruolo_{nome}"):
+                    cambia_aree(nome, None)
+                    st.session_state.pop(f"aree_{nome}_{ruolo}", None)
+                    st.rerun()
+            if ruolo not in ("admin", "segreteria"):
                 stagione, gruppi = gruppi_correnti()
                 nomi = [g["gruppo"] for g in gruppi]
                 attuali = [g for g in dati.get("gruppi") or [] if g in nomi]
                 scelti = st.multiselect(f"Squadre che allena ({stagione})", nomi, default=attuali,
                                         key=f"gruppi_{nome}", placeholder="Scegli una o più squadre",
-                                        help="Nell'Anagrafica vede solo i ragazzi di queste squadre")
+                                        help="In Anagrafica e Allenamenti vede solo i ragazzi di queste squadre")
                 if sorted(scelti) != sorted(attuali):
                     cambia_gruppi(nome, scelti)
                     st.success("Squadre aggiornate.")
@@ -511,7 +547,7 @@ def render_segreteria():
             pubblica_attesa()
     if "vai_a_sezione" in st.session_state:  # es. "Riapri" dall'archivio porta alla Cronaca
         st.session_state["sezione_segreteria"] = st.session_state.pop("vai_a_sezione")
-    sezioni = SEZIONI_PER_RUOLO.get(st.session_state.get("ruolo"), SEZIONI_PER_RUOLO["user"])
+    sezioni, pagine_opzioni = sezioni_e_opzioni()
     if st.session_state.get("sezione_segreteria") not in sezioni:
         st.session_state["sezione_segreteria"] = sezioni[0]
     sezione_attuale = st.session_state["sezione_segreteria"]
@@ -528,9 +564,11 @@ def render_segreteria():
     sezione = st.radio("Sezione", sezioni, horizontal=True, label_visibility="collapsed", key="sezione_segreteria")
     st.caption(f"👤 {st.session_state.get('utente', '')}")
     if sezione == "⚙️ Opzioni":
-        sotto = st.segmented_control("Opzioni", SOTTOSEZIONI_OPZIONI, key="sottosezione_opzioni",
-                                     default=SOTTOSEZIONI_OPZIONI[0], label_visibility="collapsed")
-        sotto = sotto or SOTTOSEZIONI_OPZIONI[0]  # un secondo clic sul pulsante scelto lo deseleziona
+        if st.session_state.get("sottosezione_opzioni") not in pagine_opzioni:
+            st.session_state.pop("sottosezione_opzioni", None)
+        sotto = st.segmented_control("Opzioni", pagine_opzioni, key="sottosezione_opzioni",
+                                     default=pagine_opzioni[0], label_visibility="collapsed")
+        sotto = sotto or pagine_opzioni[0]  # un secondo clic sul pulsante scelto lo deseleziona
         if sotto == "🏆 Campionati":
             render_opzioni_campionati()
             return
