@@ -94,6 +94,16 @@ def titolo_con_logo(testo):
 # restare e coprire la parte alta del titolo, quindi la si toglie anche qui e si lascia più spazio sopra.
 st.markdown("<style>header[data-testid='stHeader'], [data-testid='stAppHeader'] { display: none !important; }"
             ".block-container { padding-top: 2.5rem !important; }</style>", unsafe_allow_html=True)
+# Su telefono e tablet le tendine non aprono la tastiera: la ricerca scrivendo serve solo col mouse.
+st.html("""<script>
+if (!window.__tendineSenzaTastiera && window.matchMedia("(pointer: coarse)").matches) {
+  window.__tendineSenzaTastiera = true;
+  const senzaTastiera = () => document.querySelectorAll('[data-baseweb="select"] input, input[role="combobox"]')
+    .forEach(i => { if (i.getAttribute("inputmode") !== "none") { i.setAttribute("inputmode", "none"); } });
+  senzaTastiera();
+  new MutationObserver(senzaTastiera).observe(document.body, {childList: true, subtree: true});
+}
+</script>""", unsafe_allow_javascript=True)
 
 
 def leggi_secret(nome, default=None):

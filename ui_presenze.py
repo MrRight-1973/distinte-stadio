@@ -5,6 +5,7 @@ non si è allenato), A assente; in più I infortunato e G giustificato. Le tabel
 si importano da qui. Un allenatore vede solo i gruppi squadra assegnati in ⚙️ Opzioni → 👥 Utenti;
 segreteria e amministratori li vedono tutti. I ragazzi sono quelli dell'👦 Anagrafica nel gruppo dell'anno.
 """
+import html
 from datetime import date
 
 import pandas as pd
@@ -12,18 +13,16 @@ import streamlit as st
 
 from anagrafica import (anno_di, data_da_iso, elenco_ragazzi, nome_completo, nuova_da_nome, ragazzi_del_gruppo,
                         salva_scheda, trova_per_nome)
-from presenze import (IN_CAMPO, SIGLE, SIGLE_TABELLA, STATI, aggiungi_allenamenti, elimina_allenamento, etichetta_corta, giorno_di,
+from presenze import (DA_SIGLA, IN_CAMPO, SIGLE, SIGLE_TABELLA, STATI, aggiungi_allenamenti, elimina_allenamento, etichetta_corta, giorno_di,
                       leggi_tabella, mesi_della_stagione, nel_periodo, numero_di, ordina, presenze_gruppo,
                       salva_allenamento, seduta, sposta_allenamento, statistiche, testo_da_file)
 from stagioni import gruppi_correnti
 from statistiche_pdf import genera_pdf_presenze
 from utenti import gruppi_utente
 
-NOMI = {"completo": "Completo", "parziale": "Parziale", "differenziato": "Differenziato",
-        "presenza": "Presenza (non si allena)", "assente": "Assente", "infortunato": "Infortunato",
-        "giustificato": "Giustificato"}
-ETICHETTE = {s: f"{SIGLE[s]} · {NOMI[s]}" for s in STATI}
-DA_ETICHETTA = {v: k for k, v in ETICHETTE.items()}
+ORDINE_SIGLE = [DA_SIGLA[x] for x in "CAPDZIG"]  # l'ordine delle tabelle del mister
+LEGENDA = ("C completo · A assente · P parziale · D differenziato · Z presenza (c'era ma non si è allenato) · "
+           "I infortunato · G giustificato")
 SIGLE_BASE = SIGLE_TABELLA
 TUTTA, ALTRO = "Tutta la stagione", "Altro periodo..."
 NUOVO, SALTA = "➕ Nuovo in anagrafica", "✖️ Non importare"
@@ -93,20 +92,20 @@ def _segna(stagione, gruppo, ragazzi, allenamenti):
             st.warning(f"Il {_gg(nuova)} c'è già un allenamento: salvando verrà sostituito.")
     else:
         st.caption("Partono tutti con C (completo): cambia solo chi ha fatto altro.")
-    righe = [{"Ragazzo": nome_completo(r),
-              "Presenza": ETICHETTE[(gia or {}).get(r["id"], "completo" if not gia else "assente")]}
-             for r in ragazzi]
-    tabella = st.data_editor(
-        pd.DataFrame(righe), hide_index=True, use_container_width=True, key=f"pres_tab_{gruppo}_{chiave}_{n}",
-        disabled=["Ragazzo"], height=min(35 * len(righe) + 40, 640),
-        column_config={"Presenza": st.column_config.SelectboxColumn(options=list(ETICHETTE.values()), required=True)})
-    stati = [DA_ETICHETTA.get(v, "completo") for v in tabella["Presenza"]]
-    segnati = {r["id"]: s for r, s in zip(ragazzi, stati)}
-    st.caption(_riassunto(segnati) + " · C completo, P parziale, D differenziato, Z presenza, A assente, "
-                                     "I infortunato, G giustificato")
-    c1, c2 = st.columns(2)
-    if c1.button("💾 Salva modifiche" if gia else "💾 Salva presenze", type="primary", use_container_width=True,
-                 key="pres_salva"):
+    st.caption(LEGENDA)
+    # Un tasto per sigla accanto a ogni ragazzo: niente tabella da scorrere di lato né tastiera sul telefono.
+    # Nel modulo i tocchi non ricaricano la pagina: si salva tutto insieme.
+    with st.form(f"pres_form_{gruppo}_{chiave}_{n}", border=False):
+        segnati = {}
+        for r in ragazzi:
+            segnati[r["id"]] = st.segmented_control(
+                f"**{nome_completo(r)}**", ORDINE_SIGLE, required=True, format_func=SIGLE.get,
+                default=(gia or {}).get(r["id"], "completo" if not gia else "assente"),
+                key=f"pres_{gruppo}_{chiave}_{n}_{r['id']}")
+        salva = st.form_submit_button("💾 Salva modifiche" if gia else "💾 Salva presenze", type="primary",
+                                      use_container_width=True)
+    stati = list(segnati.values())
+    if salva:
         if gia and nuova != chiave:
             sposta_allenamento(stagione, gruppo, chiave, nuova, segnati)
             st.session_state["pres_apri"] = (data_da_iso(giorno_di(nuova)), numero)
@@ -114,9 +113,10 @@ def _segna(stagione, gruppo, ragazzi, allenamenti):
             salva_allenamento(stagione, gruppo, chiave, segnati)
         st.session_state["pres_n"] = n + 1
         in_campo = sum(1 for s in stati if s in IN_CAMPO)
-        _messaggio("success", f"Allenamento del {_gg(nuova)} salvato: {in_campo} allenati su {len(stati)}.")
+        _messaggio("success", f"Allenamento del {_gg(nuova)} salvato: {in_campo} allenati su {len(stati)} "
+                              f"({_riassunto(segnati)}).")
         st.rerun()
-    if gia and c2.button("🗑️ Togli questo allenamento", use_container_width=True, key="pres_elimina"):
+    if gia and st.button("🗑️ Togli questo allenamento", use_container_width=True, key="pres_elimina"):
         elimina_allenamento(stagione, gruppo, chiave)
         st.session_state["pres_n"] = n + 1
         _messaggio("success", f"Allenamento del {_gg(chiave)} tolto.")
@@ -203,14 +203,14 @@ def _statistiche(stagione, gruppo, ragazzi, allenamenti):
     m1.metric("Numero allenamenti", len(sedute))
     m2.metric("Allenati in media", f"{round(100 * in_campo / segnati) if segnati else 0}%")
     m3.metric("Completi", f"{round(100 * sum(v['completo'] for v in conti.values()) / segnati) if segnati else 0}%")
-    percentuali = {f"{k}%": st.column_config.NumberColumn(format="%d%%") for k in sigle}
-    st.dataframe(pd.DataFrame(righe), hide_index=True, use_container_width=True,
-                 height=min(35 * len(righe) + 40, 760),
-                 column_config={**percentuali, "Allenato %": st.column_config.ProgressColumn(
-                     format="%d%%", min_value=0, max_value=100)})
+    ordine_vista = st.segmented_control("Ordina per", ["🔤 Nome", "🏃 Allenato %"], default="🔤 Nome",
+                                        required=True, key="pres_ordina")
+    if ordine_vista != "🔤 Nome":
+        righe = sorted(righe, key=lambda r: (-r["Allenato %"], r["Ragazzo"]))
+    st.html(_tabella_statistiche(righe, sigle))
     st.caption("C completo · A assente · P parziale · D differenziato · Z presenza (c'era ma non si è allenato)"
                + (" · I infortunato · G giustificato" if len(sigle) > 5 else "")
-               + ". Allenato % conta C, P e D.")
+               + ". Sotto ogni numero la percentuale; Allenato % conta C, P e D.")
     with st.expander(f"🔎 Allenamento per allenamento ({len(sedute)})"):
         griglia = pd.DataFrame([{"Ragazzo": nome_di[i], **{etichetta_corta(s): SIGLE.get(allenamenti[s].get(i), "")
                                                             for s in sedute}} for i in ordine])
@@ -227,6 +227,28 @@ def _statistiche(stagione, gruppo, ragazzi, allenamenti):
     if pronto and pronto[0] == firma:
         st.download_button("⬇️ Scarica il PDF", pronto[1], mime="application/pdf", key="pres_pdf_scarica",
                            file_name=f"presenze_{gruppo}_{periodo}.pdf".replace(" ", "_").replace("/", "-"))
+
+
+def _tabella_statistiche(righe, sigle):
+    """Tabella HTML a tutta larghezza (niente scorrimento di lato sul telefono, celle non selezionabili)."""
+    stile = ("<style>.pres-tab{width:100%;border-collapse:collapse;font-size:0.85rem;table-layout:auto}"
+             ".pres-tab th,.pres-tab td{padding:4px 3px;border-bottom:1px solid rgba(128,128,128,.25);"
+             "text-align:center;vertical-align:middle}.pres-tab th{font-weight:600;background:rgba(128,128,128,.1)}"
+             ".pres-tab td.nome,.pres-tab th.nome{text-align:left;word-break:break-word}"
+             ".pres-tab small{display:block;opacity:.6;font-size:0.72rem}"
+             ".pres-bar{height:8px;border-radius:4px;background:rgba(128,128,128,.2);margin-top:2px}"
+             ".pres-bar div{height:100%;border-radius:4px}</style>")
+    testa = "".join(f"<th>{k}</th>" for k in sigle)
+    corpo = []
+    for r in righe:
+        perc = r["Allenato %"]
+        colore = "#2F855A" if perc >= 80 else "#D69E2E" if perc >= 60 else "#C53030"
+        celle = "".join(f"<td>{r[k]}<small>{r[f'{k}%']}%</small></td>" for k in sigle)
+        corpo.append(f"<tr><td class='nome'>{html.escape(r['Ragazzo'])}<small>{html.escape(str(r['Anno'] or ''))}"
+                     f"</small></td>{celle}<td><b>{perc}%</b><div class='pres-bar'><div style='width:{perc}%;"
+                     f"background:{colore}'></div></div></td></tr>")
+    return (f"{stile}<table class='pres-tab'><thead><tr><th class='nome'>Ragazzo</th>{testa}<th>Allenato</th>"
+            f"</tr></thead><tbody>{''.join(corpo)}</tbody></table>")
 
 
 def _importa(stagione, gruppo, ragazzi, allenamenti):
