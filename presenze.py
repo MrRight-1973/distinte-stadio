@@ -16,6 +16,7 @@ STATI = ["completo", "parziale", "differenziato", "presenza", "assente", "infort
 SIGLE = {"completo": "C", "parziale": "P", "differenziato": "D", "presenza": "Z", "assente": "A",
          "infortunato": "I", "giustificato": "G"}
 DA_SIGLA = {v: k for k, v in SIGLE.items()}
+SIGLE_TABELLA = ["C", "A", "P", "D", "Z"]  # le colonne delle tabelle del mister
 IN_CAMPO = ("completo", "parziale", "differenziato")  # si è allenato: conta nella percentuale di presenza
 VECCHI_STATI = {"presente": "completo"}  # salvati prima delle sigle del mister
 MESI = ["gen", "feb", "mar", "apr", "mag", "giu", "lug", "ago", "set", "ott", "nov", "dic"]
@@ -69,6 +70,12 @@ def seduta(giorno, numero=1):
 
 def ordina(sedute):
     return sorted(sedute, key=lambda s: (giorno_di(s), numero_di(s)))
+
+
+def etichetta_corta(chiave):
+    """"2026-09-01" -> "01-set" come nelle tabelle del mister ("²" per il secondo allenamento del giorno)."""
+    giorno = date.fromisoformat(giorno_di(chiave))
+    return f"{giorno.day:02d}-{MESI[giorno.month - 1]}" + ("²" if numero_di(chiave) > 1 else "")
 
 
 def salva_allenamento(stagione, gruppo, chiave, segnati):
@@ -215,3 +222,17 @@ def testo_da_file(nome, dati):
         except UnicodeDecodeError:
             continue
     return ""
+
+
+def allenato_complessivo(stagioni, gruppi=None):
+    """{id_ragazzo: (allenamenti svolti, allenamenti segnati)} sommando più anni sportivi e gruppi squadra
+    (gruppi=None: tutti). Per affiancare la presenza agli allenamenti alle statistiche delle partite."""
+    totali = {}
+    for stagione in stagioni:
+        for gruppo, allenamenti in presenze_stagione(stagione).items():
+            if gruppi is not None and gruppo not in gruppi:
+                continue
+            for id_ragazzo, v in statistiche(allenamenti).items():
+                svolti, segnati = totali.get(id_ragazzo, (0, 0))
+                totali[id_ragazzo] = (svolti + sum(v[s] for s in IN_CAMPO), segnati + v["segnati"])
+    return totali

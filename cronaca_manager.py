@@ -292,24 +292,29 @@ def crea_backup(id_partite, genera_pdf=None):
 
     buffer = io.BytesIO()
     with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as z:
-        for id_partita in id_partite:
-            dati = cloud.leggi_partita(id_partita)
-            if not dati:
-                continue
-            cartella = _nome_cartella(dati)
-            z.writestr(f"{cartella}/partita.json", json.dumps(dati, ensure_ascii=False, indent=2))
-            if genera_pdf:
-                p = dati.get("partita") or {}
-                try:
-                    z.writestr(f"{cartella}/{nome_file_gara('Resoconto', p.get('data'), p.get('casa'), p.get('ospite'))}",
-                               genera_pdf(_completa(dati)))
-                except Exception:
-                    pass  # un PDF non riuscito non deve bloccare il backup di foto e dati
-            for online, nello_zip in _file_della_partita(dati):
-                contenuto = cloud.scarica_file(online)
-                if contenuto is not None:
-                    z.writestr(f"{cartella}/{nello_zip}", contenuto)
+        scrivi_partite(z, id_partite, genera_pdf)
     return buffer.getvalue()
+
+
+def scrivi_partite(z, id_partite, genera_pdf=None, radice=""):
+    """Scrive le partite in uno ZIP già aperto, ognuna nella sua cartella (sotto "radice/" se c'è)."""
+    for id_partita in id_partite:
+        dati = cloud.leggi_partita(id_partita)
+        if not dati:
+            continue
+        cartella = f"{radice}/{_nome_cartella(dati)}" if radice else _nome_cartella(dati)
+        z.writestr(f"{cartella}/partita.json", json.dumps(dati, ensure_ascii=False, indent=2))
+        if genera_pdf:
+            p = dati.get("partita") or {}
+            try:
+                z.writestr(f"{cartella}/{nome_file_gara('Resoconto', p.get('data'), p.get('casa'), p.get('ospite'))}",
+                           genera_pdf(_completa(dati)))
+            except Exception:
+                pass  # un PDF non riuscito non deve bloccare il backup di foto e dati
+        for online, nello_zip in _file_della_partita(dati):
+            contenuto = cloud.scarica_file(online)
+            if contenuto is not None:
+                z.writestr(f"{cartella}/{nello_zip}", contenuto)
 
 
 def alleggerisci_partita(id_partita):
