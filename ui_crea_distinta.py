@@ -4,7 +4,6 @@ nuova riparte dall'ultima della stessa squadra (stessi giocatori, numeri e dirig
 """
 from datetime import date
 
-import pandas as pd
 import streamlit as st
 
 from anagrafica import anno_di, data_da_iso, e_calciatore, elenco_ragazzi, nome_completo, tipo_di
@@ -119,28 +118,48 @@ def render_crea_distinta(utente, ruolo, nome_societa):
         contate[testo] = contate.get(testo, 0) + 1
         etichette[r["id"]] = testo if contate[testo] == 1 else f"{testo} #{contate[testo]}"
     da_etichetta = {v: i for i, v in etichette.items()}
-    # 20 righe come nel modulo: il numero parte da quello della riga, il nome si sceglie dalla tendina
-    righe = []
-    for riga in range(MAX_GIOCATORI):
+    # 20 righe come nel modulo: numero di maglia, giocatore scelto dalla tendina, C/VC. Ogni tendina mostra
+    # solo i giocatori non ancora scelti nelle altre righe (e il C o il VC solo se nessun altro li ha).
+    chiavi = [(f"cd_num_{k}_{r}", f"cd_gioc_{k}_{r}", f"cd_cap_{k}_{r}") for r in range(MAX_GIOCATORI)]
+    for riga, (c_num, c_gioc, c_cap) in enumerate(chiavi):
         g = precedenti[riga] if riga < len(precedenti) else {}
-        righe.append({"N°": g.get("numero") or riga + 1, "Giocatore": etichette.get(g.get("id"), VUOTA),
-                      "Cap.": g.get("cap") or VUOTA})
-    tabella = st.data_editor(
-        pd.DataFrame(righe), hide_index=True, use_container_width=True, key=f"cd_tab_{k}", num_rows="fixed",
-        height=35 * MAX_GIOCATORI + 40,
-        column_config={
-            "N°": st.column_config.NumberColumn(min_value=1, max_value=99, step=1, width="small"),
-            "Giocatore": st.column_config.SelectboxColumn(options=[VUOTA] + list(etichette.values()), width="large"),
-            "Cap.": st.column_config.SelectboxColumn(options=[VUOTA, "C", "VC"], width="small")})
-    st.caption("Tocca la cella del giocatore e scegli il nome; il numero è quello di maglia. In Cap. metti C per "
-               "il capitano e VC per il vice. Le righe vuote restano vuote nella stampa.")
+        st.session_state.setdefault(c_num, g.get("numero") or riga + 1)
+        gia = {st.session_state.get(c) for _, c, _ in chiavi[:riga]}
+        st.session_state.setdefault(c_gioc, etichette.get(g.get("id"), VUOTA) if g.get("id") not in
+                                    {da_etichetta.get(e) for e in gia} else VUOTA)
+        st.session_state.setdefault(c_cap, g.get("cap") or VUOTA)
+    scelti = [st.session_state[c_gioc] for _, c_gioc, _ in chiavi]
+    fasce = [st.session_state[c_cap] for _, _, c_cap in chiavi]
     giocatori = []
-    for posto, riga in enumerate(tabella.to_dict("records"), start=1):
-        if riga["Giocatore"] in da_etichetta:
-            numero = riga["N°"]
-            giocatori.append({"id": da_etichetta[riga["Giocatore"]],
-                              "numero": int(numero) if pd.notna(numero) else posto,
-                              "cap": riga["Cap."] if riga["Cap."] in ("C", "VC") else ""})
+    with st.container(key="cd_righe"):
+        # Sul telefono le tre colonne restano affiancate e compatte (senza freccia nelle tendine piccole)
+        st.html("<style>.st-key-cd_righe{gap:.35rem}"
+                ".st-key-cd_righe [data-testid='stHorizontalBlock']{flex-wrap:nowrap;gap:.4rem}"
+                ".st-key-cd_righe [data-testid='stColumn']{min-width:0 !important}"
+                ".st-key-cd_righe input[role='combobox']{padding-left:.5rem;padding-right:0;min-width:0}"
+                ".st-key-cd_righe [data-testid='stColumn']:not(:nth-child(2)) button[aria-haspopup]"
+                "{padding:0 .15rem 0 0;width:auto}"
+                ".st-key-cd_righe [data-testid='stColumn']:not(:nth-child(2)) button[aria-haspopup] svg"
+                "{width:.9rem;height:.9rem}</style>")
+        c1, c2, c3 = st.columns([1.3, 6, 1.4], vertical_alignment="bottom")
+        c1.caption("N°")
+        c2.caption("Giocatore")
+        c3.caption("Cap.")
+        for riga, (c_num, c_gioc, c_cap) in enumerate(chiavi):
+            altri = set(scelti[:riga] + scelti[riga + 1:])
+            fasce_altre = set(fasce[:riga] + fasce[riga + 1:])
+            c1, c2, c3 = st.columns([1.3, 6, 1.4], vertical_alignment="bottom")
+            numero = c1.selectbox("N°", list(range(1, 100)), key=c_num, label_visibility="collapsed")
+            nome = c2.selectbox("Giocatore", [VUOTA] + [e for e in etichette.values() if e not in altri],
+                                key=c_gioc, label_visibility="collapsed")
+            cap = c3.selectbox("Cap.", [VUOTA] + [f for f in ("C", "VC") if f not in fasce_altre],
+                               key=c_cap, label_visibility="collapsed")
+            if nome in da_etichetta:
+                giocatori.append({"id": da_etichetta[nome], "numero": int(numero),
+                                  "cap": cap if cap in ("C", "VC") else ""})
+    st.caption("Scegli il nome in ogni riga: chi è già in distinta non compare più nelle altre tendine. Il numero "
+               "è quello di maglia; in Cap. metti C per il capitano e VC per il vice. Le righe vuote restano "
+               "vuote nella stampa.")
 
     # --- Panchina
     st.markdown("**👔 Persone ammesse in panchina**")
