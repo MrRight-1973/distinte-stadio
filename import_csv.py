@@ -146,3 +146,26 @@ def unisci_note(esistenti, nuove):
     gia = {chiave(n) for n in esistenti}
     aggiunte = [n for n in nuove if chiave(n) not in gia]
     return esistenti + aggiunte, len(aggiunte)
+
+
+COLONNE_ANAGRAFICA = {  # campo della scheda -> nomi accettati nell'intestazione (senza spazi né accenti)
+    "cognome": ("cognome",), "nome": ("nome",),
+    "nascita": ("nascita", "datadinascita", "datanascita", "natoil", "nato"),
+    "matricola": ("matricola", "matricolafigc", "tessera", "ntessera"),
+    "documento_tipo": ("tipo", "tipodocumento", "documento", "doc"),
+    "documento_numero": ("numero", "numerodocumento", "ndocumento", "numdoc"),
+    "documento_rilascio": ("rilasciatoda", "rilascio", "rilasciato", "enterilascio"),
+    "documento_scadenza": ("scadenzadocumento", "scadenzadoc", "scadenza"),
+    "certificato_scadenza": ("scadenzacertificato", "certificato", "certificatomedico"),
+    "ruolo": ("ruolo",), "gruppo": ("squadra", "gruppo", "grupposquadra"),
+}
+
+
+def schede_da_csv(dati):
+    """Le righe di un CSV di anagrafica come schede ({cognome, nome, nascita, ...})."""
+    df = leggi_csv(dati)
+    colonne = {campo: _colonna(df, *nomi) for campo, nomi in COLONNE_ANAGRAFICA.items()}
+    if not colonne["cognome"]:
+        raise CsvErrore("Nel CSV manca la colonna Cognome.")
+    return [{campo: str(r[c]).strip() for campo, c in colonne.items() if c}
+            for _, r in df.iterrows() if str(r[colonne["cognome"]]).strip()]

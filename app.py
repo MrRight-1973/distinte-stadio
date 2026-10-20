@@ -53,6 +53,7 @@ from ui_rose import render_opzioni_rose, render_prepara_da_rosa
 from ui_stagioni import render_opzioni_campionati
 from ui_components import render_download_buttons, render_info_match
 from ui_anagrafica import render_anagrafica
+from ui_presenze import render_presenze
 from ui_cronaca import render_cronaca
 from ui_sponsor import loghi_per_pdf, render_gestione_sponsor
 from ui_statistiche import render_statistiche
@@ -436,9 +437,9 @@ def azzera_sezione_distinta():
     reset_stato_squadra("griglia_ospite")
 
 
-SEZIONI = ["📋 Distinta", "🎙️ Cronaca partita", "👦 Anagrafica", "📚 Archivio", "📊 Statistiche", "⚙️ Opzioni"]
+SEZIONI = ["📋 Distinta", "🎙️ Cronaca partita", "👦 Anagrafica", "🏃 Allenamenti", "📚 Archivio", "📊 Statistiche", "⚙️ Opzioni"]
 SOTTOSEZIONI_OPZIONI = ["🏆 Campionati", "👕 Rose", "🤖 Lettura AI", "🏷️ Sponsor", "👥 Utenti"]  # per una nuova impostazione basta aggiungerla qui
-SEZIONI_PER_RUOLO = {"admin": SEZIONI, "segreteria": SEZIONI[:3], "allenatore": SEZIONI[:3], "user": SEZIONI[:2]}
+SEZIONI_PER_RUOLO = {"admin": SEZIONI, "segreteria": SEZIONI[:4], "allenatore": SEZIONI[:4], "user": SEZIONI[:2]}
 
 
 def render_gestione_utenti():
@@ -547,6 +548,9 @@ def render_segreteria():
         return
     if sezione == "👦 Anagrafica":
         render_anagrafica(st.session_state.get("utente", ""), st.session_state.get("ruolo"))
+        return
+    if sezione == "🏃 Allenamenti":
+        render_presenze(st.session_state.get("utente", ""), st.session_state.get("ruolo"))
         return
     if sezione == "📊 Statistiche":
         render_statistiche(nome_societa())

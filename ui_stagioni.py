@@ -2,6 +2,7 @@
 import streamlit as st
 
 from anagrafica import rinomina_gruppo
+from presenze import rinomina_gruppo as rinomina_gruppo_presenze
 from rose import rinomina_rosa
 from utenti import rinomina_gruppo_allenatori
 from stagioni import impostazioni_stagioni, salva_stagioni, stagione_di_oggi
@@ -70,6 +71,7 @@ def render_opzioni_campionati():
             else:
                 rinomina_rosa(corrente, gruppo, nuovo)
                 rinomina_gruppo(corrente, gruppo, nuovo)  # i ragazzi dell'anagrafica
+                rinomina_gruppo_presenze(corrente, gruppo, nuovo)
                 rinomina_gruppo_allenatori(gruppo, nuovo)
                 _salva(imp, corrente, [{**g, "gruppo": nuovo} if g["gruppo"] == gruppo else g for g in gruppi],
                        f"Gruppo rinominato in «{nuovo}» (la rosa resta).", {f"opz_gruppo_{corrente}": nuovo})

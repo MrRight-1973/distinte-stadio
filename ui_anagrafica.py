@@ -9,7 +9,9 @@ import pandas as pd
 import streamlit as st
 
 from anagrafica import (GIORNI_AVVISO, RUOLI_CAMPO, TIPI_DOCUMENTO, data_da_iso, doppione, elenco_ragazzi,
-                        elimina_scheda, importa_rose, nome_completo, salva_scheda, scadenze, stato_scadenza)
+                        elimina_scheda, importa_rose, importa_schede, nome_completo, salva_scheda, scadenze,
+                        stato_scadenza)
+from import_csv import CsvErrore, schede_da_csv
 from stagioni import gruppi_correnti
 from utenti import gruppi_utente
 
@@ -87,13 +89,12 @@ def render_anagrafica(utente, ruolo):
         st.info("Nessun ragazzo con questi filtri." if visibili else
                 "L'anagrafica è vuota: aggiungi i ragazzi con ➕ oppure importali dalle rose qui sotto.")
     else:
-        righe = [{"N°": r.get("numero"), "Ragazzo": nome_completo(r),
+        righe = [{"Ragazzo": nome_completo(r),
                   "Nato": _data(r.get("nascita")) or r.get("anno_nascita", ""),
                   "Squadra": squadra_di[r["id"]], "Ruolo": r.get("ruolo", ""), "Matricola": r.get("matricola", ""),
                   "Certificato": _con_segno(r.get("certificato_scadenza")),
                   "Documento": _con_segno(r.get("documento_scadenza"))} for r in elenco]
         tabella = pd.DataFrame(righe)
-        tabella["N°"] = pd.array(tabella["N°"], dtype="Int64")
         scelta = st.dataframe(tabella, hide_index=True, use_container_width=True, on_select="rerun",
                               selection_mode="single-row", key=f"anag_tabella_{filtro}_{cerca}_{n}",
                               height=min(35 * len(righe) + 40, 460))
@@ -101,6 +102,8 @@ def render_anagrafica(utente, ruolo):
         if scelta.selection.rows:
             _scheda(elenco[scelta.selection.rows[0]], stagione, miei if not staff else nomi_gruppi, staff, n)
 
+    if staff:
+        _importa_csv(stagione, gruppi)
     if ruolo == "admin":
         _importa(stagione, nomi_gruppi)
 
@@ -118,13 +121,11 @@ def _scheda(r, stagione, gruppi_ammessi, staff, n, nuova=False):
         c1, c2 = st.columns(2)
         cognome = c1.text_input("Cognome *", value=r.get("cognome", ""))
         nome = c2.text_input("Nome *", value=r.get("nome", ""))
-        c1, c2, c3 = st.columns(3)
+        c1, c2 = st.columns(2)
         nascita = c1.date_input("Data di nascita", value=data_da_iso(r.get("nascita")), format="DD/MM/YYYY",
                                 min_value=date(1950, 1, 1), max_value=oggi)
         gruppo = c2.selectbox(f"Squadra {stagione}", squadre, index=squadre.index(squadra) if squadra in squadre else 0,
                               format_func=lambda g: g or "— nessuna —")
-        numero = c3.number_input("N° abituale", min_value=0, max_value=99, step=1, value=int(r.get("numero") or 0),
-                                 help="0 = nessun numero")
         c1, c2 = st.columns(2)
         ruolo = c1.selectbox("Ruolo", RUOLI_CAMPO, index=RUOLI_CAMPO.index(r.get("ruolo", "")) if r.get("ruolo", "") in RUOLI_CAMPO else 0,
                              format_func=lambda x: x or "—")
@@ -136,6 +137,8 @@ def _scheda(r, stagione, gruppi_ammessi, staff, n, nuova=False):
         numero_doc = c2.text_input("Numero", value=r.get("documento_numero", ""))
         scad_doc = c3.date_input("Scadenza", value=data_da_iso(r.get("documento_scadenza")), format="DD/MM/YYYY",
                                  min_value=date(2000, 1, 1), max_value=date(2100, 1, 1))
+        rilascio = st.text_input("Rilasciato da", value=r.get("documento_rilascio", ""),
+                                 placeholder="Es. Comune di Due Carrare")
         c1, c2, c3 = st.columns(3)
         scad_cert = c1.date_input("🩺 Certificato medico: scadenza", value=data_da_iso(r.get("certificato_scadenza")),
                                   format="DD/MM/YYYY", min_value=date(2000, 1, 1), max_value=date(2100, 1, 1),
@@ -154,8 +157,9 @@ def _scheda(r, stagione, gruppi_ammessi, staff, n, nuova=False):
             st.error("Cognome e nome sono obbligatori.")
             return
         gruppi = {**(r.get("gruppi") or {}), stagione: gruppo}
-        scheda = {**r, "cognome": cognome, "nome": nome, "nascita": nascita, "numero": numero or None,
+        scheda = {**r, "cognome": cognome, "nome": nome, "nascita": nascita,
                   "ruolo": ruolo, "matricola": matricola, "documento_tipo": tipo, "documento_numero": numero_doc,
+                  "documento_rilascio": rilascio,
                   "documento_scadenza": scad_doc, "certificato_scadenza": scad_cert, "genitore": genitore,
                   "telefono": telefono, "gruppi": gruppi}
         uguale = doppione({**scheda, "cognome": cognome.upper(), "nome": nome.upper(),
@@ -199,3 +203,37 @@ def _importa(stagione, gruppi):
             _messaggio("success" if quanti else "info",
                        f"Importati {quanti} ragazzi." if quanti else "Nessun ragazzo nuovo da importare.")
             st.rerun()
+
+
+def _prima_squadra(gruppi):
+    """Il gruppo che gioca la Prima Categoria (dove vanno i ragazzi nuovi), altrimenti il primo."""
+    for g in gruppi:
+        if any("prima categoria" in c.lower() for c in g.get("competizioni", [])) or "prima" in g["gruppo"].lower():
+            return g["gruppo"]
+    return gruppi[0]["gruppo"] if gruppi else ""
+
+
+def _importa_csv(stagione, gruppi):
+    nomi = [g["gruppo"] for g in gruppi]
+    with st.expander("📄 Importa o completa da un file CSV"):
+        st.caption("Colonne riconosciute: Cognome, Nome, Data di nascita, Matricola, Tipo documento (C.I., PAT...), "
+                   "Numero documento, Rilasciato da, Scadenza documento, Scadenza certificato, Ruolo, Squadra. "
+                   "Chi è già in anagrafica (stessa matricola, o stesso nome e data di nascita) riceve solo i dati "
+                   "che mancano; gli altri vengono aggiunti.")
+        file = st.file_uploader("File CSV", type=["csv"], key=f"anag_csv_{st.session_state.get('anag_n', 0)}")
+        predefinito = _prima_squadra(gruppi)
+        squadra = st.selectbox(f"Squadra {stagione} per chi non ce l'ha", nomi,
+                               index=nomi.index(predefinito) if predefinito in nomi else 0, key="anag_csv_squadra",
+                               disabled=not nomi)
+        if file is not None:
+            try:
+                righe = schede_da_csv(file.getvalue())
+            except CsvErrore as e:
+                st.error(str(e))
+                return
+            st.caption(f"{len(righe)} righe nel file.")
+            if st.button("📄 Importa", type="primary", key="anag_csv_ok", disabled=not righe):
+                aggiunti, aggiornati = importa_schede(righe, stagione, squadra)
+                st.session_state["anag_n"] = st.session_state.get("anag_n", 0) + 1
+                _messaggio("success", f"Aggiunti {aggiunti} ragazzi, completate {aggiornati} schede.")
+                st.rerun()
