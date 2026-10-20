@@ -129,12 +129,37 @@ def _segna(stagione, gruppo, ragazzi, allenamenti):
         st.rerun()
 
     if allenamenti:
-        st.markdown(f"**🗓️ Allenamenti salvati ({len(allenamenti)})** · tocca per modificarlo")
-        for s in list(reversed(ordina(allenamenti)))[:40]:
-            if st.button(f"✏️ {_gg(s)} · {_riassunto(allenamenti[s])}", key=f"pres_apri_{s}",
-                         use_container_width=True, disabled=s == chiave):
-                st.session_state["pres_apri"] = (data_da_iso(giorno_di(s)), numero_di(s))
-                st.rerun()
+        _salvati(stagione, allenamenti, chiave, n)
+
+
+GIORNI = ["lun", "mar", "mer", "gio", "ven", "sab", "dom"]
+
+
+def _salvati(stagione, allenamenti, aperta, n):
+    """Gli allenamenti salvati in una tabella compatta, un mese alla volta; un tocco su una riga lo apre."""
+    mesi = [m for m in mesi_della_stagione(stagione) if nel_periodo(allenamenti, m[1], m[2])]
+    st.markdown(f"**🗓️ Allenamenti salvati ({len(allenamenti)})** · tocca una riga per modificarlo")
+    etichette = [m[0] for m in reversed(mesi)] + [TUTTA]
+    mese = st.selectbox("Mese", etichette, key="pres_salvati_mese", label_visibility="collapsed")
+    dal, al = next(((m[1], m[2]) for m in mesi if m[0] == mese), (None, None))
+    sedute = list(reversed(nel_periodo(allenamenti, dal, al)))
+    righe = []
+    for s in sedute:
+        giorno = data_da_iso(giorno_di(s))
+        riga = {"Data": f"{GIORNI[giorno.weekday()]} {giorno:%d/%m}" + (f" ({numero_di(s)}°)" if numero_di(s) > 1 else ""),
+                "Allenati": sum(1 for v in allenamenti[s].values() if v in IN_CAMPO)}
+        riga.update({SIGLE[k]: sum(1 for v in allenamenti[s].values() if v == k) for k in STATI})
+        righe.append(riga)
+    tabella = pd.DataFrame(righe)
+    usate = [c for c in tabella.columns if c in ("Data", "Allenati") or tabella[c].sum()]
+    scelta = st.dataframe(tabella[usate], hide_index=True, use_container_width=True, on_select="rerun",
+                          selection_mode="single-row", key=f"pres_salvati_{mese}_{n}_{aperta}",
+                          height=min(35 * len(righe) + 40, 320))
+    if scelta.selection.rows:
+        s = sedute[scelta.selection.rows[0]]
+        if s != aperta:
+            st.session_state["pres_apri"] = (data_da_iso(giorno_di(s)), numero_di(s))
+            st.rerun()
 
 
 def _periodo(stagione, allenamenti):
