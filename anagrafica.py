@@ -21,8 +21,8 @@ PERCORSO_ONLINE = "impostazioni/anagrafica.json"
 RUOLI_CAMPO = ["", "Portiere", "Difensore", "Centrocampista", "Attaccante"]
 TIPI_DOCUMENTO = ["", "Carta d'identità", "Passaporto", "Patente", "Altro"]
 GIORNI_AVVISO = 30  # scadenze segnalate con un mese di anticipo
-CAMPI_TESTO = ("cognome", "nome", "matricola", "documento_tipo", "documento_numero", "ruolo",
-               "genitore", "telefono")
+CAMPI_TESTO = ("cognome", "nome", "matricola", "documento_tipo", "documento_numero", "documento_rilascio",
+               "ruolo", "genitore", "telefono")
 CAMPI_DATA = ("nascita", "documento_scadenza", "certificato_scadenza")
 
 
@@ -70,17 +70,12 @@ def data_da_iso(valore):
 
 
 def pulisci_scheda(scheda):
-    """Testi in ordine (cognome e nome in maiuscolo), date in formato yyyy-mm-dd, numero 1-99."""
+    """Testi in ordine (cognome e nome in maiuscolo), date in formato yyyy-mm-dd."""
     pulita = {k: _testo(scheda.get(k)) for k in CAMPI_TESTO}
     pulita["cognome"], pulita["nome"] = pulita["cognome"].upper(), pulita["nome"].upper()
     pulita["matricola"] = re.sub(r"\s+", "", pulita["matricola"]).upper()
     pulita["documento_numero"] = re.sub(r"\s+", "", pulita["documento_numero"]).upper()
     pulita.update({k: data_iso(scheda.get(k)) for k in CAMPI_DATA})
-    try:
-        numero = int(scheda.get("numero"))
-        pulita["numero"] = numero if 1 <= numero <= 99 else None
-    except (TypeError, ValueError):
-        pulita["numero"] = None
     # Solo l'anno di nascita (dalle vecchie rose), finché non si scrive la data completa
     anno = str(scheda.get("anno_nascita") or "").strip()
     pulita["anno_nascita"] = pulita["nascita"][:4] or (anno if re.fullmatch(r"(19|20)\d\d", anno) else "")
@@ -122,9 +117,10 @@ def ragazzi_del_gruppo(stagione, gruppo, ragazzi=None):
 
 
 def rosa_da_anagrafica(stagione, gruppo):
-    """La rosa nel formato della Distinta ([{giocatore, anno, numero}]); [] se il gruppo non ha ragazzi."""
-    return [{"giocatore": nome_completo(r), "anno": r.get("anno_nascita") or (r.get("nascita") or "")[:4], "numero": r.get("numero")}
-            for r in sorted(ragazzi_del_gruppo(stagione, gruppo), key=lambda r: (r.get("numero") or 99, nome_completo(r)))]
+    """La rosa nel formato della Distinta ([{giocatore, anno, numero}]); [] se il gruppo non ha ragazzi.
+    Il numero di maglia non sta in anagrafica: si sceglie partita per partita."""
+    return [{"giocatore": nome_completo(r), "anno": r.get("anno_nascita") or (r.get("nascita") or "")[:4], "numero": None}
+            for r in ragazzi_del_gruppo(stagione, gruppo)]
 
 
 def rinomina_gruppo(stagione, vecchio, nuovo):
@@ -177,8 +173,64 @@ def importa_rose(stagione, gruppi, rosa_di):
                 continue
             presenti.add(chiave)
             cognome, nome = dividi_nome(g["giocatore"])
-            nuovi.append(pulisci_scheda({"cognome": cognome, "nome": nome, "numero": g.get("numero"),
+            nuovi.append(pulisci_scheda({"cognome": cognome, "nome": nome,
                                          "anno_nascita": g.get("anno"), "gruppi": {stagione: gruppo}}))
     if nuovi:
         _scrivi(ragazzi + nuovi)
     return len(nuovi)
+
+
+def tipo_documento(testo):
+    """"C.I.", "CI", "carta identità" -> "Carta d'identità"; "PAT" -> "Patente"; ecc."""
+    t = re.sub(r"[^a-z]", "", str(testo or "").lower())
+    if not t:
+        return ""
+    if t.startswith(("ci", "carta", "cie")):
+        return "Carta d'identità"
+    if t.startswith("pat"):
+        return "Patente"
+    if t.startswith("pas"):
+        return "Passaporto"
+    return "Altro"
+
+
+def _stessa_persona(r, scheda):
+    if scheda["matricola"] and r.get("matricola"):
+        return r["matricola"] == scheda["matricola"]
+    if chiave_giocatore(nome_completo(r)) != chiave_giocatore(nome_completo(scheda)):
+        return False
+    return not r.get("nascita") or not scheda["nascita"] or r["nascita"] == scheda["nascita"]
+
+
+def importa_schede(righe, stagione, gruppo):
+    """Unisce all'anagrafica un elenco di schede (da CSV o dalle distinte).
+    Un ragazzo già presente (stessa matricola, oppure stesso nome con la stessa data di nascita o senza)
+    riceve solo i dati che gli mancano; gli altri sono aggiunti. Chi non ha ancora una squadra
+    nell'anno va nella squadra della riga ("gruppo") oppure in quella indicata.
+    Restituisce (aggiunti, aggiornati)."""
+    ragazzi = elenco_ragazzi()
+    aggiunti = aggiornati = 0
+    for riga in righe:
+        squadra = _testo(riga.get("gruppo")) or gruppo
+        scheda = pulisci_scheda({**riga, "documento_tipo": tipo_documento(riga.get("documento_tipo"))
+                                 or riga.get("documento_tipo"), "gruppi": {}, "id": None})
+        if not scheda["cognome"]:
+            continue
+        r = next((r for r in ragazzi if _stessa_persona(r, scheda)), None)
+        if r is None:
+            scheda["gruppi"] = {stagione: squadra} if squadra else {}
+            ragazzi.append(scheda)
+            aggiunti += 1
+            continue
+        prima = dict(r)
+        for campo in CAMPI_TESTO + CAMPI_DATA + ("anno_nascita",):
+            if scheda.get(campo) and not r.get(campo):
+                r[campo] = scheda[campo]
+        r["gruppi"] = r.get("gruppi") or {}
+        if squadra and not r["gruppi"].get(stagione):
+            r["gruppi"][stagione] = squadra
+        if r != prima:
+            aggiornati += 1
+    if aggiunti or aggiornati:
+        _scrivi(ragazzi)
+    return aggiunti, aggiornati
