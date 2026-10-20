@@ -85,8 +85,8 @@ def titolo_con_logo(testo):
     if not logo:
         st.title(f"⚽ {testo}")
         return
-    st.markdown(f'<h1 style="display:flex;align-items:center;gap:0.5rem;padding-top:0">'
-                f'<img src="data:image/png;base64,{logo}" style="height:2.6rem;width:auto;margin-right:0.6rem" alt="">'
+    st.markdown(f'<h1 style="display:flex;align-items:center;gap:0.6rem;line-height:1.25;padding:0.75rem 0 0.5rem">'
+                f'<img src="data:image/png;base64,{logo}" style="height:2.6rem;width:auto;flex:none;margin-right:0.7rem" alt="">'
                 f'<span>{html.escape(testo)}</span></h1>', unsafe_allow_html=True)
 
 # Menu, Deploy e barra superiore si nascondono da .streamlit/config.toml
@@ -467,7 +467,9 @@ def azzera_sezione_distinta():
 
 SEZIONI = ["📋 Distinta", "🎙️ Cronaca partita", "👦 Anagrafica", "🏃 Allenamenti", "📚 Archivio", "📊 Statistiche", "⚙️ Opzioni"]
 SOTTOSEZIONI_OPZIONI = ["🏆 Campionati", "👕 Rose", "🤖 Lettura AI", "🏷️ Sponsor", "👥 Utenti"]  # per una nuova impostazione basta aggiungerla qui
-SEZIONI_PER_RUOLO = {"admin": SEZIONI, "segreteria": SEZIONI[:4], "allenatore": SEZIONI[:4], "user": SEZIONI[:2]}
+SEZIONI_PER_RUOLO = {"admin": SEZIONI, "segreteria": ["👦 Anagrafica"],
+                     "reporter": ["📋 Distinta", "🎙️ Cronaca partita", "📚 Archivio"],
+                     "allenatore": ["🏃 Allenamenti", "📊 Statistiche"]}
 # Aree assegnabili a mano a un utente: le sezioni e le pagine di Opzioni (gli utenti li gestisce solo l'admin)
 OPZIONI_ASSEGNABILI = [s for s in SOTTOSEZIONI_OPZIONI if s != "👥 Utenti"]
 AREE = SEZIONI[:-1] + [f"⚙️ {s}" for s in OPZIONI_ASSEGNABILI]
@@ -478,7 +480,7 @@ def aree_di(nome, ruolo):
     if ruolo == "admin":
         return list(SEZIONI[:-1]) + [f"⚙️ {s}" for s in SOTTOSEZIONI_OPZIONI]
     scelte = aree_utente(nome)
-    return scelte if scelte is not None else list(SEZIONI_PER_RUOLO.get(ruolo, SEZIONI_PER_RUOLO["user"]))
+    return scelte if scelte is not None else list(SEZIONI_PER_RUOLO.get(ruolo, SEZIONI_PER_RUOLO["reporter"]))
 
 
 def sezioni_e_opzioni():
@@ -491,9 +493,10 @@ def sezioni_e_opzioni():
 
 def render_gestione_utenti():
     st.subheader("👥 Utenti")
-    st.caption("Gli amministratori vedono tutte le sezioni; la segreteria anche tutta l'Anagrafica, gli allenatori "
-               "solo i ragazzi delle squadre assegnate qui sotto, gli utenti solo Distinta e Cronaca partita. "
-               "Per ogni utente puoi cambiare a mano le aree che vede; i ragazzi visibili restano decisi dal ruolo. "
+    st.caption("Aree del ruolo: amministratore tutto; segreteria l'Anagrafica; reporter Distinta, Cronaca e "
+               "Archivio; allenatore Allenamenti e Statistiche, con i soli ragazzi delle squadre assegnate qui "
+               "sotto. Per ogni utente puoi cambiare a mano le aree che vede; i ragazzi visibili restano decisi "
+               "dal ruolo. "
                "Le password sono salvate cifrate. Con utente vuoto e la password della segreteria "
                "(nei secrets) si entra sempre come amministratore.")
     for tipo, testo in st.session_state.pop("utenti_messaggi", []):
@@ -505,7 +508,7 @@ def render_gestione_utenti():
         icona = {"admin": "🛡️", "allenatore": "🧑‍🏫"}.get(dati.get("ruolo"), "👤")
         with st.expander(f"{icona} {nome} · {RUOLI.get(dati.get('ruolo'), '')}"):
             ruolo = st.selectbox("Ruolo", list(RUOLI), format_func=RUOLI.get, key=f"ruolo_{nome}",
-                                 index=list(RUOLI).index(dati.get("ruolo", "user")))
+                                 index=list(RUOLI).index(dati["ruolo"]))
             if ruolo != dati.get("ruolo"):
                 cambia_ruolo(nome, ruolo)
                 st.session_state["utenti_messaggi"] = [("success", f"Ruolo di {nome} aggiornato: le aree tornano "
@@ -556,7 +559,7 @@ def render_gestione_utenti():
         c1, c2, c3 = st.columns(3)
         nome = c1.text_input("Nome utente")
         password = c2.text_input("Password", type="password")
-        ruolo = c3.selectbox("Ruolo", list(RUOLI), format_func=RUOLI.get, index=list(RUOLI).index("user"))
+        ruolo = c3.selectbox("Ruolo", list(RUOLI), format_func=RUOLI.get, index=list(RUOLI).index("reporter"))
         if st.form_submit_button("Crea utente", type="primary"):
             try:
                 creato = aggiungi_utente(nome, password, ruolo)

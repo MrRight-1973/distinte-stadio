@@ -1,10 +1,9 @@
 """Utenti della segreteria, salvati su Supabase con la password cifrata (mai in chiaro).
 
-Quattro livelli: "admin" vede tutte le sezioni e gestisce gli utenti; "segreteria" vede Distinta,
-Cronaca partita e tutta l'Anagrafica; "allenatore" vede Distinta, Cronaca e nell'Anagrafica solo i
-ragazzi dei suoi gruppi squadra; "user" vede solo Distinta e Cronaca partita (niente dati dei ragazzi).
-Per ogni utente non amministratore si possono scegliere a mano le aree visibili ("aree"); il ruolo
-decide comunque quali ragazzi vede (tutti per la segreteria, solo i suoi gruppi per gli altri). La password SEGRETERIA_PASSWORD dei secrets resta sempre
+Quattro ruoli: "admin" vede tutto e gestisce gli utenti; "segreteria" l'Anagrafica (tutti i ragazzi);
+"reporter" Distinta, Cronaca partita e Archivio; "allenatore" Allenamenti e Statistiche (solo i ragazzi
+dei suoi gruppi squadra). Per ogni utente non amministratore si possono scegliere a mano le aree
+visibili ("aree"); il ruolo decide comunque quali ragazzi vede. La password SEGRETERIA_PASSWORD dei secrets resta sempre
 valida come accesso admin di emergenza (utente "admin" o nome vuoto).
 """
 import hashlib
@@ -16,8 +15,9 @@ import secrets
 
 from cronaca_manager import _cartella_dati, _carica_online, _leggi_file
 
-RUOLI = {"admin": "Amministratore (tutto)", "segreteria": "Segreteria (Distinta, Cronaca, Anagrafica)",
-         "allenatore": "Allenatore (Distinta, Cronaca, i suoi ragazzi)", "user": "Utente (Distinta e Cronaca)"}
+RUOLI = {"admin": "Amministratore (tutto)", "segreteria": "Segreteria (Anagrafica)",
+         "reporter": "Reporter (Distinta, Cronaca, Archivio)", "allenatore": "Allenatore (Allenamenti, Statistiche)"}
+VECCHI_RUOLI = {"user": "reporter"}  # nomi usati prima
 ITERAZIONI = 200_000
 LUNGHEZZA_MINIMA = 8
 PERCORSO_ONLINE = "utenti/utenti.json"
@@ -53,9 +53,13 @@ def _percorso():
 def elenco_utenti():
     """{nome: {"ruolo", "password"}}"""
     try:
-        return json.loads(_leggi_file(_percorso(), PERCORSO_ONLINE))
+        utenti = json.loads(_leggi_file(_percorso(), PERCORSO_ONLINE))
     except (OSError, ValueError):
         return {}
+    for dati in utenti.values():
+        ruolo = dati.get("ruolo", "reporter")
+        dati["ruolo"] = VECCHI_RUOLI.get(ruolo, ruolo if ruolo in RUOLI else "reporter")
+    return utenti
 
 
 def _salva(utenti):
@@ -157,5 +161,5 @@ def accedi(nome, password, password_emergenza):
         return None
     utente = elenco_utenti().get(nome)
     if utente and password_giusta(password, utente.get("password", "")):
-        return nome, utente.get("ruolo", "user")
+        return nome, utente["ruolo"]
     return None

@@ -10,7 +10,7 @@ from datetime import date
 import pandas as pd
 import streamlit as st
 
-from anagrafica import (data_da_iso, elenco_ragazzi, nome_completo, nuova_da_nome, ragazzi_del_gruppo,
+from anagrafica import (anno_di, data_da_iso, elenco_ragazzi, nome_completo, nuova_da_nome, ragazzi_del_gruppo,
                         salva_scheda, trova_per_nome)
 from presenze import (IN_CAMPO, MESI, SIGLE, STATI, aggiungi_allenamenti, elimina_allenamento, giorno_di,
                       leggi_tabella, mesi_della_stagione, nel_periodo, numero_di, ordina, presenze_gruppo,
@@ -26,6 +26,7 @@ ETICHETTE = {s: f"{SIGLE[s]} · {NOMI[s]}" for s in STATI}
 DA_ETICHETTA = {v: k for k, v in ETICHETTE.items()}
 SIGLE_BASE = ["C", "A", "P", "D", "Z"]  # le colonne delle tabelle del mister
 TUTTA, ALTRO = "Tutta la stagione", "Altro periodo..."
+NUOVO, SALTA = "➕ Nuovo in anagrafica", "✖️ Non importare"
 
 
 def _messaggio(tipo, testo):
@@ -224,7 +225,8 @@ def _importa(stagione, gruppo, ragazzi, allenamenti):
         except Exception as e:  # PDF rovinato o non di testo
             st.error(f"{f.name}: non riesco a leggerlo ({e}).")
     tutti = elenco_ragazzi()
-    abbinati, nuovi, sedute, problemi = {}, [], {}, []
+    preferiti = {r["id"] for r in ragazzi}
+    nomi, sedute, problemi = [], {}, []
     for nome_file, t in tabelle:
         if not t["sedute"]:
             problemi.append(f"{nome_file}: non trovo la riga con le date (es. 01-set).")
@@ -234,49 +236,61 @@ def _importa(stagione, gruppo, ragazzi, allenamenti):
             continue
         problemi += [f"{nome_file}: {p}" for p in t["problemi"]]
         for nome, anno, stati in t["righe"]:
-            r = trova_per_nome(nome, anno, ragazzi) or trova_per_nome(nome, anno, tutti)
-            if r:
-                abbinati[(nome, anno)] = r
-            elif (nome, anno) not in nuovi:
-                nuovi.append((nome, anno))
+            if (nome, anno) not in nomi:
+                nomi.append((nome, anno))
             for chiave, stato in zip(t["sedute"], stati):
                 sedute.setdefault(chiave, {})[(nome, anno)] = stato
-    if not sedute:
-        for p in problemi:
-            st.warning(p)
-        return
-    gia = [s for s in sedute if s in allenamenti]
-    st.markdown(f"**{len(sedute)} allenamenti** dal {_gg(min(sedute))} al {_gg(max(sedute))} · "
-                f"{len(abbinati)} ragazzi riconosciuti in anagrafica"
-                + (f" · {len(gia)} allenamenti già presenti verranno sostituiti" if gia else ""))
-    diversi = [(n_, a) for (n_, a), r in abbinati.items() if not (r.get("gruppi") or {}).get(stagione)]
-    if diversi:
-        st.caption(f"In anagrafica ma senza squadra quest'anno (verranno messi in {gruppo}): "
-                   + ", ".join(n_ for n_, _ in diversi))
-    if any(nome_completo(r) != n_ for (n_, _), r in abbinati.items()):
-        st.caption("Abbinati con un nome diverso: " + ", ".join(
-            f"{n_} → {nome_completo(r)}" for (n_, _), r in abbinati.items() if nome_completo(r) != n_))
-    crea = False
-    if nuovi:
-        crea = st.checkbox(f"Aggiungi in anagrafica, nella squadra {gruppo}, chi non c'è ancora: "
-                           + ", ".join(f"{n_} ({a})" if a else n_ for n_, a in nuovi), value=True,
-                           key=f"pres_imp_crea_{n}")
-        if not crea:
-            st.caption("Senza scheda, le loro presenze non vengono importate.")
     for p in problemi:
         st.warning(p)
-    if st.button("📥 Importa gli allenamenti", type="primary", key="pres_imp_ok"):
-        for (n_, a), r in abbinati.items():
+    if not sedute:
+        return
+
+    # Abbinamenti: proposti in automatico, si possono correggere a mano
+    etichette, contate = {}, {}
+    for r in sorted(tutti, key=nome_completo):
+        base = f"{nome_completo(r)} ({anno_di(r) or '?'})"
+        contate[base] = contate.get(base, 0) + 1
+        etichette[r["id"]] = base if contate[base] == 1 else f"{base} #{contate[base]}"
+    da_id = {v: k for k, v in etichette.items()}
+    proposti = {k: trova_per_nome(k[0], k[1], tutti, preferiti) for k in nomi}
+    tabella = pd.DataFrame([{"Nella tabella": f"{n_} ({a})" if a else n_,
+                             "In anagrafica": etichette[r["id"]] if r else NUOVO} for (n_, a), r in proposti.items()])
+    gia = [s for s in sedute if s in allenamenti]
+    st.markdown(f"**{len(sedute)} allenamenti** dal {_gg(min(sedute))} al {_gg(max(sedute))} · {len(nomi)} ragazzi"
+                + (f" · {len(gia)} allenamenti già presenti verranno sostituiti" if gia else ""))
+    st.caption(f"Controlla gli abbinamenti con l'anagrafica. {NUOVO} crea la scheda nella squadra {gruppo}; "
+               f"{SALTA} non importa le sue presenze.")
+    scelte = st.data_editor(
+        tabella, hide_index=True, use_container_width=True, disabled=["Nella tabella"], key=f"pres_imp_abb_{n}",
+        height=min(35 * len(tabella) + 40, 700),
+        column_config={"In anagrafica": st.column_config.SelectboxColumn(
+            options=[NUOVO, SALTA] + list(etichette.values()), required=True)})
+    scelto = dict(zip(nomi, scelte["In anagrafica"]))
+    avvisi = [f"{n_} ({a}) → {v}" for (n_, a), v in scelto.items() if v in da_id and a and f"({a})" not in v]
+    if avvisi:
+        st.warning("Anno di nascita diverso, controlla che sia la stessa persona: " + "; ".join(avvisi))
+    doppi = [v for v in set(scelto.values()) if v in da_id and list(scelto.values()).count(v) > 1]
+    if doppi:
+        st.error("Lo stesso ragazzo è abbinato a più righe: " + ", ".join(doppi))
+    if st.button("📥 Importa gli allenamenti", type="primary", key="pres_imp_ok", disabled=bool(doppi)):
+        schede = {r["id"]: r for r in tutti}
+        abbinati, nuovi = {}, 0
+        for k, v in scelto.items():
+            if v == SALTA:
+                continue
+            if v == NUOVO:
+                abbinati[k] = nuova_da_nome(k[0], k[1], stagione, gruppo)
+                nuovi += 1
+                continue
+            r = schede[da_id[v]]
             if not (r.get("gruppi") or {}).get(stagione):
-                salva_scheda({**r, "gruppi": {**(r.get("gruppi") or {}), stagione: gruppo}})
-        if crea:
-            for n_, a in nuovi:
-                abbinati[(n_, a)] = nuova_da_nome(n_, a, stagione, gruppo)
+                r = salva_scheda({**r, "gruppi": {**(r.get("gruppi") or {}), stagione: gruppo}})
+            abbinati[k] = r
         da_scrivere = {s: {abbinati[k]["id"]: v for k, v in segnati.items() if k in abbinati}
                        for s, segnati in sedute.items()}
         aggiungi_allenamenti(stagione, gruppo, da_scrivere)
         st.session_state["pres_imp_n"] = n + 1
         _messaggio("success", f"Importati {len(da_scrivere)} allenamenti"
-                   + (f" e {'aggiunto 1 ragazzo' if len(nuovi) == 1 else f'aggiunti {len(nuovi)} ragazzi'} in anagrafica"
-                      if crea and nuovi else "") + ".")
+                   + (f" e {'aggiunto 1 ragazzo' if nuovi == 1 else f'aggiunti {nuovi} ragazzi'} in anagrafica"
+                      if nuovi else "") + ".")
         st.rerun()
