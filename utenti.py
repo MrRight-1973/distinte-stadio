@@ -1,8 +1,8 @@
 """Utenti della segreteria, salvati su Supabase con la password cifrata (mai in chiaro).
 
-Tre livelli: "admin" vede tutte le sezioni e gestisce gli utenti, "user" (segreteria) vede
-Distinta, Cronaca partita e tutta l'Anagrafica, "allenatore" vede Distinta, Cronaca e
-nell'Anagrafica solo i ragazzi dei suoi gruppi squadra. La password SEGRETERIA_PASSWORD dei secrets resta sempre
+Quattro livelli: "admin" vede tutte le sezioni e gestisce gli utenti; "segreteria" vede Distinta,
+Cronaca partita e tutta l'Anagrafica; "allenatore" vede Distinta, Cronaca e nell'Anagrafica solo i
+ragazzi dei suoi gruppi squadra; "user" vede solo Distinta e Cronaca partita (niente dati dei ragazzi). La password SEGRETERIA_PASSWORD dei secrets resta sempre
 valida come accesso admin di emergenza (utente "admin" o nome vuoto).
 """
 import hashlib
@@ -14,8 +14,8 @@ import secrets
 
 from cronaca_manager import _cartella_dati, _carica_online, _leggi_file
 
-RUOLI = {"admin": "Amministratore (tutto)", "user": "Segreteria (Distinta, Cronaca, Anagrafica)",
-         "allenatore": "Allenatore (solo i suoi ragazzi)"}
+RUOLI = {"admin": "Amministratore (tutto)", "segreteria": "Segreteria (Distinta, Cronaca, Anagrafica)",
+         "allenatore": "Allenatore (Distinta, Cronaca, i suoi ragazzi)", "user": "Utente (Distinta e Cronaca)"}
 ITERAZIONI = 200_000
 LUNGHEZZA_MINIMA = 8
 PERCORSO_ONLINE = "utenti/utenti.json"

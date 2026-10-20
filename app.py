@@ -17,6 +17,7 @@ from utenti import (
     accedi,
     aggiungi_utente,
     cambia_password,
+    cambia_gruppi,
     cambia_ruolo,
     elenco_utenti,
     elimina_utente,
@@ -51,6 +52,7 @@ from rose import correggi_con_rosa, lato_nostro, rosa_squadra
 from ui_rose import render_opzioni_rose, render_prepara_da_rosa
 from ui_stagioni import render_opzioni_campionati
 from ui_components import render_download_buttons, render_info_match
+from ui_anagrafica import render_anagrafica
 from ui_cronaca import render_cronaca
 from ui_sponsor import loghi_per_pdf, render_gestione_sponsor
 from ui_statistiche import render_statistiche
@@ -434,14 +436,15 @@ def azzera_sezione_distinta():
     reset_stato_squadra("griglia_ospite")
 
 
-SEZIONI = ["📋 Distinta", "🎙️ Cronaca partita", "📚 Archivio", "📊 Statistiche", "⚙️ Opzioni"]
+SEZIONI = ["📋 Distinta", "🎙️ Cronaca partita", "👦 Anagrafica", "📚 Archivio", "📊 Statistiche", "⚙️ Opzioni"]
 SOTTOSEZIONI_OPZIONI = ["🏆 Campionati", "👕 Rose", "🤖 Lettura AI", "🏷️ Sponsor", "👥 Utenti"]  # per una nuova impostazione basta aggiungerla qui
-SEZIONI_PER_RUOLO = {"admin": SEZIONI, "user": SEZIONI[:2]}
+SEZIONI_PER_RUOLO = {"admin": SEZIONI, "segreteria": SEZIONI[:3], "allenatore": SEZIONI[:3], "user": SEZIONI[:2]}
 
 
 def render_gestione_utenti():
     st.subheader("👥 Utenti")
-    st.caption("Gli amministratori vedono tutte le sezioni; gli utenti solo Distinta e Cronaca partita. "
+    st.caption("Gli amministratori vedono tutte le sezioni; la segreteria anche tutta l'Anagrafica, gli allenatori "
+               "solo i ragazzi delle squadre assegnate qui sotto, gli utenti solo Distinta e Cronaca partita. "
                "Le password sono salvate cifrate. Con utente vuoto e la password della segreteria "
                "(nei secrets) si entra sempre come amministratore.")
     for tipo, testo in st.session_state.pop("utenti_messaggi", []):
@@ -450,12 +453,25 @@ def render_gestione_utenti():
     if not utenti:
         st.info("Nessun utente creato: per ora si entra solo con la password della segreteria.")
     for nome, dati in sorted(utenti.items()):
-        with st.expander(f"{'🛡️' if dati.get('ruolo') == 'admin' else '👤'} {nome} · {RUOLI.get(dati.get('ruolo'), '')}"):
+        icona = {"admin": "🛡️", "allenatore": "🧑‍🏫"}.get(dati.get("ruolo"), "👤")
+        with st.expander(f"{icona} {nome} · {RUOLI.get(dati.get('ruolo'), '')}"):
             ruolo = st.selectbox("Ruolo", list(RUOLI), format_func=RUOLI.get, key=f"ruolo_{nome}",
                                  index=list(RUOLI).index(dati.get("ruolo", "user")))
             if ruolo != dati.get("ruolo"):
                 cambia_ruolo(nome, ruolo)
                 st.success("Ruolo aggiornato.")
+            if ruolo == "allenatore":
+                stagione, gruppi = gruppi_correnti()
+                nomi = [g["gruppo"] for g in gruppi]
+                attuali = [g for g in dati.get("gruppi") or [] if g in nomi]
+                scelti = st.multiselect(f"Squadre che allena ({stagione})", nomi, default=attuali,
+                                        key=f"gruppi_{nome}", placeholder="Scegli una o più squadre",
+                                        help="Nell'Anagrafica vede solo i ragazzi di queste squadre")
+                if sorted(scelti) != sorted(attuali):
+                    cambia_gruppi(nome, scelti)
+                    st.success("Squadre aggiornate.")
+                elif not nomi:
+                    st.caption("Prima crea le squadre in 🏆 Campionati.")
             nuova = st.text_input("Nuova password", type="password", key=f"nuova_pwd_{nome}")
             c1, c2 = st.columns(2)
             if c1.button("🔑 Cambia password", key=f"cambia_pwd_{nome}", use_container_width=True):
@@ -477,7 +493,7 @@ def render_gestione_utenti():
         c1, c2, c3 = st.columns(3)
         nome = c1.text_input("Nome utente")
         password = c2.text_input("Password", type="password")
-        ruolo = c3.selectbox("Ruolo", list(RUOLI), format_func=RUOLI.get, index=1)
+        ruolo = c3.selectbox("Ruolo", list(RUOLI), format_func=RUOLI.get, index=list(RUOLI).index("user"))
         if st.form_submit_button("Crea utente", type="primary"):
             try:
                 creato = aggiungi_utente(nome, password, ruolo)
@@ -528,6 +544,9 @@ def render_segreteria():
             return
         st.subheader("🏷️ Sponsor")
         render_gestione_sponsor(leggi_secret("GITHUB_TOKEN"), leggi_secret("GITHUB_REPO"), leggi_secret("GITHUB_BRANCH"))
+        return
+    if sezione == "👦 Anagrafica":
+        render_anagrafica(st.session_state.get("utente", ""), st.session_state.get("ruolo"))
         return
     if sezione == "📊 Statistiche":
         render_statistiche(nome_societa())
