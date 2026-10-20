@@ -25,8 +25,9 @@ from cronaca_manager import (
 )
 from cronaca_pdf import genera_pdf_resoconto
 from giornata import normalizza_giornata
-from stagioni import gruppo_di, impostazioni_stagioni, stagione_partita
+from stagioni import gruppo_di, impostazioni_stagioni, stagione_di_oggi, stagione_partita
 from nomi_file import nome_file_gara
+from archivio_stagione import crea_archivio_stagione, partite_della_stagione
 
 # Limiti del piano gratuito di Supabase
 LIMITE_FILE = 1024 ** 3        # 1 GB per foto e note vocali
@@ -296,7 +297,70 @@ def _ripristino(cronaca):
             st.rerun()
 
 
-def render_archivio(loghi_sponsor=lambda: None):
+def _chiudi_stagione(dettagli, loghi_sponsor, cronaca, nome_societa):
+    """📦 Un unico ZIP con l'anno sportivo (partite, statistiche, presenze, anagrafica), poi spazio libero."""
+    with st.expander("📦 Chiudi stagione"):
+        st.caption("Un unico file ZIP con tutto l'anno sportivo: partite (resoconti, foto, note vocali), "
+                   "statistiche in PDF, presenze agli allenamenti e anagrafica dei ragazzi. Dopo averlo "
+                   "salvato puoi liberare spazio su Supabase; l'anagrafica resta nell'app per l'anno dopo.")
+        stagioni = sorted({stagione_partita(d.get("partita")) for d in dettagli.values() if d}
+                          | {impostazioni_stagioni().get("corrente") or stagione_di_oggi()} - {"", None}, reverse=True)
+        stagione = st.selectbox("Stagione", stagioni, key="arch_stagione")
+        archivio = st.session_state.get("arch_stagione_zip")
+        if not archivio or archivio["stagione"] != stagione:
+            if st.button("📦 Prepara archivio stagione", type="primary", use_container_width=True):
+                with st.spinner("Preparo l'archivio (scarico foto, creo resoconti e statistiche)..."):
+                    loghi = loghi_sponsor()
+                    try:
+                        zip_, fatto = crea_archivio_stagione(
+                            stagione, nome_societa, lambda c: genera_pdf_resoconto(c, sponsor_loghi=loghi))
+                    except archivio_cloud.ArchivioErrore as e:
+                        st.error(str(e))
+                        return
+                st.session_state["arch_stagione_zip"] = {"stagione": stagione, "zip": zip_, "fatto": fatto,
+                                                         "scaricato": False}
+                st.rerun()
+            return
+
+        fatto = archivio["fatto"]
+        st.markdown(f"Dentro: **{fatto['partite']}** partite, statistiche di "
+                    f"{', '.join(fatto['statistiche']) or 'nessuna squadra'}, presenze di "
+                    f"{', '.join(fatto['presenze']) or 'nessuna squadra'}, **{fatto['ragazzi']}** ragazzi.")
+        for problema in fatto["problemi"]:
+            st.warning(problema)
+
+        def scaricato():
+            st.session_state["arch_stagione_zip"]["scaricato"] = True
+
+        st.download_button(f"⬇️ Scarica archivio {stagione} ({_misura(len(archivio['zip']))})", archivio["zip"],
+                           file_name=f"Archivio_stagione_{re.sub(r'[^0-9]+', '-', stagione).strip('-')}.zip",
+                           mime="application/zip", on_click=scaricato, type="primary", use_container_width=True)
+        aperta = {cronaca.get("id"), cronaca.get("archivio_id")} - {None, ""}
+        ids = sorted(set(partite_della_stagione(stagione)) - aperta)
+        if not archivio["scaricato"] or not ids:
+            st.caption("Dopo aver scaricato l'archivio potrai liberare spazio." if ids
+                       else "Nessuna partita archiviata da togliere da Supabase.")
+            return
+
+        st.markdown(f"**🧹 Libera spazio** · {len(ids)} partite della stagione {stagione}")
+        scelta = st.radio("Cosa togliere da Supabase?", [
+            "Solo foto e note vocali: note, tabellino, articolo e statistiche restano",
+            "Tutte le partite: restano solo nell'archivio",
+        ], key="arch_stagione_cosa")
+        st.caption("Anagrafica e presenze agli allenamenti restano nell'app.")
+        conferma = st.checkbox("Ho salvato l'archivio in un posto sicuro", key="arch_stagione_conferma")
+        if st.button("🧹 Libera spazio della stagione", disabled=not conferma, use_container_width=True):
+            azione = alleggerisci_partita if scelta.startswith("Solo") else elimina_partita_archiviata
+            for id_partita in ids:
+                if not _prova(azione, id_partita):
+                    return
+            _deseleziona()
+            st.session_state.pop("arch_stagione_zip", None)
+            st.session_state["arch_messaggio"] = f"🧹 Spazio liberato per le {len(ids)} partite della stagione {stagione}."
+            st.rerun()
+
+
+def render_archivio(loghi_sponsor=lambda: None, nome_societa=""):
     st.header("📚 Archivio partite")
     if stato_archivio_online() is None:
         st.info("L'archivio funziona con Supabase: aggiungi SUPABASE_URL e SUPABASE_KEY nei secrets dell'app.")
@@ -325,10 +389,12 @@ def render_archivio(loghi_sponsor=lambda: None):
         partite = ordina_partite(partite, ORDINI[ordine])
         if not partite:
             st.caption("Nessuna partita con questi filtri.")
-            return
-        selezionate = _tabella_partite(partite, dettagli, file_online, f"{ORDINI[ordine]}_{filtro}",
-                                       cronaca.get("archivio_id"))
-        if selezionate:
-            _azioni_selezione(selezionate, loghi_sponsor, cronaca)
+        else:
+            selezionate = _tabella_partite(partite, dettagli, file_online, f"{ORDINI[ordine]}_{filtro}",
+                                           cronaca.get("archivio_id"))
+            if selezionate:
+                _azioni_selezione(selezionate, loghi_sponsor, cronaca)
     st.markdown("---")
+    if st.session_state.get("ruolo") == "admin":
+        _chiudi_stagione(dettagli, loghi_sponsor, cronaca, nome_societa)
     _ripristino(cronaca)

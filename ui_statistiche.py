@@ -5,8 +5,10 @@ import pandas as pd
 import streamlit as st
 
 import archivio_cloud
+from anagrafica import elenco_ragazzi, trova_per_nome
 from cronaca_manager import carica_cronaca
 from giornata import etichetta_giornata
+from presenze import allenato_complessivo
 from stagioni import gruppo_di, impostazioni_stagioni, stagione_partita
 from statistiche import chiave_squadra, risultati_squadra, squadre_presenti, statistiche_squadra
 from statistiche_pdf import PARTI, genera_pdf_statistiche
@@ -28,6 +30,21 @@ def _partite():
     partite.pop(aperta.get("archivio_id"), None)  # partita riaperta dall'archivio: conta la copia in Cronaca
     partite[aperta.get("id")] = aperta
     return [p for p in partite.values() if p]
+
+
+def _allenato(stagioni, gruppi, riepilogo):
+    """{nome del giocatore come nelle distinte: % di allenamenti svolti}, dai dati di 🏃 Allenamenti."""
+    totali = allenato_complessivo(stagioni, gruppi)
+    if not totali:
+        return {}
+    ragazzi = elenco_ragazzi()
+    risultato = {}
+    for r in riepilogo:
+        scheda = trova_per_nome(r["giocatore"], "", ragazzi, set(totali))
+        if scheda and totali.get(scheda["id"], (0, 0))[1]:
+            svolti, segnati = totali[scheda["id"]]
+            risultato[r["giocatore"]] = round(100 * svolti / segnati)
+    return risultato
 
 
 def render_statistiche(nome_societa=""):
@@ -81,9 +98,16 @@ def render_statistiche(nome_societa=""):
     m[3].metric("🟨 Ammonizioni", sum(r["ammonizioni"] for r in riepilogo))
     m[4].metric("🟥 Espulsioni", sum(r["espulsioni"] for r in riepilogo))
 
+    allenato = _allenato(anni if anno == "Tutti gli anni" else [anno], None if gruppo == "Tutte" else [gruppo],
+                         riepilogo)
+    for r in riepilogo:
+        r["allenato"] = allenato.get(r["giocatore"])
     tabella = pd.DataFrame(riepilogo)
     tabella["media"] = [round(r["minuti"] / r["presenze"]) if r["presenze"] else 0 for r in riepilogo]
-    tabella = tabella[list(COLONNE)].rename(columns=COLONNE)
+    colonne = {**COLONNE, **({"allenato": "🏃 Allenato %"} if allenato else {})}
+    tabella = tabella[list(colonne)].rename(columns=colonne)
+    if allenato:
+        tabella["🏃 Allenato %"] = pd.array(tabella["🏃 Allenato %"], dtype="Int64")
 
     with st.expander(f"📅 Risultati: {fatti} gol fatti, {subiti} subiti"):
         st.dataframe(pd.DataFrame([{
@@ -92,7 +116,11 @@ def render_statistiche(nome_societa=""):
         } for r in reversed(risultati)]), hide_index=True, use_container_width=True)
 
     with st.expander(f"👥 Giocatori ({len(riepilogo)})"):
-        st.dataframe(tabella, hide_index=True, use_container_width=True)
+        st.dataframe(tabella, hide_index=True, use_container_width=True,
+                     column_config={"🏃 Allenato %": st.column_config.NumberColumn(format="%d%%")})
+        if allenato:
+            st.caption("🏃 Allenato %: allenamenti svolti (C, P o D) su quelli segnati in 🏃 Allenamenti, "
+                       "nello stesso anno e squadra. Vuoto se il giocatore non è in anagrafica.")
         st.download_button("⬇️ Scarica le statistiche (CSV)", tabella.to_csv(index=False, sep=";").encode("utf-8-sig"),
                            file_name="statistiche_giocatori.csv", mime="text/csv")
 

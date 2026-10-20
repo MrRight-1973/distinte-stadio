@@ -112,12 +112,16 @@ def genera_pdf_statistiche(squadra, campionato, riepilogo, per_partita, risultat
         story += [Paragraph(PARTI["risultati"], s_sezione), tab]
 
     if "giocatori" in parti and riepilogo:
-        dati = [[testo for _, testo in INTESTAZIONI_GIOCATORI]]
+        intestazioni = INTESTAZIONI_GIOCATORI + ([("allenato", "All. %")] if any(r.get("allenato") is not None
+                                                                                    for r in riepilogo) else [])
+        dati = [[testo for _, testo in intestazioni]]
         for r in riepilogo:
             media = round(r["minuti"] / r["presenze"]) if r["presenze"] else 0
+            valori = {"media": media, "allenato": "" if r.get("allenato") is None else f"{r['allenato']}%"}
             dati.append([Paragraph(_esc(r["giocatore"]), s_cella)]
-                        + [media if k == "media" else r[k] for k, _ in INTESTAZIONI_GIOCATORI[1:]])
-        tab = Table(dati, colWidths=[larghezza - 9 * 42] + [42] * 9, repeatRows=1)
+                        + [valori[k] if k in valori else r[k] for k, _ in intestazioni[1:]])
+        altre = len(intestazioni) - 1
+        tab = Table(dati, colWidths=[larghezza - altre * 40] + [40] * altre, repeatRows=1)
         tab.setStyle(_stile_tabella())
         story += [Paragraph(PARTI["giocatori"], s_sezione), tab]
 

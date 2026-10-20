@@ -12,7 +12,7 @@ import streamlit as st
 
 from anagrafica import (anno_di, data_da_iso, elenco_ragazzi, nome_completo, nuova_da_nome, ragazzi_del_gruppo,
                         salva_scheda, trova_per_nome)
-from presenze import (IN_CAMPO, MESI, SIGLE, STATI, aggiungi_allenamenti, elimina_allenamento, giorno_di,
+from presenze import (IN_CAMPO, SIGLE, SIGLE_TABELLA, STATI, aggiungi_allenamenti, elimina_allenamento, etichetta_corta, giorno_di,
                       leggi_tabella, mesi_della_stagione, nel_periodo, numero_di, ordina, presenze_gruppo,
                       salva_allenamento, seduta, sposta_allenamento, statistiche, testo_da_file)
 from stagioni import gruppi_correnti
@@ -24,7 +24,7 @@ NOMI = {"completo": "Completo", "parziale": "Parziale", "differenziato": "Differ
         "giustificato": "Giustificato"}
 ETICHETTE = {s: f"{SIGLE[s]} · {NOMI[s]}" for s in STATI}
 DA_ETICHETTA = {v: k for k, v in ETICHETTE.items()}
-SIGLE_BASE = ["C", "A", "P", "D", "Z"]  # le colonne delle tabelle del mister
+SIGLE_BASE = SIGLE_TABELLA
 TUTTA, ALTRO = "Tutta la stagione", "Altro periodo..."
 NUOVO, SALTA = "➕ Nuovo in anagrafica", "✖️ Non importare"
 
@@ -36,12 +36,6 @@ def _messaggio(tipo, testo):
 def _gg(chiave):
     testo = data_da_iso(giorno_di(chiave)).strftime("%d/%m/%Y")
     return testo + (f" ({numero_di(chiave)}° allenamento)" if numero_di(chiave) > 1 else "")
-
-
-def _corta(chiave):
-    """"2026-09-01" -> "01-set" come nelle tabelle del mister."""
-    giorno = data_da_iso(giorno_di(chiave))
-    return f"{giorno.day:02d}-{MESI[giorno.month - 1]}" + ("²" if numero_di(chiave) > 1 else "")
 
 
 def _riassunto(segnati):
@@ -218,7 +212,7 @@ def _statistiche(stagione, gruppo, ragazzi, allenamenti):
                + (" · I infortunato · G giustificato" if len(sigle) > 5 else "")
                + ". Allenato % conta C, P e D.")
     with st.expander(f"🔎 Allenamento per allenamento ({len(sedute)})"):
-        griglia = pd.DataFrame([{"Ragazzo": nome_di[i], **{_corta(s): SIGLE.get(allenamenti[s].get(i), "")
+        griglia = pd.DataFrame([{"Ragazzo": nome_di[i], **{etichetta_corta(s): SIGLE.get(allenamenti[s].get(i), "")
                                                             for s in sedute}} for i in ordine])
         st.dataframe(griglia, hide_index=True, use_container_width=True)
 
@@ -227,7 +221,7 @@ def _statistiche(stagione, gruppo, ragazzi, allenamenti):
         tabella = [(nome_di[i], r["Anno"], [SIGLE.get(allenamenti[s].get(i), "") for s in sedute])
                    for i, r in zip(ordine, righe)]
         st.session_state["pres_pdf_pronto"] = (firma, genera_pdf_presenze(
-            gruppo, stagione, periodo, tabella, [_corta(s) for s in sedute], sigle))
+            gruppo, stagione, periodo, tabella, [etichetta_corta(s) for s in sedute], sigle))
     pronto = st.session_state.get("pres_pdf_pronto")
     if pronto and pronto[0] == firma:
         st.download_button("⬇️ Scarica il PDF", pronto[1], mime="application/pdf", key="pres_pdf_scarica",

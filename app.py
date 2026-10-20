@@ -624,7 +624,7 @@ def render_segreteria():
         render_statistiche(nome_societa())
         return
     if sezione == "📚 Archivio":
-        render_archivio(loghi_sponsor_pdf)
+        render_archivio(loghi_sponsor_pdf, nome_societa())
         return
     if sezione == "🎙️ Cronaca partita":
         render_cronaca(leggi_secret("OPENAI_API_KEY"), st.session_state.get("macro_info"), loghi_sponsor_pdf,
