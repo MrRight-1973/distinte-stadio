@@ -1,12 +1,19 @@
 # Aggiorna da sola le classifiche salvate nell'app (📊 Statistiche → 🏆 Classifica): per ogni squadra con un
 # link della LND (gare.lnd.it) o di Tuttocampo, un browser apre la pagina, legge la classifica e la salva in
-# Supabase. Usa gli stessi secrets della "Sveglia archivio Supabase": SUPABASE_URL e SUPABASE_KEY.
+# Supabase. Dalla LND legge anche risultati e calendario di tutte le giornate. Usa gli stessi secrets della
+# "Sveglia archivio Supabase": SUPABASE_URL e SUPABASE_KEY.
 name: Classifiche
 
 on:
   schedule:
     - cron: "23 6,20 * * *"  # ogni giorno alle 6:23 e alle 20:23 UTC
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      mostra_testo:
+        description: "Scrivi nel log l'inizio del testo di una pagina delle giornate (per controllare la lettura)"
+        type: choice
+        options: ["no", "si"]
+        default: "no"
 
 permissions:
   contents: read
@@ -14,7 +21,7 @@ permissions:
 jobs:
   classifiche:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -28,4 +35,5 @@ jobs:
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+          MOSTRA_TESTO: ${{ inputs.mostra_testo || 'no' }}
         run: python aggiorna_classifiche.py
