@@ -12,6 +12,8 @@ import re
 import uuid
 from datetime import datetime
 
+import registro
+
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import ParagraphStyle
@@ -74,8 +76,10 @@ def salva_distinta(stagione, distinta):
     distinta = {**distinta, "id": distinta.get("id") or uuid.uuid4().hex[:12],
                 "aggiornata": datetime.now().strftime("%Y-%m-%d %H:%M")}
     dati = distinte_stagione(stagione)
+    nuova = distinta["id"] not in dati
     dati[distinta["id"]] = distinta
     _scrivi(stagione, dati)
+    registro.segna("Distinta creata" if nuova else "Distinta salvata", etichetta(distinta))
     return distinta
 
 
@@ -86,13 +90,16 @@ def salva_distinte(stagione, nuove):
     salvate = [{**d, "id": d.get("id") or uuid.uuid4().hex[:12], "aggiornata": adesso} for d in nuove]
     dati.update({d["id"]: d for d in salvate})
     _scrivi(stagione, dati)
+    registro.segna("Distinte create dal calendario", f"{stagione}: {len(salvate)}")
     return salvate
 
 
 def elimina_distinta(stagione, id_distinta):
     dati = distinte_stagione(stagione)
-    if dati.pop(id_distinta, None) is not None:
+    tolta = dati.pop(id_distinta, None)
+    if tolta is not None:
         _scrivi(stagione, dati)
+        registro.segna("Distinta eliminata", etichetta(tolta))
 
 
 def ordinate(distinte):
