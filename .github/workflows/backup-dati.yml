@@ -1,0 +1,28 @@
+# Backup settimanale dei dati (anagrafica, presenze, distinte, utenti, registro, partite) in uno ZIP
+# nello spazio privato di Supabase (backup/backup_<data>.zip, tenuti gli ultimi 8).
+# Usa gli stessi secrets della "Sveglia archivio Supabase": SUPABASE_URL e SUPABASE_KEY.
+# Il backup non viene mai allegato all'esecuzione né stampato: nel log ci sono solo nome e dimensione.
+name: Backup dati
+
+on:
+  schedule:
+    - cron: "23 3 * * 1"  # lunedì alle 3:23 UTC
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install requests
+      - name: Crea e carica il backup
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+        run: python backup_dati.py

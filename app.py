@@ -62,6 +62,7 @@ from ui_components import render_download_buttons, render_info_match
 from ui_anagrafica import render_anagrafica
 from ui_crea_distinta import render_crea_distinta, render_prendi_da_crea_distinta
 from ui_presenze import render_presenze
+from ui_registro import render_registro_e_backup
 from ui_cronaca import render_cronaca
 from ui_sponsor import loghi_per_pdf, render_gestione_sponsor
 from ui_statistiche import render_statistiche
@@ -489,14 +490,16 @@ DISTINTA, CRONACA = "📋 Distinta", "🎙️ Cronaca partita"
 ARCHIVIO, ARCHIVIO_LETTURA = "📚 Archivio", "👁️ Archivio in sola lettura"
 # 📋 Distinta non ha più una voce sua: è una scheda di 🎙️ Cronaca partita (ma resta un'area da assegnare)
 SEZIONI = ["📝 Crea distinta", CRONACA, "👦 Anagrafica", "🏃 Allenamenti", "📚 Archivio", "📊 Statistiche", "⚙️ Opzioni"]
-SOTTOSEZIONI_OPZIONI = ["🏆 Campionati", "👕 Rose", "🤖 Lettura AI", "🏷️ Sponsor", "👥 Utenti"]  # per una nuova impostazione basta aggiungerla qui
+# per una nuova impostazione basta aggiungerla qui
+SOTTOSEZIONI_OPZIONI = ["🏆 Campionati", "👕 Rose", "🤖 Lettura AI", "🏷️ Sponsor", "👥 Utenti", "🗂️ Registro e backup"]
 SEZIONI_PER_RUOLO = {"admin": SEZIONI, "segreteria": ["👦 Anagrafica"],
                      "reporter": ["📋 Distinta", "🎙️ Cronaca partita", "📚 Archivio"],
                      "allenatore": ["🏃 Allenamenti", "📊 Statistiche", ARCHIVIO_LETTURA],
                      "distinte": ["📝 Crea distinta"]}
 # Aree assegnabili a mano a un utente, raggruppate come nel menu: le sezioni, le due schede di 🎙️ Cronaca
 # partita, l'archivio (completo o in sola lettura) e le pagine di Opzioni (gli utenti li gestisce solo l'admin)
-OPZIONI_ASSEGNABILI = [s for s in SOTTOSEZIONI_OPZIONI if s != "👥 Utenti"]
+SOLO_ADMIN = ("👥 Utenti", "🗂️ Registro e backup")
+OPZIONI_ASSEGNABILI = [s for s in SOTTOSEZIONI_OPZIONI if s not in SOLO_ADMIN]
 GRUPPI_AREE = [
     ("Sezioni", ["📝 Crea distinta", "👦 Anagrafica", "🏃 Allenamenti", "📊 Statistiche"]),
     ("🎙️ Cronaca partita: schede", [DISTINTA, CRONACA]),
@@ -520,7 +523,8 @@ def aree_di(nome, ruolo):
 def sezioni_e_opzioni():
     """(sezioni del menu, pagine di Opzioni) per l'utente collegato."""
     aree = aree_di(st.session_state.get("utente", ""), st.session_state.get("ruolo"))
-    opzioni = [s for s in SOTTOSEZIONI_OPZIONI if f"⚙️ {s}" in aree]
+    opzioni = [s for s in SOTTOSEZIONI_OPZIONI if f"⚙️ {s}" in aree
+               and (s not in SOLO_ADMIN or st.session_state.get("ruolo") == "admin")]
     sezioni = [s for s in SEZIONI[:-1] if s in aree or (s == CRONACA and DISTINTA in aree)
                or (s == ARCHIVIO and ARCHIVIO_LETTURA in aree)] + \
         (["⚙️ Opzioni"] if opzioni else [])
@@ -552,9 +556,9 @@ def render_gestione_utenti():
                 st.rerun()
             if ruolo != "admin":
                 attuali = [a for a in aree_di(nome, ruolo) if a in AREE]
-                st.markdown("**Aree che vede e usa**", help="Parte da quelle del ruolo; 👥 Utenti resta solo agli "
-                                                             "amministratori. Con l'archivio completo la sola "
-                                                             "lettura non serve.")
+                st.markdown("**Aree che vede e usa**", help="Parte da quelle del ruolo; 👥 Utenti e 🗂️ Registro "
+                                                             "restano solo agli amministratori. Con l'archivio "
+                                                             "completo la sola lettura non serve.")
                 scelte = []
                 for titolo, gruppo in GRUPPI_AREE:
                     scelte += st.pills(titolo, gruppo, selection_mode="multi",
@@ -696,6 +700,9 @@ def render_segreteria():
             return
         if sotto == "👥 Utenti":
             render_gestione_utenti()
+            return
+        if sotto == "🗂️ Registro e backup":
+            render_registro_e_backup()
             return
         st.subheader("🏷️ Sponsor")
         render_gestione_sponsor(leggi_secret("GITHUB_TOKEN"), leggi_secret("GITHUB_REPO"), leggi_secret("GITHUB_BRANCH"))

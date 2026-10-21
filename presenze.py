@@ -10,6 +10,7 @@ import os
 import re
 from datetime import date
 
+import registro
 from cronaca_manager import _cartella_dati, _carica_online, _leggi_file
 
 STATI = ["completo", "parziale", "differenziato", "presenza", "assente", "infortunato", "giustificato"]
@@ -84,11 +85,15 @@ def salva_allenamento(stagione, gruppo, chiave, segnati):
     segnati = {i: s for i, s in segnati.items() if s in STATI}
     dati = presenze_stagione(stagione)
     allenamenti = dati.setdefault(gruppo, {})
+    tolto = None
     if segnati:
         allenamenti[chiave] = segnati
     else:
-        allenamenti.pop(chiave, None)
+        tolto = allenamenti.pop(chiave, None)
     _scrivi(stagione, dati)
+    if segnati or tolto is not None:
+        registro.segna("Allenamento salvato" if segnati else "Allenamento eliminato",
+                       f"{gruppo}, {_giorno_leggibile(chiave)}")
 
 
 def elimina_allenamento(stagione, gruppo, chiave):
@@ -102,6 +107,11 @@ def _scrivi(stagione, dati):
     _carica_online(online, locale, "application/json")
 
 
+def _giorno_leggibile(chiave):
+    giorno = date.fromisoformat(giorno_di(chiave))
+    return f"{giorno:%d/%m/%Y}" + (f" (allenamento {numero_di(chiave)})" if numero_di(chiave) > 1 else "")
+
+
 def sposta_allenamento(stagione, gruppo, chiave, nuova, segnati):
     """Corregge un allenamento salvato, anche cambiandone la data (sostituisce quello della nuova data)."""
     dati = presenze_stagione(stagione)
@@ -109,6 +119,8 @@ def sposta_allenamento(stagione, gruppo, chiave, nuova, segnati):
     allenamenti.pop(chiave, None)
     allenamenti[nuova] = {i: s for i, s in segnati.items() if s in STATI}
     _scrivi(stagione, dati)
+    registro.segna("Allenamento corretto", f"{gruppo}, {_giorno_leggibile(chiave)}"
+                   + (f" spostato al {_giorno_leggibile(nuova)}" if nuova != chiave else ""))
 
 
 def aggiungi_allenamenti(stagione, gruppo, sedute):
@@ -118,6 +130,7 @@ def aggiungi_allenamenti(stagione, gruppo, sedute):
     for chiave, segnati in sedute.items():
         allenamenti[chiave] = {i: s for i, s in segnati.items() if s in STATI}
     _scrivi(stagione, dati)
+    registro.segna("Allenamenti importati", f"{gruppo}: {len(sedute)}")
 
 
 def rinomina_gruppo(stagione, vecchio, nuovo):

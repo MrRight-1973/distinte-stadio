@@ -15,6 +15,7 @@ import re
 import uuid
 from datetime import date, datetime
 
+import registro
 from cronaca_manager import _cartella_dati, _carica_online, _leggi_file
 from statistiche import chiave_giocatore
 
@@ -118,13 +119,24 @@ def salva_scheda(scheda):
     """Aggiunge o aggiorna una scheda; rilegge l'elenco appena prima di scrivere, così due persone
     che lavorano insieme non si cancellano a vicenda le modifiche su ragazzi diversi."""
     scheda = pulisci_scheda(scheda)
-    ragazzi = [r for r in elenco_ragazzi() if r["id"] != scheda["id"]]
-    _scrivi(ragazzi + [scheda])
+    tutti = elenco_ragazzi()
+    prima = next((r for r in tutti if r["id"] == scheda["id"]), None)
+    _scrivi([r for r in tutti if r["id"] != scheda["id"]] + [scheda])
+    if prima is None:
+        registro.segna("Anagrafica: scheda aggiunta", nome_completo(scheda))
+    else:
+        cambiati = registro.campi_cambiati(prima, scheda)
+        if cambiati:
+            registro.segna("Anagrafica: scheda modificata", f"{nome_completo(scheda)} ({', '.join(cambiati)})")
     return scheda
 
 
 def elimina_scheda(id_ragazzo):
-    _scrivi([r for r in elenco_ragazzi() if r["id"] != id_ragazzo])
+    tutti = elenco_ragazzi()
+    tolta = next((r for r in tutti if r["id"] == id_ragazzo), None)
+    _scrivi([r for r in tutti if r["id"] != id_ragazzo])
+    if tolta:
+        registro.segna("Anagrafica: scheda eliminata", nome_completo(tolta))
 
 
 def ragazzi_del_gruppo(stagione, gruppo, ragazzi=None, solo_calciatori=True):
@@ -193,6 +205,7 @@ def importa_rose(stagione, gruppi, rosa_di):
                                          "anno_nascita": g.get("anno"), "gruppi": {stagione: gruppo}}))
     if nuovi:
         _scrivi(ragazzi + nuovi)
+        registro.segna("Anagrafica: schede create dalle rose", f"{stagione}: {len(nuovi)} nuove")
     return len(nuovi)
 
 
@@ -249,6 +262,7 @@ def importa_schede(righe, stagione, gruppo):
             aggiornati += 1
     if aggiunti or aggiornati:
         _scrivi(ragazzi)
+        registro.segna("Anagrafica: importazione", f"{stagione}: {aggiunti} aggiunte, {aggiornati} completate")
     return aggiunti, aggiornati
 
 
@@ -305,6 +319,7 @@ def applica_tabulato(scelte, stagione):
             completati += 1
     if aggiunti or completati:
         _scrivi(ragazzi)
+        registro.segna("Anagrafica: tabulato FIGC", f"{stagione}: {aggiunti} aggiunte, {completati} completate")
     return aggiunti, completati
 
 

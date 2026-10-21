@@ -13,6 +13,7 @@ import os
 import re
 import secrets
 
+import registro
 from cronaca_manager import _cartella_dati, _carica_online, _leggi_file
 
 RUOLI = {"admin": "Amministratore (tutto)", "segreteria": "Segreteria (Anagrafica)",
@@ -86,6 +87,7 @@ def aggiungi_utente(nome, password, ruolo):
         raise UtentiErrore(f"L'utente {nome} esiste già.")
     utenti[nome] = {"ruolo": ruolo, "password": cifra_password(password)}
     _salva(utenti)
+    registro.segna("Utente aggiunto", f"{nome} ({RUOLI[ruolo].split(' (')[0]})")
     return nome
 
 
@@ -96,6 +98,7 @@ def cambia_password(nome, password):
         raise UtentiErrore(f"L'utente {nome} non esiste.")
     utenti[nome]["password"] = cifra_password(password)
     _salva(utenti)
+    registro.segna("Password cambiata", nome)
 
 
 def cambia_ruolo(nome, ruolo):
@@ -105,6 +108,7 @@ def cambia_ruolo(nome, ruolo):
         utenti[nome]["ruolo"] = ruolo
         utenti[nome].pop("aree", None)
         _salva(utenti)
+        registro.segna("Ruolo cambiato", f"{nome}: {RUOLI[ruolo].split(' (')[0]}")
 
 
 def cambia_aree(nome, aree):
@@ -116,6 +120,7 @@ def cambia_aree(nome, aree):
         else:
             utenti[nome]["aree"] = list(aree)
         _salva(utenti)
+        registro.segna("Aree cambiate", f"{nome}: " + ("quelle del ruolo" if aree is None else ", ".join(aree)))
 
 
 def aree_utente(nome):
@@ -130,6 +135,7 @@ def cambia_gruppi(nome, gruppi):
     if nome in utenti:
         utenti[nome]["gruppi"] = sorted(set(gruppi))
         _salva(utenti)
+        registro.segna("Squadre dell'allenatore cambiate", f"{nome}: {', '.join(sorted(set(gruppi))) or 'nessuna'}")
 
 
 def gruppi_utente(nome):
@@ -151,6 +157,7 @@ def elimina_utente(nome):
     utenti = elenco_utenti()
     if utenti.pop(nome, None) is not None:
         _salva(utenti)
+        registro.segna("Utente eliminato", nome)
 
 
 def accedi(nome, password, password_emergenza):
