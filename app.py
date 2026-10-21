@@ -611,6 +611,37 @@ def render_gestione_utenti():
                 st.error(str(e))
 
 
+def promemoria_scadenze():
+    """In cima alla pagina, finché non si preme «Visto»: quanti certificati medici e documenti sono scaduti o
+    scadono entro un mese (per l'allenatore solo i ragazzi delle sue squadre)."""
+    if st.session_state.get("promemoria_visto"):
+        return
+    from anagrafica import GIORNI_AVVISO, elenco_ragazzi, scadenze
+    try:
+        tutti = elenco_ragazzi()
+    except Exception:
+        return
+    if st.session_state.get("ruolo") not in ("admin", "segreteria"):
+        stagione, _ = gruppi_correnti()
+        miei = set(gruppi_utente(st.session_state.get("utente", "")))
+        tutti = [r for r in tutti if (r.get("gruppi") or {}).get(stagione) in miei]
+    avvisi = scadenze(tutti)
+    if not avvisi:
+        return
+    scaduti = sum(stato == "scaduto" for *_, stato in avvisi)
+    with st.container(border=True, key="promemoria"):
+        c1, c2, c3 = st.columns([6, 2, 1.2], vertical_alignment="center")
+        c1.markdown(f"⏰ **{len(avvisi)} scadenze da sistemare**: "
+                    + (f"{scaduti} già scadute, " if scaduti else "")
+                    + f"le altre entro {GIORNI_AVVISO} giorni (certificati medici e documenti).")
+        if c2.button("👦 Vedi in Anagrafica", key="promemoria_apri", use_container_width=True):
+            st.session_state["vai_a_sezione"] = "👦 Anagrafica"
+            st.rerun()
+        if c3.button("Visto", key="promemoria_ok", use_container_width=True):
+            st.session_state["promemoria_visto"] = True
+            st.rerun()
+
+
 def render_segreteria():
     if st.session_state.pop("azzera_distinta", False):
         azzera_sezione_distinta()
@@ -645,6 +676,8 @@ def render_segreteria():
     if sezione not in sezioni:
         st.info("Questa sezione non è abilitata per il tuo utente: chiedi all'amministratore.")
         return
+    if "👦 Anagrafica" in sezioni and sezione != "👦 Anagrafica":
+        promemoria_scadenze()
     if sezione == "⚙️ Opzioni":
         if st.session_state.get("sottosezione_opzioni") not in pagine_opzioni:
             st.session_state.pop("sottosezione_opzioni", None)

@@ -3,6 +3,7 @@ distinta ufficiale sul modello della società. Le distinte si salvano per riapri
 nuova riparte dall'ultima della stessa squadra (stessi giocatori, numeri e dirigenti). Dal calendario
 del Comitato si preparano in un colpo le distinte vuote di tutte le partite.
 """
+import time
 from datetime import date
 
 import streamlit as st
@@ -12,6 +13,7 @@ from calendario import distinte_da_calendario, leggi_calendario, nostra_squadra,
 from distinta_ufficiale import (ASSISTENTE, MASSAGGIATORE, MAX_GIOCATORI, RIGHE_PANCHINA_AGGIUNTIVA, RUOLI_PANCHINA, controlli,
                                 distinte_stagione, elimina_distinta, etichetta, genera_pdf_distinta, in_elenco,
                                 in_scadenza, salva_distinta, salva_distinte, ultima_del_gruppo)
+from disciplina import DIFFIDATO, partite_della_competizione, per_persona, situazione
 from presenze import nel_periodo, presenze_gruppo, statistiche
 from nomi_file import nome_file_gara
 from stagioni import gruppi_correnti
@@ -23,6 +25,16 @@ ALTRA = "✏️ Altra competizione..."
 NESSUNO = ""
 VUOTA = "—"  # cella senza giocatore (o senza C/VC) nella tabella delle 20 righe
 ULTIMI_ALLENAMENTI = 12  # la % accanto ai nomi: gli ultimi allenamenti prima della partita (circa 4 settimane)
+
+
+def _partite_giocate():
+    """Le partite della Cronaca (archivio e aperta), rilette al massimo ogni 5 minuti: servono per i cartellini."""
+    salvate = st.session_state.get("cd_partite")
+    if not salvate or time.time() - salvate[0] > 300:
+        from ui_statistiche import _partite
+        salvate = (time.time(), _partite())
+        st.session_state["cd_partite"] = salvate
+    return salvate[1]
 
 
 def _messaggio(tipo, testo):
@@ -124,12 +136,18 @@ def render_crea_distinta(utente, ruolo, nome_societa):
     allenamenti = presenze_gruppo(stagione, gruppo)
     ultimi = nel_periodo(allenamenti, al=giorno.isoformat() if giorno else None)[-ULTIMI_ALLENAMENTI:]
     allenato = statistiche({s: allenamenti[s] for s in ultimi})
-    # Nella tendina: nome, anno, % di allenamenti e (se di un'altra squadra) la squadra
+    # Diffidati e squalificati per questa partita, dai cartellini segnati in Cronaca nella stessa competizione
+    giocate = partite_della_competizione(_partite_giocate(), (squadra, nome_societa), stagione, gruppo, comp,
+                                         giorno.isoformat() if giorno else "")
+    disciplina = per_persona(situazione(giocate), {r["id"]: r for r in giocabili})
+    # Nella tendina: nome, anno, % di allenamenti, diffida o squalifica e (se di un'altra squadra) la squadra
     etichette = {}
     for r in giocabili:
         v = allenato.get(r["id"])
+        d = disciplina.get(r["id"])
         etichette[r["id"]] = f"{nome_completo(r)} ({anno_di(r) or '?'})" + \
             (f" · 🏃 {v['percentuale']}%" if v and v["segnati"] else "") + \
+            ((" · ⚠️ diffidato" if d[0] == DIFFIDATO else " · ⛔ squalificato") if d else "") + \
             ("" if squadra_di[r["id"]] == gruppo else f" · {squadra_di[r['id']] or 'senza squadra'}")
     # 20 righe come nel modulo, numerate da 1 a 20 (il numero è quello di maglia): giocatore scelto dalla
     # tendina e C/VC. Ogni tendina mostra solo i giocatori non ancora scelti nelle altre righe (e il C o il VC
@@ -238,6 +256,19 @@ def render_crea_distinta(utente, ruolo, nome_societa):
         with st.expander(f"⚠️ Da controllare prima di stampare ({len(problemi)})", expanded=True):
             for p in problemi:
                 st.markdown(f"- {p}")
+    in_distinta = [(persone[g["id"]], disciplina[g["id"]]) for g in giocatori if g["id"] in disciplina]
+    squalificati = [(r, d) for r, d in in_distinta if d[0] != DIFFIDATO]
+    if squalificati:
+        st.error("⛔ Squalificati per questa partita:\n" + "\n".join(f"- **{nome_completo(r)}**: {d[1]}"
+                                                                    for r, d in squalificati))
+    diffidati = [(r, d) for r, d in in_distinta if d[0] == DIFFIDATO]
+    if diffidati:
+        with st.expander(f"⚠️ Diffidati ({len(diffidati)})"):
+            for r, d in diffidati:
+                st.markdown(f"- {nome_completo(r)}: {d[1]}")
+    if in_distinta:
+        st.caption("Calcolati dai cartellini segnati in 🎙️ Cronaca nella stessa competizione: fa fede il "
+                   "Comunicato Ufficiale.")
     avvisi = in_scadenza(distinta, persone)
     if avvisi:
         with st.expander(f"⏰ Da rinnovare a breve ({len(avvisi)})"):
