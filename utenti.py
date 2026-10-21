@@ -16,7 +16,7 @@ import secrets
 from cronaca_manager import _cartella_dati, _carica_online, _leggi_file
 
 RUOLI = {"admin": "Amministratore (tutto)", "segreteria": "Segreteria (Anagrafica)",
-         "reporter": "Reporter (Distinta, Cronaca, Archivio)", "allenatore": "Allenatore (Allenamenti, Statistiche)",
+         "reporter": "Reporter (Distinta, Cronaca, Archivio)", "allenatore": "Allenatore (Allenamenti, Statistiche, Archivio da guardare)",
          "distinte": "Distinte (Crea distinta)"}
 VECCHI_RUOLI = {"user": "reporter"}  # nomi usati prima
 ITERAZIONI = 200_000

@@ -24,6 +24,7 @@ from cronaca_manager import (
     stato_archivio_online,
 )
 from cronaca_pdf import genera_pdf_resoconto
+from ui_partita_lettura import render_partita_sola_lettura
 from giornata import normalizza_giornata
 from stagioni import gruppo_di, impostazioni_stagioni, stagione_di_oggi, stagione_partita
 from nomi_file import nome_file_gara
@@ -151,8 +152,9 @@ def _filtri(partite):
     return partite, f"{anno}|{gruppo}|{campionato}"
 
 
-def _tabella_partite(partite, dettagli, file_online, ordine, aperta_da=None):
-    """Le partite in una tabella compatta, una riga ciascuna: si selezionano con la casella a sinistra."""
+def _tabella_partite(partite, dettagli, file_online, ordine, aperta_da=None, sola_lettura=False):
+    """Le partite in una tabella compatta, una riga ciascuna: si selezionano con la casella a sinistra.
+    In sola lettura se ne sceglie una per guardarla, e la colonna dei file non serve."""
     righe = []
     for p in partite:
         gol = "–" if p.get("gol_casa") is None else f"{p['gol_casa']}-{p['gol_ospite']}"
@@ -161,11 +163,12 @@ def _tabella_partite(partite, dettagli, file_online, ordine, aperta_da=None):
             "Data": _data_breve(p.get("data")),
             "Partita": f"{p.get('casa') or 'Casa'} {gol} {p.get('ospite') or 'Ospite'}",
             "Campionato": p.get("campionato") or "",
-            "File": ("✏️ aperta in Cronaca · " if p["id"] == aperta_da else "")
-                    + _descrizione_file(dettagli.get(p["id"], {}), file_online),
         })
+        if not sola_lettura:
+            righe[-1]["File"] = (("✏️ aperta in Cronaca · " if p["id"] == aperta_da else "")
+                                 + _descrizione_file(dettagli.get(p["id"], {}), file_online))
     scelta = st.dataframe(pd.DataFrame(righe), hide_index=True, use_container_width=True,
-                          on_select="rerun", selection_mode="multi-row",
+                          on_select="rerun", selection_mode="single-row" if sola_lettura else "multi-row",
                           key=f"arch_tabella_{ordine}_{st.session_state.get('arch_tabella_n', 0)}",
                           height=min(35 * len(righe) + 40, 420),
                           column_config={"G.": st.column_config.TextColumn(width="small"),
@@ -174,7 +177,7 @@ def _tabella_partite(partite, dettagli, file_online, ordine, aperta_da=None):
 
 
 def _azioni_partita(p, cronaca):
-    """Con una sola partita selezionata: riaprirla in Cronaca o eliminarla."""
+    """Con una sola partita selezionata: guardarla, riaprirla in Cronaca o eliminarla."""
     if st.session_state.get("arch_da_eliminare") == p["id"]:
         st.warning(f"Eliminare definitivamente {p.get('casa')} – {p.get('ospite')}, con foto e note vocali?")
         c1, c2 = st.columns(2)
@@ -187,7 +190,12 @@ def _azioni_partita(p, cronaca):
             st.session_state.pop("arch_da_eliminare", None)
             st.rerun()
         return
-    c1, c2 = st.columns(2)
+    c0, c1, c2 = st.columns(3)
+    guardata = st.session_state.get("arch_guarda") == p["id"]
+    if c0.button("🙈 Chiudi la visione" if guardata else "👁️ Guarda in sola lettura", key="arch_guarda_btn",
+                 use_container_width=True):
+        st.session_state["arch_guarda"] = None if guardata else p["id"]
+        st.rerun()
     if c1.button("📂 Riapri in Cronaca", key="arch_apri", use_container_width=True):
         if fase_in_corso(cronaca):
             st.error("C'è un tempo in corso nella Cronaca: chiudilo prima di riaprire un'altra partita.")
@@ -361,8 +369,13 @@ def _chiudi_stagione(dettagli, loghi_sponsor, cronaca, nome_societa):
             st.rerun()
 
 
-def render_archivio(loghi_sponsor=lambda: None, nome_societa=""):
+def render_archivio(loghi_sponsor=lambda: None, nome_societa="", sola_lettura=False, gruppi=None):
+    """sola_lettura: le partite si guardano soltanto (niente riapri, elimina, backup o spazio).
+    gruppi: se indicati, solo le partite di queste squadre (un allenatore vede le sue)."""
     st.header("📚 Archivio partite")
+    if sola_lettura:
+        _render_sola_lettura(loghi_sponsor, gruppi)
+        return
     if stato_archivio_online() is None:
         st.info("L'archivio funziona con Supabase: aggiungi SUPABASE_URL e SUPABASE_KEY nei secrets dell'app.")
         return
@@ -395,7 +408,39 @@ def render_archivio(loghi_sponsor=lambda: None, nome_societa=""):
                                            cronaca.get("archivio_id"))
             if selezionate:
                 _azioni_selezione(selezionate, loghi_sponsor, cronaca)
+            guardata = st.session_state.get("arch_guarda")
+            if len(selezionate) == 1 and selezionate[0]["id"] == guardata:
+                render_partita_sola_lettura(guardata, dettagli.get(guardata), loghi_sponsor)
     st.markdown("---")
     if st.session_state.get("ruolo") == "admin":
         _chiudi_stagione(dettagli, loghi_sponsor, cronaca, nome_societa)
     _ripristino(cronaca)
+
+
+def _render_sola_lettura(loghi_sponsor, gruppi):
+    cronaca = carica_cronaca()
+    try:
+        dettagli = archivio_cloud.dati_partite()
+        partite = partite_archiviate(cronaca)
+    except archivio_cloud.ArchivioErrore as e:
+        st.warning(str(e))
+        return
+    if not partite:
+        st.caption("Nessuna partita in archivio.")
+        return
+    st.caption("Scegli una partita per guardarne liste, tabellino, note, articolo e foto, o scaricarne il PDF. "
+               "Qui non si cambia niente.")
+    if gruppi is not None:
+        partite = [p for p in partite if gruppo_di(p.get("campionato"), stagione_partita(p)) in gruppi]
+    partite, filtro = _filtri(partite)
+    ordine = st.segmented_control("Ordina per", list(ORDINI), default="📅 Data", key="arch_ordine",
+                                  label_visibility="collapsed") or "📅 Data"
+    partite = ordina_partite(partite, ORDINI[ordine])
+    if not partite:
+        st.caption("Nessuna partita con questi filtri." if gruppi is None or gruppi
+                   else "Non ti è ancora stata assegnata nessuna squadra: chiedi all'amministratore di farlo in "
+                        "⚙️ Opzioni → 👥 Utenti.")
+        return
+    scelte = _tabella_partite(partite, dettagli, {}, f"lettura_{ORDINI[ordine]}_{filtro}", sola_lettura=True)
+    if scelte:
+        render_partita_sola_lettura(scelte[0]["id"], dettagli.get(scelte[0]["id"]), loghi_sponsor)
