@@ -66,6 +66,7 @@ from ui_registro import render_registro_e_backup
 from ui_cronaca import render_cronaca
 from ui_sponsor import loghi_per_pdf, render_gestione_sponsor
 from ui_classifica import render_classifica
+from ui_dati_lnd import render_aggiornamento, render_opzioni_dati_lnd
 from ui_girone import render_avversari, render_risultati
 from ui_statistiche import render_statistiche
 
@@ -493,7 +494,8 @@ ARCHIVIO, ARCHIVIO_LETTURA = "📚 Archivio", "👁️ Archivio in sola lettura"
 # 📋 Distinta non ha più una voce sua: è una scheda di 🎙️ Cronaca partita (ma resta un'area da assegnare)
 SEZIONI = ["📝 Crea distinta", CRONACA, "👦 Anagrafica", "🏃 Allenamenti", "📚 Archivio", "📊 Statistiche", "⚙️ Opzioni"]
 # per una nuova impostazione basta aggiungerla qui
-SOTTOSEZIONI_OPZIONI = ["🏆 Campionati", "👕 Rose", "🤖 Lettura AI", "🏷️ Sponsor", "👥 Utenti", "🗂️ Registro e backup"]
+SOTTOSEZIONI_OPZIONI = ["🏆 Campionati", "👕 Rose", "🤖 Lettura AI", "🌐 Dati LND", "🏷️ Sponsor", "👥 Utenti",
+                        "🗂️ Registro e backup"]
 SEZIONI_PER_RUOLO = {"admin": SEZIONI, "segreteria": ["👦 Anagrafica"],
                      "reporter": ["📋 Distinta", "🎙️ Cronaca partita", "📚 Archivio"],
                      "allenatore": ["🏃 Allenamenti", "📊 Statistiche", ARCHIVIO_LETTURA],
@@ -700,6 +702,9 @@ def render_segreteria():
         if sotto == "🤖 Lettura AI":
             render_opzioni_lettura()
             return
+        if sotto == "🌐 Dati LND":
+            render_opzioni_dati_lnd()
+            return
         if sotto == "👥 Utenti":
             render_gestione_utenti()
             return
@@ -719,6 +724,8 @@ def render_segreteria():
         render_presenze(st.session_state.get("utente", ""), st.session_state.get("ruolo"))
         return
     if sezione == "📊 Statistiche":
+        render_aggiornamento(leggi_secret("GITHUB_TOKEN_AZIONI") or leggi_secret("GITHUB_TOKEN"),
+                             leggi_secret("GITHUB_REPO_APP"))
         giocatori, tab_classifica, risultati, avversari = st.tabs(
             ["📊 Giocatori", "🏆 Classifica", "📅 Risultati", "🔍 Avversari"])
         with giocatori:
