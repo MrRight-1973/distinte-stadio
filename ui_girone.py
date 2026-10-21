@@ -6,6 +6,7 @@ import streamlit as st
 import girone
 import loghi
 from classifica import classifiche, nostra_riga
+from scelta_squadra import scegli
 from stagioni import gruppi_correnti
 
 FORMA = {"V": "🟢", "N": "🟡", "P": "🔴"}
@@ -31,7 +32,7 @@ def _scegli_gruppo(chiave):
     if not nomi:
         st.info("Prima crea le squadre in ⚙️ Opzioni → 🏆 Campionati.")
         return None
-    gruppo = st.selectbox(f"👥 Squadra ({stagione})", nomi, key=chiave) if len(nomi) > 1 else nomi[0]
+    gruppo = scegli(f"👥 Squadra ({stagione})", nomi, chiave) if len(nomi) > 1 else nomi[0]
     dati = girone.tutti().get(gruppo) or {}
     if dati.get("stagione") != stagione or not dati.get("giornate"):
         st.info(f"Ancora nessuna giornata per {gruppo}. Arrivano da sole, mattina e sera, quando in ⚙️ Opzioni → 🌐 Dati LND "
