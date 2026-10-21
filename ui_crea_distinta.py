@@ -78,8 +78,6 @@ def _proposta_ruoli(staff, gruppo, stagione):
 
 
 def render_crea_distinta(utente, ruolo, nome_societa):
-    # pagina più stretta sul PC: i campi della distinta non si allungano su tutto lo schermo
-    st.html("<style>.block-container,[data-testid='stMainBlockContainer']{max-width:980px !important}</style>")
     st.subheader("📝 Crea distinta")
     st.caption("Prepara la distinta da consegnare all'arbitro con i dati dell'👦 Anagrafica (matricole e "
                "documenti) e stampala sul modello della società. Resta tra i dati privati: non va sulla "
@@ -99,7 +97,9 @@ def render_crea_distinta(utente, ruolo, nome_societa):
 
     distinte = distinte_stagione(stagione)
     _render_calendario(stagione, gruppi, miei, distinte, staff, utente, nome_societa)
-    elenco = [d for d in in_elenco(distinte, date.today().isoformat()) if d.get("gruppo") in miei]
+    # in ordine di data e ora della partita (non di inserimento o importazione)
+    elenco = sorted((d for d in distinte.values() if d.get("gruppo") in miei),
+                    key=lambda d: (d.get("data") or "9999", d.get("ora") or "", d.get("gruppo", "")))
     if "cd_apri" in st.session_state:  # dopo il salvataggio di una nuova: resta aperta quella
         st.session_state["cd_scelta"] = st.session_state.pop("cd_apri")
     if st.session_state.get("cd_scelta") not in [NUOVA] + [d["id"] for d in elenco]:
@@ -118,24 +118,23 @@ def render_crea_distinta(utente, ruolo, nome_societa):
 
     # --- La partita
     st.markdown("**🏟️ Partita**")
-    # campi raggruppati su poche righe (sul telefono vanno uno sotto l'altro)
-    c1, c2, c3 = st.columns([1.8, 2, 2])
+    c1, c2 = st.columns(2)
     dove = c1.segmented_control("Si gioca", [IN_CASA, FUORI], default=IN_CASA if base.get("in_casa", True) else FUORI,
                                 required=True, key=f"cd_dove_{k}")
     squadra = c2.text_input("Nostra squadra (come in distinta)", value=base.get("squadra") or nome_societa,
                             key=f"cd_squadra_{k}")
-    avversario = c3.text_input("Avversario", value=base.get("avversario", ""), key=f"cd_avversario_{k}")
+    avversario = st.text_input("Avversario", value=base.get("avversario", ""), key=f"cd_avversario_{k}")
     competizioni = next((g["competizioni"] for g in gruppi if g["gruppo"] == gruppo), [])
     opzioni = competizioni + [ALTRA]
     attuale = base.get("competizione", "")
-    c1, c2, c3 = st.columns([2.3, 1.2, 0.8])
-    comp = c1.selectbox("Valevole per", opzioni, key=f"cd_comp_{k}",
+    comp = st.selectbox("Valevole per", opzioni, key=f"cd_comp_{k}",
                         index=opzioni.index(attuale) if attuale in opzioni else (len(opzioni) - 1 if attuale else 0))
-    giorno = c2.date_input("In programma il", value=data_da_iso(base.get("data")) or date.today(),
-                           format="DD/MM/YYYY", key=f"cd_data_{k}")
-    ora = c3.text_input("Ore", value=base.get("ora", "15:30"), key=f"cd_ora_{k}")
     if comp == ALTRA:
         comp = st.text_input("Competizione", value=attuale, key=f"cd_comp_testo_{k}")
+    c1, c2 = st.columns(2)
+    giorno = c1.date_input("In programma il", value=data_da_iso(base.get("data")) or date.today(),
+                           format="DD/MM/YYYY", key=f"cd_data_{k}")
+    ora = c2.text_input("Ore", value=base.get("ora", "15:30"), key=f"cd_ora_{k}")
     c1, c2 = st.columns(2)
     localita = c1.text_input("Località", value=base.get("localita", ""), key=f"cd_localita_{k}")
     campo = c2.text_input("Stadio / campo", value=base.get("campo", ""), key=f"cd_campo_{k}")
@@ -189,7 +188,7 @@ def render_crea_distinta(utente, ruolo, nome_societa):
     giocatori = []
     with st.container(key="cd_righe"):
         # Sul telefono le tre colonne restano affiancate e compatte (senza freccia nelle tendine piccole)
-        st.html("<style>.st-key-cd_righe{gap:.35rem;max-width:760px}"
+        st.html("<style>.st-key-cd_righe{gap:.35rem}"
                 ".st-key-cd_righe [data-testid='stHorizontalBlock']{flex-wrap:nowrap;gap:.4rem}"
                 ".st-key-cd_righe [data-testid='stColumn']{min-width:0 !important}"
                 ".st-key-cd_righe input[role='combobox']{padding-left:.5rem;padding-right:0;min-width:0}"
@@ -247,10 +246,10 @@ def render_crea_distinta(utente, ruolo, nome_societa):
     ruoli_base = base["ruoli"] if "ruoli" in base else _proposta_ruoli(staff, gruppo, stagione)
     ruoli = {}
     for posto, (chiave, etichetta_) in enumerate([ASSISTENTE] + RUOLI_PANCHINA + [MASSAGGIATORE]):
-        if posto % 3 == 0:  # tre per riga: sul telefono restano nell'ordine del modulo
-            colonne = st.columns(3)
+        if posto % 2 == 0:  # una riga per coppia: sul telefono restano nell'ordine del modulo
+            colonne = st.columns(2)
         attuale = ruoli_base.get(chiave, NESSUNO)
-        ruoli[chiave] = colonne[posto % 3].selectbox(
+        ruoli[chiave] = colonne[posto % 2].selectbox(
             etichetta_.replace(" Sig.", "").replace(" Dott.", ""), ids_staff, format_func=chi, key=f"cd_{chiave}_{k}",
             index=ids_staff.index(attuale) if attuale in ids_staff and f"cd_{chiave}_{k}" not in st.session_state else 0)
     altri = RIGHE_PANCHINA_AGGIUNTIVA - (1 if ruoli.get(MASSAGGIATORE[0]) else 0)
