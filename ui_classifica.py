@@ -3,7 +3,7 @@
 import pandas as pd
 import streamlit as st
 
-from classifica import ClassificaErrore, classifiche, leggi, nome_fonte, nostra_riga, salva, scarica
+from classifica import ClassificaErrore, classifiche, leggi, link_attuale, nome_fonte, nostra_riga, salva, scarica
 from stagioni import gruppi_correnti
 
 COLONNE = {"pos": "#", "squadra": "Squadra", "pt": "Pt", "g": "G", "v": "V", "n": "N", "p": "P", "gf": "GF",
@@ -21,16 +21,23 @@ def _tabella(righe, nome_societa):
 
 def _aggiorna(gruppo, stagione, salvata):
     def fatto(righe, fonte):
-        salva(gruppo, stagione, righe, fonte)
+        salva(gruppo, stagione, righe, link_attuale(fonte))
         st.session_state["cl_messaggio"] = f"Classifica di {gruppo} aggiornata: {len(righe)} squadre."
         st.session_state.pop(f"cl_testo_{gruppo}", None)
         st.rerun()
 
     link = st.text_input("Link della classifica (Tuttocampo o LND)", value=(salvata or {}).get("fonte", ""),
                          key=f"cl_link_{gruppo}", placeholder="https://www.tuttocampo.it/.../Classifica",
-                         help="Il link di Tuttocampo si legge da solo. La pagina della LND (gare.lnd.it) invece va "
-                              "copiata e incollata qui sotto: il link resta come fonte.")
+                         help="Con il link salvato la classifica si aggiorna da sola due volte al giorno. "
+                              "La giornata eventualmente scritta nel link viene tolta, così si legge sempre l'ultima.")
     lnd = nome_fonte(link) == "LND"
+    if nome_fonte(link) and link_attuale(link) != (salvata or {}).get("fonte"):
+        if st.button("💾 Salva il link: la classifica si aggiorna da sola", key=f"cl_salva_link_{gruppo}",
+                     type="primary"):
+            salva(gruppo, stagione, (salvata or {}).get("righe") or [], link_attuale(link))
+            st.session_state["cl_messaggio"] = ("Link salvato: la classifica arriva con il prossimo aggiornamento "
+                                                "automatico (ogni mattina e ogni sera).")
+            st.rerun()
     if not lnd and st.button("🔄 Leggi da Tuttocampo", key=f"cl_leggi_{gruppo}", type="primary",
                              disabled=not link.strip()):
         with st.spinner("Leggo la pagina..."):
@@ -40,8 +47,9 @@ def _aggiorna(gruppo, stagione, salvata):
                 st.session_state[f"cl_errore_{gruppo}"] = str(e)
     if st.session_state.get(f"cl_errore_{gruppo}"):
         st.warning(st.session_state[f"cl_errore_{gruppo}"])
-    with st.expander("📋 Copia e incolla la pagina" if lnd else "📋 Se la lettura automatica non va: copia e incolla",
-                     expanded=lnd or bool(st.session_state.get(f"cl_errore_{gruppo}"))):
+    with st.expander("📋 Per averla subito: copia e incolla la pagina" if lnd
+                     else "📋 Se la lettura automatica non va: copia e incolla",
+                     expanded=bool(st.session_state.get(f"cl_errore_{gruppo}"))):
         st.caption(f"Apri la classifica su {'gare.lnd.it' if lnd else 'Tuttocampo'}, seleziona tutta la pagina "
                    "(Ctrl+A, sul telefono \"Seleziona tutto\"), copia e incolla qui sotto.")
         testo = st.text_area("Testo della pagina", key=f"cl_testo_{gruppo}", height=150)
@@ -68,11 +76,16 @@ def render_classifica(nome_societa=""):
         st.caption(f"Aggiornata il {giorno[8:10]}/{giorno[5:7]}/{giorno[:4]} alle {ora}"
                    + (f" · [fonte]({salvata['fonte']})" if salvata.get("fonte") else "")
                    + (f" · dati {nome_fonte(salvata.get('fonte'))}" if nome_fonte(salvata.get("fonte")) else "")
+                   + (" · si aggiorna da sola mattina e sera" if nome_fonte(salvata.get("fonte")) else "")
                    + " · fa fede il Comunicato Ufficiale.")
         _tabella(salvata["righe"], nome_societa)
         with st.expander("🔄 Aggiorna la classifica"):
             _aggiorna(gruppo, stagione, salvata)
+    elif salvata and nome_fonte(salvata.get("fonte")):
+        st.info(f"Link salvato per {gruppo}: la classifica arriva con il prossimo aggiornamento automatico "
+                "(ogni mattina e ogni sera). Per averla subito copia e incolla la pagina.")
+        _aggiorna(gruppo, stagione, salvata)
     else:
-        st.info(f"Nessuna classifica per {gruppo}: incolla il link di Tuttocampo, oppure copia e incolla la "
-                "pagina della LND.")
+        st.info(f"Nessuna classifica per {gruppo}: incolla il link della LND (gare.lnd.it) o di Tuttocampo e "
+                "salvalo.")
         _aggiorna(gruppo, stagione, salvata)

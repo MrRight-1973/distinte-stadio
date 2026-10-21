@@ -11,11 +11,14 @@ Salvata in impostazioni/classifiche.json (una per squadra della società); sono 
 import json
 import os
 import re
+import time
 from datetime import datetime
 from html.parser import HTMLParser
 from urllib.parse import urlparse
 
 import requests
+
+import archivio_cloud as cloud
 
 from cronaca_manager import _cartella_dati, _carica_online, _leggi_file
 
@@ -145,23 +148,53 @@ def _percorso():
     return os.path.join(_cartella_dati(), "classifiche.json")
 
 
-def classifiche():
-    """{gruppo squadra: {"fonte", "aggiornata", "stagione", "righe"}}."""
+_letta = {"quando": 0.0, "dati": None}  # per non rileggerla da Supabase a ogni clic
+
+
+def classifiche(fresca=False):
+    """{gruppo squadra: {"fonte", "aggiornata", "stagione", "righe"}}. Si legge prima da Supabase (il file
+    può averlo aggiornato la GitHub Action "Classifiche"), poi dalla copia sul disco."""
+    if not fresca and _letta["dati"] is not None and time.time() - _letta["quando"] < 60:
+        return json.loads(json.dumps(_letta["dati"]))
+    grezzi = None
+    if cloud.attivo():
+        try:
+            grezzi = cloud.scarica_file(PERCORSO_ONLINE)
+        except cloud.ArchivioErrore:
+            grezzi = None
+        if grezzi is not None:
+            with open(_percorso(), "wb") as f:
+                f.write(grezzi)
     try:
-        dati = json.loads(_leggi_file(_percorso(), PERCORSO_ONLINE)) or {}
+        dati = json.loads(grezzi if grezzi is not None else _leggi_file(_percorso(), PERCORSO_ONLINE)) or {}
     except (OSError, ValueError):
-        return {}
-    return dati if isinstance(dati, dict) else {}
+        dati = {}
+    dati = dati if isinstance(dati, dict) else {}
+    _letta.update(quando=time.time(), dati=dati)
+    return json.loads(json.dumps(dati))
 
 
 def salva(gruppo, stagione, righe, fonte=""):
-    dati = classifiche()
+    dati = classifiche(fresca=True)
     dati[gruppo] = {"stagione": stagione, "fonte": fonte, "righe": righe,
                     "aggiornata": datetime.now().strftime("%Y-%m-%d %H:%M")}
     with open(_percorso(), "w", encoding="utf-8") as f:
         json.dump(dati, f, ensure_ascii=False, indent=1)
     _carica_online(PERCORSO_ONLINE, _percorso(), "application/json")
+    _letta.update(quando=time.time(), dati=dati)
     return dati[gruppo]
+
+
+def link_attuale(link):
+    """Il link senza la giornata (giornata=7, leg=first...): così la pagina della LND mostra sempre l'ultima,
+    e la classifica non resta ferma alla giornata in cui è stato copiato il link."""
+    from urllib.parse import parse_qsl, urlencode, urlunparse
+    indirizzo = urlparse(str(link or "").strip())
+    if not indirizzo.query:
+        return str(link or "").strip()
+    resto = [(k, v) for k, v in parse_qsl(indirizzo.query, keep_blank_values=True)
+             if k.lower() not in ("giornata", "turno", "round", "matchday", "leg")]
+    return urlunparse(indirizzo._replace(query=urlencode(resto)))
 
 
 def nome_fonte(link):
