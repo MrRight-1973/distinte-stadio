@@ -21,7 +21,7 @@ FASI = {"A": "Andata", "R": "Ritorno"}
 _DATA = re.compile(r"(\d{1,2})\s+(GEN|FEB|MAR|APR|MAG|GIU|LUG|AGO|SET|OTT|NOV|DIC)[A-Z]*\.?\s+(\d{4})", re.I)
 _ORA = re.compile(r"ORE\s+(\d{1,2})[:.](\d{2})", re.I)
 _ETICHETTA = re.compile(r"(Andata|Ritorno)\s*[-–]\s*(\d{1,2})\s*[ªa°]?\s*giornata", re.I)
-_IN_MEZZO = re.compile(r"^[\s.]*(?:(\d{1,2})\s*[-:]?\s*(\d{1,2})|VS|-)\s*$", re.I)
+_IN_MEZZO = re.compile(r"^[\s.]*(?:(\d{1,2})\s*[-–—:]?\s*(\d{1,2})|VS|[-–—])\s*$", re.I)
 _RUMORE = re.compile(r"VARIAZIONE CONFERMATA|RINVIATA|SOSPESA", re.I)
 
 
