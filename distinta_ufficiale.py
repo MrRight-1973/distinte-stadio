@@ -23,7 +23,7 @@ from reportlab.platypus import Image, Paragraph, SimpleDocTemplate, Spacer, Tabl
 
 from anagrafica import data_da_iso, stato_scadenza
 from cronaca_manager import _cartella_dati, _carica_online, _leggi_file
-from pdf_manager import _carica_logo, _esc
+from pdf_manager import LOGO_PATH, _esc
 
 MAX_GIOCATORI = 20
 RIGHE_PANCHINA_AGGIUNTIVA = 5
@@ -220,6 +220,16 @@ def _nome_ricco(r):
     return f"<b>{_esc(str(r.get('cognome', '')))}</b> {_esc(str(r.get('nome', '')).title())}".strip()
 
 
+def _logo(percorso, altezza, larghezza_max):
+    """Il logo alto quanto indicato (più basso solo se sarebbe troppo largo), o "" se manca."""
+    try:
+        w, h = ImageReader(percorso).getSize()
+    except Exception:
+        return ""
+    scala = min(altezza / h, larghezza_max / w)
+    return Image(percorso, width=w * scala, height=h * scala)
+
+
 def genera_pdf_distinta(distinta, persone, nome_societa):
     """persone: {id: scheda dell'anagrafica}. A4 verticale: intestazione, 20 calciatori, assistente,
     persone ammesse al recinto di gioco, panchina aggiuntiva, dichiarazione e firme."""
@@ -243,42 +253,45 @@ def genera_pdf_distinta(distinta, persone, nome_societa):
     s_dich = ParagraphStyle("D", fontName=FONT, fontSize=8, leading=10, alignment=4, textColor=GRIGIO)
     s_firma = ParagraphStyle("F", fontName=FONT_B, fontSize=10, leading=12, alignment=1, textColor=BLU)
 
-    def campo(etichetta_, valore, larghezza):
-        """Il valore su una riga sola: il carattere si rimpicciolisce se il testo è lungo (fino a 8 punti)."""
-        corpo = 12
-        while corpo > 8 and stringWidth(valore, FONT, corpo) > larghezza - 5:
-            corpo -= 0.5
-        stile = ParagraphStyle("V", parent=s_val, fontSize=corpo, leading=corpo + 2)
-        return [Paragraph(_esc(etichetta_), s_etich), Paragraph(_esc(valore), stile)]
-
-    # Intestazione: stemma a sinistra, società e dati della gara al centro, logo LND a destra
+    # Intestazione: stemma a sinistra e logo LND a destra, alti uguali; società centrata e dati della gara
     giorno = data_da_iso(distinta.get("data"))
-    gara = f"{distinta.get('casa', '')} - {distinta.get('ospite', '')}"
+    larga_logo = 84
+    colonne = [90, 160, 24]
+    colonne.append(larga - 2 * larga_logo - sum(colonne))
+    valori = [  # (valore, spazio che ha): tutti con lo stesso carattere, quello del più lungo che ci sta
+        (f"{distinta.get('casa', '')} - {distinta.get('ospite', '')}", sum(colonne[1:])),
+        (distinta.get("competizione", ""), sum(colonne[1:])),
+        (f"{giorno:%d/%m/%Y}" if giorno else "", colonne[1]), (distinta.get("localita", ""), colonne[3]),
+        (distinta.get("campo", ""), colonne[1]), (distinta.get("ora", ""), colonne[3]),
+    ]
+    corpo = 12
+    while corpo > 8 and any(stringWidth(v, FONT, corpo) > spazio - 5 for v, spazio in valori):
+        corpo -= 0.5
+    s_dato = ParagraphStyle("V", parent=s_val, fontSize=corpo, leading=corpo + 2)
+
+    def campo(etichetta_, i):
+        return [Paragraph(_esc(etichetta_), s_etich), Paragraph(_esc(valori[i][0]), s_dato)]
+
     dati_gara = Table([
-        ["", Paragraph(_esc(nome_societa), s_titolo), "", ""],
-        campo("Elenco dei calciatori che partecipano alla gara:", gara, 286) + ["", ""],
-        campo("valevole per:", distinta.get("competizione", ""), 286) + ["", ""],
-        campo("in programma il:", f"{giorno:%d/%m/%Y}" if giorno else "", 155) + campo("a:", distinta.get("localita", ""), 106),
-        campo("stadio/campo:", distinta.get("campo", ""), 155) + campo("ore:", distinta.get("ora", ""), 106),
-    ], colWidths=[95, 155, 25, 111])
+        [Paragraph(_esc(nome_societa), s_titolo), "", "", ""],
+        campo("Elenco dei calciatori che partecipano alla gara:", 0) + ["", ""],
+        campo("valevole per:", 1) + ["", ""],
+        campo("in programma il:", 2) + campo("a:", 3),
+        campo("stadio/campo:", 4) + campo("ore:", 5),
+    ], colWidths=colonne)
     dati_gara.setStyle(TableStyle([
-        ("SPAN", (1, 0), (3, 0)), ("SPAN", (1, 1), (3, 1)), ("SPAN", (1, 2), (3, 2)),
+        ("SPAN", (0, 0), (3, 0)), ("SPAN", (1, 1), (3, 1)), ("SPAN", (1, 2), (3, 2)),
         ("FONTNAME", (0, 0), (-1, -1), FONT), ("VALIGN", (0, 0), (-1, -1), "BOTTOM"), ("LEFTPADDING", (0, 0), (-1, -1), 2),
         ("RIGHTPADDING", (0, 0), (-1, -1), 2), ("BOTTOMPADDING", (0, 1), (-1, -1), 1.5),
         ("LINEBELOW", (1, 1), (3, 2), 0.5, LINEE), ("LINEBELOW", (1, 3), (1, 4), 0.5, LINEE),
         ("LINEBELOW", (3, 3), (3, 4), 0.5, LINEE), ("BOTTOMPADDING", (0, 0), (-1, 0), 8),
     ]))
-    logo = _carica_logo(80) or ""
-    try:  # il logo LND in alto a destra, come nel modulo
-        larghezza, altezza = ImageReader(LOGO_LND).getSize()
-        lnd = Image(LOGO_LND, width=54, height=54 * altezza / larghezza)
-    except Exception:
-        lnd = ""
-    testa = Table([[logo, dati_gara, lnd]], colWidths=[larga - 450, 386, 64])
-    testa.setStyle(TableStyle([("FONTNAME", (0, 0), (-1, -1), FONT), ("VALIGN", (0, 0), (-1, -1), "MIDDLE"), ("ALIGN", (0, 0), (0, 0), "CENTER"),
-                               ("ALIGN", (2, 0), (2, 0), "CENTER"), ("VALIGN", (2, 0), (2, 0), "TOP"),
+    testa = Table([[_logo(LOGO_PATH, 78, larga_logo - 8), dati_gara, _logo(LOGO_LND, 78, larga_logo - 8)]],
+                  colWidths=[larga_logo, larga - 2 * larga_logo, larga_logo])
+    testa.setStyle(TableStyle([("FONTNAME", (0, 0), (-1, -1), FONT), ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                               ("ALIGN", (0, 0), (0, 0), "CENTER"), ("ALIGN", (2, 0), (2, 0), "CENTER"),
                                ("BOX", (0, 0), (-1, -1), 1.2, BLU), ("LINEBELOW", (0, 0), (-1, 0), 2.5, BLU),
-                               ("LEFTPADDING", (1, 0), (1, 0), 0), ("RIGHTPADDING", (1, 0), (1, 0), 4),
+                               ("LEFTPADDING", (1, 0), (1, 0), 2), ("RIGHTPADDING", (1, 0), (1, 0), 2),
                                ("TOPPADDING", (0, 0), (-1, -1), 4), ("BOTTOMPADDING", (0, 0), (-1, -1), 5)]))
 
     # Calciatori: 20 righe, ordinate per numero

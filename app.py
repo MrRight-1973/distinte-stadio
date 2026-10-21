@@ -26,6 +26,7 @@ from utenti import (
     cambia_ruolo,
     elenco_utenti,
     elimina_utente,
+    gruppi_utente,
 )
 from cronaca_manager import (
     carica_cronaca,
@@ -484,15 +485,27 @@ def azzera_sezione_distinta():
 
 
 DISTINTA, CRONACA = "📋 Distinta", "🎙️ Cronaca partita"
+ARCHIVIO, ARCHIVIO_LETTURA = "📚 Archivio", "👁️ Archivio in sola lettura"
 # 📋 Distinta non ha più una voce sua: è una scheda di 🎙️ Cronaca partita (ma resta un'area da assegnare)
 SEZIONI = ["📝 Crea distinta", CRONACA, "👦 Anagrafica", "🏃 Allenamenti", "📚 Archivio", "📊 Statistiche", "⚙️ Opzioni"]
 SOTTOSEZIONI_OPZIONI = ["🏆 Campionati", "👕 Rose", "🤖 Lettura AI", "🏷️ Sponsor", "👥 Utenti"]  # per una nuova impostazione basta aggiungerla qui
 SEZIONI_PER_RUOLO = {"admin": SEZIONI, "segreteria": ["👦 Anagrafica"],
                      "reporter": ["📋 Distinta", "🎙️ Cronaca partita", "📚 Archivio"],
-                     "allenatore": ["🏃 Allenamenti", "📊 Statistiche"], "distinte": ["📝 Crea distinta"]}
-# Aree assegnabili a mano a un utente: le sezioni e le pagine di Opzioni (gli utenti li gestisce solo l'admin)
+                     "allenatore": ["🏃 Allenamenti", "📊 Statistiche", ARCHIVIO_LETTURA],
+                     "distinte": ["📝 Crea distinta"]}
+# Aree assegnabili a mano a un utente, raggruppate come nel menu: le sezioni, le due schede di 🎙️ Cronaca
+# partita, l'archivio (completo o in sola lettura) e le pagine di Opzioni (gli utenti li gestisce solo l'admin)
 OPZIONI_ASSEGNABILI = [s for s in SOTTOSEZIONI_OPZIONI if s != "👥 Utenti"]
-AREE = [DISTINTA] + SEZIONI[:-1] + [f"⚙️ {s}" for s in OPZIONI_ASSEGNABILI]
+GRUPPI_AREE = [
+    ("Sezioni", ["📝 Crea distinta", "👦 Anagrafica", "🏃 Allenamenti", "📊 Statistiche"]),
+    ("🎙️ Cronaca partita: schede", [DISTINTA, CRONACA]),
+    ("📚 Archivio partite", [ARCHIVIO, ARCHIVIO_LETTURA]),
+    ("⚙️ Opzioni", [f"⚙️ {s}" for s in OPZIONI_ASSEGNABILI]),
+]
+AREE = [a for _, aree in GRUPPI_AREE for a in aree]
+ETICHETTE_AREE = {CRONACA: "🎙️ Cronaca", ARCHIVIO: "✏️ Completo (riapri, elimina, backup)",
+                  ARCHIVIO_LETTURA: "👁️ Solo guardare le partite",
+                  **{f"⚙️ {s}": s for s in OPZIONI_ASSEGNABILI}}
 
 
 def aree_di(nome, ruolo):
@@ -507,7 +520,8 @@ def sezioni_e_opzioni():
     """(sezioni del menu, pagine di Opzioni) per l'utente collegato."""
     aree = aree_di(st.session_state.get("utente", ""), st.session_state.get("ruolo"))
     opzioni = [s for s in SOTTOSEZIONI_OPZIONI if f"⚙️ {s}" in aree]
-    sezioni = [s for s in SEZIONI[:-1] if s in aree or (s == CRONACA and DISTINTA in aree)] + \
+    sezioni = [s for s in SEZIONI[:-1] if s in aree or (s == CRONACA and DISTINTA in aree)
+               or (s == ARCHIVIO and ARCHIVIO_LETTURA in aree)] + \
         (["⚙️ Opzioni"] if opzioni else [])
     return sezioni or [CRONACA], opzioni
 
@@ -515,9 +529,9 @@ def sezioni_e_opzioni():
 def render_gestione_utenti():
     st.subheader("👥 Utenti")
     st.caption("Aree del ruolo: amministratore tutto; segreteria l'Anagrafica; reporter Distinta, Cronaca e "
-               "Archivio; allenatore Allenamenti e Statistiche, con i soli ragazzi delle squadre assegnate qui "
-               "sotto. Per ogni utente puoi cambiare a mano le aree che vede; i ragazzi visibili restano decisi "
-               "dal ruolo. "
+               "Archivio; allenatore Allenamenti, Statistiche e Archivio in sola lettura, con i soli ragazzi e "
+               "partite delle squadre assegnate qui sotto. Per ogni utente puoi cambiare a mano le aree che vede; "
+               "i ragazzi visibili restano decisi dal ruolo. "
                "Le password sono salvate cifrate. Con utente vuoto e la password della segreteria "
                "(nei secrets) si entra sempre come amministratore.")
     for tipo, testo in st.session_state.pop("utenti_messaggi", []):
@@ -537,15 +551,22 @@ def render_gestione_utenti():
                 st.rerun()
             if ruolo != "admin":
                 attuali = [a for a in aree_di(nome, ruolo) if a in AREE]
-                scelte = st.multiselect("Aree che vede e usa", AREE, default=attuali, key=f"aree_{nome}_{ruolo}",
-                                        placeholder="Scegli le aree",
-                                        help="Parte da quelle del ruolo; 👥 Utenti resta solo agli amministratori")
+                st.markdown("**Aree che vede e usa**", help="Parte da quelle del ruolo; 👥 Utenti resta solo agli "
+                                                             "amministratori. Con l'archivio completo la sola "
+                                                             "lettura non serve.")
+                scelte = []
+                for titolo, gruppo in GRUPPI_AREE:
+                    scelte += st.pills(titolo, gruppo, selection_mode="multi",
+                                       default=[a for a in gruppo if a in attuali],
+                                       format_func=lambda a: ETICHETTE_AREE.get(a, a),
+                                       key=f"aree_{nome}_{ruolo}_{titolo}") or []
                 if sorted(scelte) != sorted(attuali):
                     cambia_aree(nome, scelte)
                     st.success("Aree aggiornate: valgono dal prossimo clic dell'utente.")
                 if aree_utente(nome) is not None and st.button("↩️ Aree del ruolo", key=f"aree_ruolo_{nome}"):
                     cambia_aree(nome, None)
-                    st.session_state.pop(f"aree_{nome}_{ruolo}", None)
+                    for titolo, _ in GRUPPI_AREE:
+                        st.session_state.pop(f"aree_{nome}_{ruolo}_{titolo}", None)
                     st.rerun()
             if ruolo not in ("admin", "segreteria"):
                 stagione, gruppi = gruppi_correnti()
@@ -647,8 +668,12 @@ def render_segreteria():
     if sezione == "📊 Statistiche":
         render_statistiche(nome_societa())
         return
-    if sezione == "📚 Archivio":
-        render_archivio(loghi_sponsor_pdf, nome_societa())
+    if sezione == ARCHIVIO:
+        # Chi ha solo la sola lettura guarda le partite senza cambiarle; un allenatore vede le sue squadre
+        sola_lettura = ARCHIVIO not in aree
+        gruppi = gruppi_utente(st.session_state.get("utente", "")) \
+            if sola_lettura and st.session_state.get("ruolo") == "allenatore" else None
+        render_archivio(loghi_sponsor_pdf, nome_societa(), sola_lettura=sola_lettura, gruppi=gruppi)
         return
     if sezione == "🎙️ Cronaca partita":
         # La distinta della partita e la cronaca stanno nella stessa sezione, una scheda per ciascuna
