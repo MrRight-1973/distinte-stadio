@@ -9,6 +9,7 @@ from anagrafica import calciatori, elenco_ragazzi, trova_per_nome
 from cronaca_manager import carica_cronaca
 from giornata import etichetta_giornata
 from presenze import allenato_complessivo
+from scelta_squadra import scegli
 from stagioni import gruppo_di, impostazioni_stagioni, stagione_partita
 from statistiche import (chiave_giocatore, chiave_squadra, data_ordinabile, etichetta_partita, giocata,
                          lato_della_squadra, risultati_squadra, squadre_presenti, statistiche_partita,
@@ -110,7 +111,7 @@ def render_statistiche(nome_societa=""):
         info = p.get("partita") or {}
         p["_gruppo"] = gruppo_di(info.get("campionato"), stagione_partita(info))
     gruppi = sorted({p["_gruppo"] for p in partite} - {""})
-    gruppo = c2.selectbox("👥 Squadra", ["Tutte"] + gruppi, key="stat_gruppo", index=1 if len(gruppi) == 1 else 0)
+    gruppo = scegli("👥 Squadra", ["Tutte"] + gruppi, "stat_gruppo", gruppi[0] if len(gruppi) == 1 else "Tutte", c2)
     if gruppo != "Tutte":
         partite = [p for p in partite if p["_gruppo"] == gruppo]
     campionati = sorted({(p.get("partita") or {}).get("campionato") or "" for p in partite} - {""})

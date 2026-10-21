@@ -182,3 +182,27 @@ def scheda_squadra(giornate, squadra, ultime=5):
 
 def squadre_del_girone(giornate):
     return sorted({p[lato] for partite in giornate.values() for p in partite for lato in ("casa", "ospite")})
+
+
+def andamento(giornate):
+    """[{"giornata": n, "etichetta", "squadra", "punti", "posizione"}] dopo ogni giornata con almeno un risultato:
+    punti accumulati e posizione (a pari punti conta la differenza reti). Serve per il grafico della classifica."""
+    squadre = squadre_del_girone(giornate)
+    punti = {s: 0 for s in squadre}
+    diff = {s: 0 for s in squadre}
+    righe, n = [], 0
+    for k in sorted(giornate):
+        giocate = [p for p in giornate[k] if p.get("gol_casa") is not None]
+        if not giocate:
+            continue
+        n += 1
+        for p in giocate:
+            gc, go = p["gol_casa"], p["gol_ospite"]
+            punti[p["casa"]] += 3 if gc > go else 1 if gc == go else 0
+            punti[p["ospite"]] += 3 if go > gc else 1 if gc == go else 0
+            diff[p["casa"]] += gc - go
+            diff[p["ospite"]] += go - gc
+        ordine = sorted(squadre, key=lambda s: (-punti[s], -diff[s], s))
+        righe += [{"giornata": n, "etichetta": etichetta(k), "squadra": s, "punti": punti[s],
+                   "posizione": ordine.index(s) + 1} for s in squadre]
+    return righe

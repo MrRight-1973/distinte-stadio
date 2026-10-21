@@ -56,13 +56,18 @@ def _base(scelta, distinte, gruppo, nome_squadra):
             "ruoli": ultima.get("ruoli", {}), "panchina": ultima.get("panchina", [])}
 
 
+RESTANO = ("allenatore", "accompagnatore")  # il pulsante 🧹 Svuota non li toglie
+
+
 def _svuota(k, chiavi):
-    """Prima del disegno della pagina: righe dei giocatori, C/VC e panchina tornano vuote."""
+    """Prima del disegno della pagina: righe dei giocatori, C/VC e panchina tornano vuote. Allenatore e dirigente
+    accompagnatore restano: di solito sono gli stessi ogni partita."""
     for c_gioc, c_cap in chiavi:
         st.session_state[c_gioc] = VUOTA
         st.session_state[c_cap] = VUOTA
     for chiave, _ in [ASSISTENTE] + RUOLI_PANCHINA + [MASSAGGIATORE]:
-        st.session_state[f"cd_{chiave}_{k}"] = NESSUNO
+        if chiave not in RESTANO:
+            st.session_state[f"cd_{chiave}_{k}"] = NESSUNO
     st.session_state[f"cd_panchina_{k}"] = []
     _messaggio("info", "Distinta svuotata: scegli i giocatori e salva.")
 
@@ -214,11 +219,12 @@ def render_crea_distinta(utente, ruolo, nome_societa):
                "altre tendine. In Cap. metti C per il capitano e VC per il vice. Le righe vuote restano vuote nella "
                "stampa."
                + (f" 🏃 è la presenza agli ultimi {len(ultimi)} allenamenti prima della partita." if ultimi else ""))
-    if giocatori or any(st.session_state.get(f"cd_{c}_{k}") for c, _ in [ASSISTENTE] + RUOLI_PANCHINA + [MASSAGGIATORE]) \
+    if giocatori or any(st.session_state.get(f"cd_{c}_{k}") for c, _ in [ASSISTENTE] + RUOLI_PANCHINA + [MASSAGGIATORE]
+                        if c not in RESTANO) \
             or st.session_state.get(f"cd_panchina_{k}"):
         st.button("🧹 Svuota giocatori e panchina", key=f"cd_svuota_{k}", on_click=_svuota, args=(k, chiavi),
-                  help="Toglie tutti i giocatori, capitano e vice, e le persone in panchina. I dati della partita "
-                       "restano. Finché non salvi, la distinta salvata non cambia.")
+                  help="Toglie tutti i giocatori, capitano e vice, e le persone in panchina tranne allenatore e "
+                       "dirigente accompagnatore. I dati della partita restano. Finché non salvi, la distinta salvata non cambia.")
     if scelta != NUOVA and not giocatori and ultima_del_gruppo(distinte, gruppo, distinte[scelta].get("data") or "9999",
                                                               scelta):
         if st.button("📋 Riprendi giocatori e numeri dall'ultima distinta", key=f"cd_riprendi_{k}"):
