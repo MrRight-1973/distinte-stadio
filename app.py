@@ -353,8 +353,9 @@ def pubblica_attesa():
     token, repo, branch = leggi_secret("GITHUB_TOKEN"), leggi_secret("GITHUB_REPO"), leggi_secret("GITHUB_BRANCH")
     if not (token and repo):
         return False
-    attesa = json.dumps({"stato": "in_attesa", "aggiornato": datetime.now(timezone.utc).isoformat(timespec="seconds")},
-                        ensure_ascii=False, indent=2).encode("utf-8")
+    from pagina_attesa import dati_attesa  # prossime partite e ultimi risultati: solo dati pubblici
+    attesa = json.dumps({"stato": "in_attesa", "aggiornato": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+                         **dati_attesa()}, ensure_ascii=False, indent=2).encode("utf-8")
     for file in ({"distinta.json": attesa, "distinta.pdf": None}, {"distinta.json": attesa}):
         try:  # il PDF potrebbe non esserci già più: allora si aggiorna solo distinta.json
             pubblica_su_github(token=token, repo=repo, file_da_pubblicare=file,
