@@ -124,26 +124,30 @@ def partite_di(calendario, squadra, dal=""):
 
 
 def distinte_da_calendario(calendario, nostra, partite, modello, distinte):
-    """(righe da mostrare, distinte nuove) per le partite scelte. modello: i dati uguali per tutte (gruppo,
+    """(righe da mostrare, distinte nuove, per ogni riga l'id della distinta che c'è già o quella nuova) per le
+    partite scelte. modello: i dati uguali per tutte (gruppo,
     squadra come si scrive in distinta, competizione, ruoli, autore). Una partita che ha già la sua distinta
     (stesso gruppo, data e avversario) si salta."""
-    gia = {(d.get("gruppo"), d.get("data"), " ".join(str(d.get("avversario", "")).upper().split()))
+    gia = {(d.get("gruppo"), d.get("data"), " ".join(str(d.get("avversario", "")).upper().split())): d.get("id")
            for d in distinte.values()}
     squadra = modello["squadra"]
-    righe, nuove = [], []
+    righe, nuove, per_riga = [], [], []
     for p in partite:
         in_casa = p["casa"] == nostra
         avversario = p["ospite"] if in_casa else p["casa"]
         campo = calendario["campi"].get(p["casa"], {})
-        presente = (modello["gruppo"], p["data"], avversario) in gia
+        presente = gia.get((modello["gruppo"], p["data"], avversario))
         giornata = f"{p['giornata']}ª {p['fase']}"
         g, m, a = p["data"][8:10], p["data"][5:7], p["data"][:4]
         righe.append({"Giornata": giornata, "Data": f"{g}/{m}/{a}", "Ore": p["ora"],
                       "Avversario": f"{'🏠' if in_casa else '🚌'} {avversario}", "Campo": campo.get("localita", ""),
                       "Distinta": "già presente" if presente else "da creare"})
-        if not presente:
+        if presente:
+            per_riga.append(presente)
+        else:
             nuove.append({**modello, "in_casa": in_casa, "avversario": avversario,
                           "casa": squadra if in_casa else avversario, "ospite": avversario if in_casa else squadra,
                           "data": p["data"], "ora": p["ora"], "localita": campo.get("localita", ""),
                           "campo": campo.get("campo", ""), "giornata": giornata, "giocatori": [], "panchina": []})
-    return righe, nuove
+            per_riga.append(nuove[-1])
+    return righe, nuove, per_riga

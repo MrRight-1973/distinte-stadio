@@ -95,13 +95,18 @@ def _segna(stagione, gruppo, ragazzi, allenamenti):
     st.caption(LEGENDA)
     # Un tasto per sigla accanto a ogni ragazzo: niente tabella da scorrere di lato né tastiera sul telefono.
     # Nel modulo i tocchi non ricaricano la pagina: si salva tutto insieme.
+    # I ragazzi si dispongono uno accanto all'altro finché c'è spazio (sul telefono uno per riga), in ordine
+    # alfabetico per righe: la lista occupa meno spazio in altezza.
     with st.form(f"pres_form_{gruppo}_{chiave}_{n}", border=False):
         segnati = {}
-        for r in ragazzi:
-            segnati[r["id"]] = st.segmented_control(
-                f"**{nome_completo(r)}**", ORDINE_SIGLE, required=True, format_func=SIGLE.get,
-                default=(gia or {}).get(r["id"], "completo" if not gia else "assente"),
-                key=f"pres_{gruppo}_{chiave}_{n}_{r['id']}")
+        with st.container(horizontal=True, gap="small", key="pres_griglia"):
+            st.html("<style>.st-key-pres_griglia{row-gap:.2rem;column-gap:1.5rem}</style>")
+            for r in ragazzi:
+                with st.container(width=310):
+                    segnati[r["id"]] = st.segmented_control(
+                        f"**{nome_completo(r)}**", ORDINE_SIGLE, required=True, format_func=SIGLE.get,
+                        default=(gia or {}).get(r["id"], "completo" if not gia else "assente"),
+                        key=f"pres_{gruppo}_{chiave}_{n}_{r['id']}")
         salva = st.form_submit_button("💾 Salva modifiche" if gia else "💾 Salva presenze", type="primary",
                                       use_container_width=True)
     stati = list(segnati.values())

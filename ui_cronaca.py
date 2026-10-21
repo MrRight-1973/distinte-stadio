@@ -263,7 +263,7 @@ def _scelta_giocatori(cronaca, tipo, squadra, n_form, iniziali=None):
     lato = {"casa": "ospite", "ospite": "casa"}[squadra] if autogol else squadra
     giocatori = rosa(cronaca, lato)
     if not giocatori:
-        st.caption("Nessuna distinta collegata: pubblicala nella sezione Distinta (o usa «Ricarica la distinta pubblicata») per scegliere i giocatori dai menu.")
+        st.caption("Nessuna distinta collegata: pubblicala nella scheda 📋 Distinta (o usa «Ricarica la distinta pubblicata») per scegliere i giocatori dai menu.")
         return dettagli
     if autogol:
         campi = [("giocatore", "Autore dell'autogol")]
@@ -570,11 +570,11 @@ def _gestione_partita(cronaca):
         return
     if conferma == "archivia":
         st.warning("Questa partita va nella sezione 📚 Archivio (da lì si può riaprire). Poi tutto riparte "
-                   "vuoto, anche la sezione Distinta: le liste arriveranno dalle nuove distinte pubblicate. Continuare?")
+                   "vuoto, anche la scheda 📋 Distinta: le liste arriveranno dalle nuove distinte pubblicate. Continuare?")
         etichetta = "✅ Sì, archivia"
     else:
         st.error("Questa partita viene CANCELLATA senza archiviarla: note, note vocali, foto e foto delle distinte "
-                 "non si potranno recuperare. Poi tutto riparte vuoto, anche la sezione Distinta. Continuare?")
+                 "non si potranno recuperare. Poi tutto riparte vuoto, anche la scheda 📋 Distinta. Continuare?")
         etichetta = "🗑️ Sì, cancella tutto"
     c1, c2 = st.columns(2)
     if c1.button(etichetta, type="primary", use_container_width=True):
@@ -615,7 +615,7 @@ def render_cronaca(api_key, macro_info=None, loghi_sponsor=lambda: None, leggi_d
 
     if not cronaca.get("distinta") and not ha_contenuto(cronaca):
         # Senza liste dei giocatori la cronaca non serve ancora: si apre quando arrivano le distinte
-        st.info("📋 In attesa delle distinte di questa partita: carica le foto nella sezione 📋 Distinta, "
+        st.info("📋 In attesa delle distinte di questa partita: carica le foto nella scheda 📋 Distinta qui sopra, "
                 "esegui la scansione e pubblica. La cronaca si apre da sola appena la distinta è pubblicata.")
         if st.button("🔄 Ricarica la distinta pubblicata", use_container_width=True,
                      help="Ricontrolla se la distinta di questa partita è stata pubblicata"):

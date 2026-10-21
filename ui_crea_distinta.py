@@ -133,19 +133,28 @@ def render_crea_distinta(utente, ruolo, nome_societa):
         etichette[r["id"]] = f"{nome_completo(r)} ({anno_di(r) or '?'})" + \
             (f" · 🏃 {v['percentuale']}%" if v and v["segnati"] else "") + \
             ("" if squadra_di[r["id"]] == gruppo else f" · {squadra_di[r['id']] or 'senza squadra'}")
-    # 20 righe come nel modulo: numero di maglia, giocatore scelto dalla tendina, C/VC. Ogni tendina mostra
-    # solo i giocatori non ancora scelti nelle altre righe (e il C o il VC solo se nessun altro li ha).
-    chiavi = [(f"cd_num_{k}_{r}", f"cd_gioc_{k}_{r}", f"cd_cap_{k}_{r}") for r in range(MAX_GIOCATORI)]
-    for riga, (c_num, c_gioc, c_cap) in enumerate(chiavi):
-        g = precedenti[riga] if riga < len(precedenti) else {}
-        st.session_state.setdefault(c_num, g.get("numero") or riga + 1)
-        gia = {st.session_state.get(c) for _, c, _ in chiavi[:riga]}
+    # 20 righe come nel modulo, numerate da 1 a 20 (il numero è quello di maglia): giocatore scelto dalla
+    # tendina e C/VC. Ogni tendina mostra solo i giocatori non ancora scelti nelle altre righe (e il C o il VC
+    # solo se nessun altro li ha).
+    chiavi = [(f"cd_gioc_{k}_{r}", f"cd_cap_{k}_{r}") for r in range(MAX_GIOCATORI)]
+    per_riga = {}
+    for g in precedenti:  # ognuno alla riga del suo numero; chi ha un numero oltre il 20 nelle righe libere
+        if isinstance(g.get("numero"), int) and 1 <= g["numero"] <= MAX_GIOCATORI and g["numero"] - 1 not in per_riga:
+            per_riga[g["numero"] - 1] = g
+    for g in precedenti:
+        if g not in per_riga.values():
+            libera = next((r for r in range(MAX_GIOCATORI) if r not in per_riga), None)
+            if libera is not None:
+                per_riga[libera] = g
+    for riga, (c_gioc, c_cap) in enumerate(chiavi):
+        g = per_riga.get(riga, {})
+        gia = {st.session_state.get(c) for c, _ in chiavi[:riga]}
         st.session_state.setdefault(c_gioc, g["id"] if g.get("id") in etichette and g["id"] not in gia else VUOTA)
         if st.session_state[c_gioc] not in etichette:  # tolto dall'anagrafica nel frattempo
             st.session_state[c_gioc] = VUOTA
         st.session_state.setdefault(c_cap, g.get("cap") or VUOTA)
-    scelti = [st.session_state[c_gioc] for _, c_gioc, _ in chiavi]
-    fasce = [st.session_state[c_cap] for _, _, c_cap in chiavi]
+    scelti = [st.session_state[c_gioc] for c_gioc, _ in chiavi]
+    fasce = [st.session_state[c_cap] for _, c_cap in chiavi]
     giocatori = []
     with st.container(key="cd_righe"):
         # Sul telefono le tre colonne restano affiancate e compatte (senza freccia nelle tendine piccole)
@@ -153,29 +162,30 @@ def render_crea_distinta(utente, ruolo, nome_societa):
                 ".st-key-cd_righe [data-testid='stHorizontalBlock']{flex-wrap:nowrap;gap:.4rem}"
                 ".st-key-cd_righe [data-testid='stColumn']{min-width:0 !important}"
                 ".st-key-cd_righe input[role='combobox']{padding-left:.5rem;padding-right:0;min-width:0}"
+                ".st-key-cd_righe [data-testid='stColumn']:first-child p{text-align:center;margin:0}"
                 ".st-key-cd_righe [data-testid='stColumn']:not(:nth-child(2)) button[aria-haspopup]"
                 "{padding:0 .15rem 0 0;width:auto}"
                 ".st-key-cd_righe [data-testid='stColumn']:not(:nth-child(2)) button[aria-haspopup] svg"
                 "{width:.9rem;height:.9rem}</style>")
-        c1, c2, c3 = st.columns([1.3, 6, 1.4], vertical_alignment="bottom")
+        c1, c2, c3 = st.columns([0.7, 6, 1.4], vertical_alignment="center")
         c1.caption("N°")
         c2.caption("Giocatore")
         c3.caption("Cap.")
-        for riga, (c_num, c_gioc, c_cap) in enumerate(chiavi):
+        for riga, (c_gioc, c_cap) in enumerate(chiavi):
             altri = set(scelti[:riga] + scelti[riga + 1:])
             fasce_altre = set(fasce[:riga] + fasce[riga + 1:])
-            c1, c2, c3 = st.columns([1.3, 6, 1.4], vertical_alignment="bottom")
-            numero = c1.selectbox("N°", list(range(1, 100)), key=c_num, label_visibility="collapsed")
+            c1, c2, c3 = st.columns([0.7, 6, 1.4], vertical_alignment="center")
+            c1.markdown(f"**{riga + 1}**")
             scelto = c2.selectbox("Giocatore", [VUOTA] + [i for i in etichette if i not in altri], key=c_gioc,
                                   format_func=lambda i: etichette.get(i, VUOTA), label_visibility="collapsed")
             cap = c3.selectbox("Cap.", [VUOTA] + [f for f in ("C", "VC") if f not in fasce_altre],
                                key=c_cap, label_visibility="collapsed")
             if scelto in etichette:
-                giocatori.append({"id": scelto, "numero": int(numero),
+                giocatori.append({"id": scelto, "numero": riga + 1,
                                   "cap": cap if cap in ("C", "VC") else ""})
-    st.caption("Scegli il nome in ogni riga: chi è già in distinta non compare più nelle altre tendine. Il numero "
-               "è quello di maglia; in Cap. metti C per il capitano e VC per il vice. Le righe vuote restano "
-               "vuote nella stampa."
+    st.caption("Scegli il nome nella riga del suo numero di maglia: chi è già in distinta non compare più nelle "
+               "altre tendine. In Cap. metti C per il capitano e VC per il vice. Le righe vuote restano vuote nella "
+               "stampa."
                + (f" 🏃 è la presenza agli ultimi {len(ultimi)} allenamenti prima della partita." if ultimi else ""))
     if scelta != NUOVA and not giocatori and ultima_del_gruppo(distinte, gruppo, distinte[scelta].get("data") or "9999",
                                                               scelta):
@@ -347,13 +357,27 @@ def _render_calendario(stagione, gruppi, miei, distinte, staff, utente, nome_soc
         ultima = ultima_del_gruppo(distinte, gruppo) or {}
         modello = {"gruppo": gruppo, "squadra": ultima.get("squadra") or nome_societa, "competizione": comp,
                    "ruoli": ultima.get("ruoli") or _proposta_ruoli(staff, gruppo, stagione), "autore": utente}
-        righe, nuove = distinte_da_calendario(cal, nostra, partite, modello, distinte)
+        righe, nuove, per_riga = distinte_da_calendario(cal, nostra, partite, modello, distinte)
         if not righe:
             st.info(f"Nessuna partita di {nostra} da preparare.")
             return
-        st.dataframe(righe, hide_index=True, use_container_width=True)
-        if st.button(f"📅 Crea {len(nuove)} distint{'a' if len(nuove) == 1 else 'e'} da compilare", type="primary",
-                     use_container_width=True, disabled=not nuove, key="cd_cal_crea"):
+        st.caption("Tocca una partita per prepararne la distinta, oppure creale tutte insieme.")
+        tabella = st.dataframe(righe, hide_index=True, use_container_width=True, on_select="rerun",
+                               selection_mode="single-row", key=f"cd_cal_tab_{gruppo}_{nostra}")
+        selezionate = tabella.selection.rows if tabella else []
+        c1, c2 = st.columns(2)
+        if c1.button("✏️ Prepara la partita scelta", type="primary", use_container_width=True,
+                     disabled=not selezionate, key="cd_cal_una"):
+            scelta = per_riga[selezionate[0]]
+            if isinstance(scelta, dict):  # ancora da creare: si crea solo questa
+                scelta = salva_distinta(stagione, scelta)["id"]
+            st.session_state["cd_apri"] = scelta
+            _messaggio("success", f"Aperta la partita del {righe[selezionate[0]]['Data']} "
+                                  f"({righe[selezionate[0]]['Avversario']}): scegli i giocatori qui sotto, sotto "
+                                  "📂 Distinta, e salva.")
+            st.session_state["cd_n"] = st.session_state.get("cd_n", 0) + 1
+            st.rerun()
+        if c2.button(f"📅 Crea tutte ({len(nuove)})", use_container_width=True, disabled=not nuove, key="cd_cal_crea"):
             salvate = salva_distinte(stagione, nuove)
             st.session_state["cd_apri"] = min(salvate, key=lambda d: d["data"])["id"]  # apre la prossima partita
             st.session_state["cd_n"] = st.session_state.get("cd_n", 0) + 1

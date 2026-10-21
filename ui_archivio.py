@@ -196,6 +196,7 @@ def _azioni_partita(p, cronaca):
                 return
             _deseleziona()
             st.session_state["vai_a_sezione"] = "🎙️ Cronaca partita"
+            st.session_state["partita_vista"] = "🎙️ Cronaca partita"
             st.session_state["cronaca_messaggio"] = ("success", "📂 Partita riaperta: in archivio resta com'era finché "
                                                                 "non la archivi di nuovo. Quella di prima è in archivio.")
             st.rerun()

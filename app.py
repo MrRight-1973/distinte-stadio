@@ -28,6 +28,7 @@ from utenti import (
     elimina_utente,
 )
 from cronaca_manager import (
+    carica_cronaca,
     impostazioni_lettura,
     leggi_distinta_caricata,
     leggi_liste_in_lavorazione,
@@ -482,21 +483,22 @@ def azzera_sezione_distinta():
     reset_stato_squadra("griglia_ospite")
 
 
-SEZIONI = ["📋 Distinta", "📝 Crea distinta", "🎙️ Cronaca partita", "👦 Anagrafica", "🏃 Allenamenti", "📚 Archivio",
-           "📊 Statistiche", "⚙️ Opzioni"]
+DISTINTA, CRONACA = "📋 Distinta", "🎙️ Cronaca partita"
+# 📋 Distinta non ha più una voce sua: è una scheda di 🎙️ Cronaca partita (ma resta un'area da assegnare)
+SEZIONI = ["📝 Crea distinta", CRONACA, "👦 Anagrafica", "🏃 Allenamenti", "📚 Archivio", "📊 Statistiche", "⚙️ Opzioni"]
 SOTTOSEZIONI_OPZIONI = ["🏆 Campionati", "👕 Rose", "🤖 Lettura AI", "🏷️ Sponsor", "👥 Utenti"]  # per una nuova impostazione basta aggiungerla qui
 SEZIONI_PER_RUOLO = {"admin": SEZIONI, "segreteria": ["👦 Anagrafica"],
                      "reporter": ["📋 Distinta", "🎙️ Cronaca partita", "📚 Archivio"],
                      "allenatore": ["🏃 Allenamenti", "📊 Statistiche"], "distinte": ["📝 Crea distinta"]}
 # Aree assegnabili a mano a un utente: le sezioni e le pagine di Opzioni (gli utenti li gestisce solo l'admin)
 OPZIONI_ASSEGNABILI = [s for s in SOTTOSEZIONI_OPZIONI if s != "👥 Utenti"]
-AREE = SEZIONI[:-1] + [f"⚙️ {s}" for s in OPZIONI_ASSEGNABILI]
+AREE = [DISTINTA] + SEZIONI[:-1] + [f"⚙️ {s}" for s in OPZIONI_ASSEGNABILI]
 
 
 def aree_di(nome, ruolo):
     """Le aree che vede un utente: quelle scelte per lui, altrimenti quelle del suo ruolo."""
     if ruolo == "admin":
-        return list(SEZIONI[:-1]) + [f"⚙️ {s}" for s in SOTTOSEZIONI_OPZIONI]
+        return [DISTINTA] + list(SEZIONI[:-1]) + [f"⚙️ {s}" for s in SOTTOSEZIONI_OPZIONI]
     scelte = aree_utente(nome)
     return scelte if scelte is not None else list(SEZIONI_PER_RUOLO.get(ruolo, SEZIONI_PER_RUOLO["reporter"]))
 
@@ -505,8 +507,9 @@ def sezioni_e_opzioni():
     """(sezioni del menu, pagine di Opzioni) per l'utente collegato."""
     aree = aree_di(st.session_state.get("utente", ""), st.session_state.get("ruolo"))
     opzioni = [s for s in SOTTOSEZIONI_OPZIONI if f"⚙️ {s}" in aree]
-    sezioni = [s for s in SEZIONI[:-1] if s in aree] + (["⚙️ Opzioni"] if opzioni else [])
-    return sezioni or [SEZIONI[0]], opzioni
+    sezioni = [s for s in SEZIONI[:-1] if s in aree or (s == CRONACA and DISTINTA in aree)] + \
+        (["⚙️ Opzioni"] if opzioni else [])
+    return sezioni or [CRONACA], opzioni
 
 
 def render_gestione_utenti():
@@ -595,6 +598,7 @@ def render_segreteria():
     if "vai_a_sezione" in st.session_state:  # es. "Riapri" dall'archivio porta alla Cronaca
         st.session_state["sezione_segreteria"] = st.session_state.pop("vai_a_sezione")
     sezioni, pagine_opzioni = sezioni_e_opzioni()
+    aree = aree_di(st.session_state.get("utente", ""), st.session_state.get("ruolo")) or [DISTINTA]
     if st.session_state.get("sezione_segreteria") not in sezioni:
         st.session_state["sezione_segreteria"] = sezioni[0]
     sezione_attuale = st.session_state["sezione_segreteria"]
@@ -647,10 +651,25 @@ def render_segreteria():
         render_archivio(loghi_sponsor_pdf, nome_societa())
         return
     if sezione == "🎙️ Cronaca partita":
+        # La distinta della partita e la cronaca stanno nella stessa sezione, una scheda per ciascuna
+        viste = [v for v in (DISTINTA, CRONACA) if v in aree]
+        if st.session_state.get("partita_vista") not in viste:
+            # chi riapre l'app a partita iniziata (distinta già pubblicata) torna sulla cronaca
+            st.session_state["partita_vista"] = CRONACA if CRONACA in viste and carica_cronaca().get("distinta") \
+                else viste[0]
+        vista = st.segmented_control("Partita", viste, key="partita_vista", label_visibility="collapsed",
+                                     format_func=lambda v: "📋 Distinta" if v == DISTINTA else "🎙️ Cronaca") \
+            if len(viste) > 1 else viste[0]
+        if (vista or st.session_state.get("partita_vista_ultima", viste[0])) == DISTINTA:
+            st.session_state["partita_vista_ultima"] = DISTINTA
+            render_sezione_distinta()
+            return
+        st.session_state["partita_vista_ultima"] = CRONACA
         render_cronaca(leggi_secret("OPENAI_API_KEY"), st.session_state.get("macro_info"), loghi_sponsor_pdf,
                        distinta_pubblicata)
-        return
 
+def render_sezione_distinta():
+    """📋 Distinta (dentro 🎙️ Cronaca partita): foto, scansione o liste preparate, poi pubblicazione."""
     link = link_pagina_spettatori()
     st.write(
         "La pubblicazione genera il PDF A4 e aggiorna la pagina web degli spettatori"
