@@ -634,7 +634,17 @@ def render_segreteria():
                 st.session_state.pop(chiave, None)
             st.rerun()
 
-    sezione = st.radio("Sezione", sezioni, horizontal=True, label_visibility="collapsed", key="sezione_segreteria")
+    # Il menu mostra tutte le sezioni: quelle non abilitate per l'utente restano in grigio e non si cliccano
+    st.session_state["sezioni_abilitate"] = sezioni
+    sezione = st.radio("Sezione", SEZIONI, horizontal=True, label_visibility="collapsed", key="sezione_segreteria")
+    spente = [i + 1 for i, s in enumerate(SEZIONI) if s not in sezioni]
+    if spente:
+        st.html("<style>" + ",".join(f".st-key-sezione_segreteria [role=radiogroup] > :nth-child({i})"
+                                     for i in spente)
+                + "{opacity:.35;pointer-events:none;filter:grayscale(1)}</style>")
+    if sezione not in sezioni:
+        st.info("Questa sezione non è abilitata per il tuo utente: chiedi all'amministratore.")
+        return
     if sezione == "⚙️ Opzioni":
         if st.session_state.get("sottosezione_opzioni") not in pagine_opzioni:
             st.session_state.pop("sottosezione_opzioni", None)
