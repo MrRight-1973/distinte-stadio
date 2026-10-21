@@ -1,8 +1,9 @@
-"""📊 Statistiche → 🏆 Classifica: la classifica del girone di ogni squadra della società, presa da Tuttocampo."""
+"""📊 Statistiche → 🏆 Classifica: la classifica del girone di ogni squadra della società, presa da Tuttocampo
+(dal link) o dalla pagina della LND (copiando e incollando il testo)."""
 import pandas as pd
 import streamlit as st
 
-from classifica import ClassificaErrore, classifiche, leggi, nostra_riga, salva, scarica
+from classifica import ClassificaErrore, classifiche, leggi, nome_fonte, nostra_riga, salva, scarica
 from stagioni import gruppi_correnti
 
 COLONNE = {"pos": "#", "squadra": "Squadra", "pt": "Pt", "g": "G", "v": "V", "n": "N", "p": "P", "gf": "GF",
@@ -11,7 +12,8 @@ COLONNE = {"pos": "#", "squadra": "Squadra", "pt": "Pt", "g": "G", "v": "V", "n"
 
 def _tabella(righe, nome_societa):
     nostra = nostra_riga(righe, nome_societa)
-    df = pd.DataFrame([{COLONNE[k]: r.get(k) for k in COLONNE} for r in righe])
+    chiavi = [k for k in COLONNE if any(r.get(k) is not None for r in righe)]  # la LND non dà GF e GS
+    df = pd.DataFrame([{COLONNE[k]: r.get(k) for k in chiavi} for r in righe])
     stile = df.style.apply(lambda riga: ["font-weight:700;background-color:rgba(30,90,200,.12)"
                                          if riga["#"] == nostra else "" for _ in riga], axis=1)
     st.dataframe(stile, hide_index=True, use_container_width=True, height=min(35 * len(righe) + 40, 700))
@@ -24,9 +26,13 @@ def _aggiorna(gruppo, stagione, salvata):
         st.session_state.pop(f"cl_testo_{gruppo}", None)
         st.rerun()
 
-    link = st.text_input("Link della classifica su Tuttocampo", value=(salvata or {}).get("fonte", ""),
-                         key=f"cl_link_{gruppo}", placeholder="https://www.tuttocampo.it/.../Classifica")
-    if st.button("🔄 Leggi da Tuttocampo", key=f"cl_leggi_{gruppo}", type="primary", disabled=not link.strip()):
+    link = st.text_input("Link della classifica (Tuttocampo o LND)", value=(salvata or {}).get("fonte", ""),
+                         key=f"cl_link_{gruppo}", placeholder="https://www.tuttocampo.it/.../Classifica",
+                         help="Il link di Tuttocampo si legge da solo. La pagina della LND (gare.lnd.it) invece va "
+                              "copiata e incollata qui sotto: il link resta come fonte.")
+    lnd = nome_fonte(link) == "LND"
+    if not lnd and st.button("🔄 Leggi da Tuttocampo", key=f"cl_leggi_{gruppo}", type="primary",
+                             disabled=not link.strip()):
         with st.spinner("Leggo la pagina..."):
             try:
                 fatto(leggi(scarica(link)), link.strip())
@@ -34,10 +40,10 @@ def _aggiorna(gruppo, stagione, salvata):
                 st.session_state[f"cl_errore_{gruppo}"] = str(e)
     if st.session_state.get(f"cl_errore_{gruppo}"):
         st.warning(st.session_state[f"cl_errore_{gruppo}"])
-    with st.expander("📋 Se la lettura automatica non va: copia e incolla",
-                     expanded=bool(st.session_state.get(f"cl_errore_{gruppo}"))):
-        st.caption("Apri la classifica su Tuttocampo, seleziona tutta la pagina (Ctrl+A, sul telefono "
-                   "\"Seleziona tutto\"), copia e incolla qui sotto.")
+    with st.expander("📋 Copia e incolla la pagina" if lnd else "📋 Se la lettura automatica non va: copia e incolla",
+                     expanded=lnd or bool(st.session_state.get(f"cl_errore_{gruppo}"))):
+        st.caption(f"Apri la classifica su {'gare.lnd.it' if lnd else 'Tuttocampo'}, seleziona tutta la pagina "
+                   "(Ctrl+A, sul telefono \"Seleziona tutto\"), copia e incolla qui sotto.")
         testo = st.text_area("Testo della pagina", key=f"cl_testo_{gruppo}", height=150)
         if st.button("Leggi il testo incollato", key=f"cl_leggi_testo_{gruppo}", disabled=not testo.strip()):
             try:
@@ -61,10 +67,12 @@ def render_classifica(nome_societa=""):
         giorno, _, ora = salvata["aggiornata"].partition(" ")
         st.caption(f"Aggiornata il {giorno[8:10]}/{giorno[5:7]}/{giorno[:4]} alle {ora}"
                    + (f" · [fonte]({salvata['fonte']})" if salvata.get("fonte") else "")
-                   + " · i dati sono di Tuttocampo e fa fede il Comunicato Ufficiale.")
+                   + (f" · dati {nome_fonte(salvata.get('fonte'))}" if nome_fonte(salvata.get("fonte")) else "")
+                   + " · fa fede il Comunicato Ufficiale.")
         _tabella(salvata["righe"], nome_societa)
         with st.expander("🔄 Aggiorna la classifica"):
             _aggiorna(gruppo, stagione, salvata)
     else:
-        st.info(f"Nessuna classifica per {gruppo}: incolla il link della pagina di Tuttocampo.")
+        st.info(f"Nessuna classifica per {gruppo}: incolla il link di Tuttocampo, oppure copia e incolla la "
+                "pagina della LND.")
         _aggiorna(gruppo, stagione, salvata)
