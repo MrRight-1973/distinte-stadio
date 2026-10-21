@@ -252,6 +252,62 @@ def importa_schede(righe, stagione, gruppo):
     return aggiunti, aggiornati
 
 
+def confronta_tabulato(tesserati, ragazzi):
+    """Per ogni tesserato del tabulato FIGC: {"tesserato", "id" (la scheda che è già in anagrafica o None),
+    "mancanti" (i dati che il tabulato aggiunge o corregge), "diverso" (avviso se la data di nascita non torna:
+    vale quella del tabulato)}.
+    Stessa persona: stessa matricola, oppure stessa data di nascita e stesso nome (anche con un nome in più,
+    es. PIVA ANDERSON e PIVA ANDERSON MILANES), oppure stesso nome se la data manca."""
+    risultato = []
+    for t in tesserati:
+        chiave = chiave_giocatore(nome_completo(t))
+        parole = set(chiave.split())
+        trovato = next((r for r in ragazzi if t["matricola"] and r.get("matricola") == t["matricola"]), None)
+        if trovato is None:
+            def stesso_nome(r):
+                altre = set(chiave_giocatore(nome_completo(r)).split())
+                return altre == parole or (len(min(altre, parole, key=len)) >= 2 and (altre <= parole or parole <= altre))
+            simili = [r for r in ragazzi if e_calciatore(r) and stesso_nome(r)
+                      and not (r.get("matricola") and t["matricola"] and r["matricola"] != t["matricola"])]
+            trovato = next((r for r in simili if r.get("nascita") == t["nascita"]), None) or \
+                next((r for r in simili if not r.get("nascita") and anno_di(r) in ("", t["nascita"][:4])), None)
+        mancanti = [campo for campo in ("matricola", "nascita") if trovato and t.get(campo) and not trovato.get(campo)]
+        diverso = ""
+        if trovato and trovato.get("nascita") and trovato["nascita"] != t["nascita"]:
+            # vale il tabulato della FIGC: applicando, la data dell'anagrafica si corregge
+            diverso = f"in anagrafica è nato il {data_da_iso(trovato['nascita']):%d/%m/%Y}"
+            mancanti.append("nascita")
+        risultato.append({"tesserato": t, "id": trovato["id"] if trovato else None, "mancanti": mancanti,
+                          "diverso": diverso})
+    return risultato
+
+
+def applica_tabulato(scelte, stagione):
+    """scelte: [(confronto, squadra per i nuovi)]. Le schede esistenti ricevono solo i dati mancanti
+    (matricola, data di nascita, o la data corretta); i nuovi tesserati diventano schede nuove di calciatori.
+    Restituisce (aggiunti, completati)."""
+    ragazzi = elenco_ragazzi()
+    per_id = {r["id"]: r for r in ragazzi}
+    aggiunti = completati = 0
+    for confronto, squadra in scelte:
+        t = confronto["tesserato"]
+        r = per_id.get(confronto["id"]) if confronto["id"] else None
+        if r is None:
+            ragazzi.append(pulisci_scheda({"cognome": t["cognome"], "nome": t["nome"], "matricola": t["matricola"],
+                                           "nascita": t["nascita"], "tipo": CALCIATORE,
+                                           "gruppi": {stagione: squadra} if squadra else {}}))
+            aggiunti += 1
+        elif confronto["mancanti"]:
+            for campo in confronto["mancanti"]:
+                r[campo] = t[campo]
+            if "nascita" in confronto["mancanti"]:
+                r["anno_nascita"] = t["nascita"][:4]
+            completati += 1
+    if aggiunti or completati:
+        _scrivi(ragazzi)
+    return aggiunti, completati
+
+
 def anno_di(r):
     return r.get("anno_nascita") or (r.get("nascita") or "")[:4]
 

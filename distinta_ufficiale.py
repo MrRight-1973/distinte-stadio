@@ -16,7 +16,9 @@ from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import ParagraphStyle
 from reportlab.lib.utils import ImageReader
-from reportlab.pdfbase.pdfmetrics import stringWidth
+from reportlab.pdfbase import pdfmetrics
+from reportlab.pdfbase.pdfmetrics import registerFontFamily, stringWidth
+from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.platypus import Image, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
 from anagrafica import data_da_iso, stato_scadenza
@@ -192,36 +194,64 @@ def in_scadenza(distinta, persone):
 
 # --- PDF sul modello della società -------------------------------------------------------------
 
+def _registra_font():
+    """Carlito (licenza OFL, nella cartella fonts) per il PDF; senza i file resta Helvetica."""
+    cartella = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fonts")
+    try:
+        pdfmetrics.registerFont(TTFont("Carlito", os.path.join(cartella, "Carlito-Regular.ttf")))
+        pdfmetrics.registerFont(TTFont("Carlito-Bold", os.path.join(cartella, "Carlito-Bold.ttf")))
+        registerFontFamily("Carlito", normal="Carlito", bold="Carlito-Bold", italic="Carlito",
+                           boldItalic="Carlito-Bold")
+        return "Carlito", "Carlito-Bold"
+    except Exception:
+        return "Helvetica", "Helvetica-Bold"
+
+
+FONT, FONT_B = _registra_font()
+BLU = colors.HexColor("#14336B")  # titoli, numeri e bordi esterni
+BLU_CHIARO = colors.HexColor("#E6ECF6")  # intestazioni delle tabelle
+RIGA_ALTERNA = colors.HexColor("#F6F8FC")
+LINEE = colors.HexColor("#8C96A8")
+GRIGIO = colors.HexColor("#5B6475")
+
+
+def _nome_ricco(r):
+    """"<b>VENTURINI</b> Leonardo": il cognome in grassetto."""
+    return f"<b>{_esc(str(r.get('cognome', '')))}</b> {_esc(str(r.get('nome', '')).title())}".strip()
+
+
 def genera_pdf_distinta(distinta, persone, nome_societa):
     """persone: {id: scheda dell'anagrafica}. A4 verticale: intestazione, 20 calciatori, assistente,
     persone ammesse al recinto di gioco, panchina aggiuntiva, dichiarazione e firme."""
     buffer = io.BytesIO()
     margine = 22
     doc = SimpleDocTemplate(buffer, pagesize=A4, leftMargin=margine, rightMargin=margine, topMargin=margine,
-                            bottomMargin=margine, title=f"Distinta {distinta.get('casa', '')} - {distinta.get('ospite', '')}")
+                            bottomMargin=margine, title=f"Distinta {distinta.get('casa', '')} - {distinta.get('ospite', '')}",
+                            author=nome_societa)
     larga = A4[0] - 2 * margine
-    s_val = ParagraphStyle("V", fontName="Helvetica", fontSize=11, leading=13)
-    s_etich = ParagraphStyle("E", fontName="Helvetica", fontSize=7, leading=8, alignment=2)
-    s_titolo = ParagraphStyle("T", fontName="Helvetica-Bold", fontSize=17, leading=20, alignment=1)
-    s_testa = ParagraphStyle("H", fontName="Helvetica-Bold", fontSize=6.5, leading=7.5, alignment=1)
-    s_piccolo = ParagraphStyle("P", fontName="Helvetica", fontSize=6, leading=6.5, alignment=1)
-    s_mini = ParagraphStyle("m", parent=s_piccolo, fontSize=5, leading=5.5)
-    s_cella = ParagraphStyle("c", fontName="Helvetica", fontSize=7.5, leading=7.5, alignment=1)
-    s_num = ParagraphStyle("n", fontName="Helvetica-Bold", fontSize=11, leading=12, alignment=1)
-    s_nome = ParagraphStyle("N", fontName="Helvetica", fontSize=10, leading=10)
-    s_riga = ParagraphStyle("R", fontName="Helvetica", fontSize=7.5, leading=9)
-    s_dich = ParagraphStyle("D", fontName="Helvetica", fontSize=7.5, leading=9)
-    nero = colors.black
+    s_val = ParagraphStyle("V", fontName=FONT, fontSize=12, leading=14, textColor=colors.black)
+    s_etich = ParagraphStyle("E", fontName=FONT, fontSize=7.5, leading=8.5, alignment=2, textColor=GRIGIO)
+    s_titolo = ParagraphStyle("T", fontName=FONT_B, fontSize=20, leading=23, alignment=1, textColor=BLU)
+    s_testa = ParagraphStyle("H", fontName=FONT_B, fontSize=7, leading=8, alignment=1, textColor=BLU)
+    s_piccolo = ParagraphStyle("P", fontName=FONT, fontSize=6.5, leading=7, alignment=1)
+    s_mini = ParagraphStyle("m", parent=s_piccolo, fontSize=5.5, leading=6, textColor=BLU)
+    s_cella = ParagraphStyle("c", fontName=FONT, fontSize=8.5, leading=8.5, alignment=1)
+    s_num = ParagraphStyle("n", fontName=FONT_B, fontSize=12, leading=13, alignment=1, textColor=BLU)
+    s_nome = ParagraphStyle("N", fontName=FONT, fontSize=11, leading=11)
+    s_riga = ParagraphStyle("R", fontName=FONT, fontSize=8.5, leading=10)
+    s_sezione = ParagraphStyle("S", fontName=FONT_B, fontSize=8.5, leading=10, alignment=1, textColor=BLU)
+    s_dich = ParagraphStyle("D", fontName=FONT, fontSize=8, leading=10, alignment=4, textColor=GRIGIO)
+    s_firma = ParagraphStyle("F", fontName=FONT_B, fontSize=10, leading=12, alignment=1, textColor=BLU)
 
     def campo(etichetta_, valore, larghezza):
-        """Il valore su una riga sola: il carattere si rimpicciolisce se il testo è lungo (fino a 7 punti)."""
-        corpo = 11
-        while corpo > 7 and stringWidth(valore, "Helvetica", corpo) > larghezza - 5:
+        """Il valore su una riga sola: il carattere si rimpicciolisce se il testo è lungo (fino a 8 punti)."""
+        corpo = 12
+        while corpo > 8 and stringWidth(valore, FONT, corpo) > larghezza - 5:
             corpo -= 0.5
         stile = ParagraphStyle("V", parent=s_val, fontSize=corpo, leading=corpo + 2)
         return [Paragraph(_esc(etichetta_), s_etich), Paragraph(_esc(valore), stile)]
 
-    # Intestazione: stemma a sinistra, società e dati della gara a destra
+    # Intestazione: stemma a sinistra, società e dati della gara al centro, logo LND a destra
     giorno = data_da_iso(distinta.get("data"))
     gara = f"{distinta.get('casa', '')} - {distinta.get('ospite', '')}"
     dati_gara = Table([
@@ -233,31 +263,31 @@ def genera_pdf_distinta(distinta, persone, nome_societa):
     ], colWidths=[95, 155, 25, 111])
     dati_gara.setStyle(TableStyle([
         ("SPAN", (1, 0), (3, 0)), ("SPAN", (1, 1), (3, 1)), ("SPAN", (1, 2), (3, 2)),
-        ("VALIGN", (0, 0), (-1, -1), "BOTTOM"), ("LEFTPADDING", (0, 0), (-1, -1), 2),
-        ("RIGHTPADDING", (0, 0), (-1, -1), 2), ("BOTTOMPADDING", (0, 1), (-1, -1), 1),
-        ("LINEBELOW", (1, 1), (3, 2), 0.6, nero), ("LINEBELOW", (1, 3), (1, 4), 0.6, nero),
-        ("LINEBELOW", (3, 3), (3, 4), 0.6, nero), ("BOTTOMPADDING", (0, 0), (-1, 0), 10),
+        ("FONTNAME", (0, 0), (-1, -1), FONT), ("VALIGN", (0, 0), (-1, -1), "BOTTOM"), ("LEFTPADDING", (0, 0), (-1, -1), 2),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 2), ("BOTTOMPADDING", (0, 1), (-1, -1), 1.5),
+        ("LINEBELOW", (1, 1), (3, 2), 0.5, LINEE), ("LINEBELOW", (1, 3), (1, 4), 0.5, LINEE),
+        ("LINEBELOW", (3, 3), (3, 4), 0.5, LINEE), ("BOTTOMPADDING", (0, 0), (-1, 0), 8),
     ]))
-    logo = _carica_logo(78) or ""
+    logo = _carica_logo(80) or ""
     try:  # il logo LND in alto a destra, come nel modulo
         larghezza, altezza = ImageReader(LOGO_LND).getSize()
-        lnd = Image(LOGO_LND, width=52, height=52 * altezza / larghezza)
+        lnd = Image(LOGO_LND, width=54, height=54 * altezza / larghezza)
     except Exception:
         lnd = ""
     testa = Table([[logo, dati_gara, lnd]], colWidths=[larga - 450, 386, 64])
-    testa.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "MIDDLE"), ("ALIGN", (0, 0), (0, 0), "CENTER"),
+    testa.setStyle(TableStyle([("FONTNAME", (0, 0), (-1, -1), FONT), ("VALIGN", (0, 0), (-1, -1), "MIDDLE"), ("ALIGN", (0, 0), (0, 0), "CENTER"),
                                ("ALIGN", (2, 0), (2, 0), "CENTER"), ("VALIGN", (2, 0), (2, 0), "TOP"),
-                               ("BOX", (0, 0), (-1, -1), 1, nero), ("LEFTPADDING", (1, 0), (1, 0), 0),
-                               ("RIGHTPADDING", (1, 0), (1, 0), 4), ("TOPPADDING", (0, 0), (-1, -1), 4),
-                               ("BOTTOMPADDING", (0, 0), (-1, -1), 5)]))
+                               ("BOX", (0, 0), (-1, -1), 1.2, BLU), ("LINEBELOW", (0, 0), (-1, 0), 2.5, BLU),
+                               ("LEFTPADDING", (1, 0), (1, 0), 0), ("RIGHTPADDING", (1, 0), (1, 0), 4),
+                               ("TOPPADDING", (0, 0), (-1, -1), 4), ("BOTTOMPADDING", (0, 0), (-1, -1), 5)]))
 
     # Calciatori: 20 righe, ordinate per numero
     larghezze = [22, 17, 17, 17, 148, 20, 58, 60, 34, 62, 58, 16, 16]
     larghezze[4] += larga - sum(larghezze)
     dati = [
-        [Paragraph("<b>N</b>", s_testa), Paragraph("Data di Nascita", s_testa), "", "",
-         Paragraph("<b>Cognome e Nome</b>", s_testa), Paragraph("Cap.", s_testa), Paragraph("Matricola FIGC", s_testa),
-         Paragraph("N. Tessera riconoscimento", s_piccolo), Paragraph("Documento di identificazione", s_testa), "", "",
+        [Paragraph("N°", s_testa), Paragraph("Data di nascita", s_testa), "", "",
+         Paragraph("Cognome e Nome", s_testa), Paragraph("Cap.", s_testa), Paragraph("Matricola FIGC", s_testa),
+         Paragraph("N. Tessera riconoscimento", s_mini), Paragraph("Documento di identificazione", s_testa), "", "",
          Paragraph("amm", s_mini), Paragraph("esp", s_mini)],
         ["", Paragraph("G", s_testa), Paragraph("M", s_testa), Paragraph("A", s_testa), "",
          Paragraph("V.C.", s_testa), "", "", Paragraph("Tipo", s_testa), Paragraph("Numero", s_testa),
@@ -271,58 +301,62 @@ def genera_pdf_distinta(distinta, persone, nome_societa):
             # celle come paragrafi centrati: data di nascita e numeri stanno a metà riga
             celle = [*nascita_gma(r), None, g.get("cap") or "", r.get("matricola", ""), "",
                      SIGLE_DOCUMENTO.get(r.get("documento_tipo"), ""), r.get("documento_numero", "")]
-            celle = [Paragraph(_esc(c), s_cella) if c is not None else Paragraph(_esc(nome_stampa(r)), s_nome)
+            celle = [Paragraph(_esc(c), s_cella) if c is not None else Paragraph(_nome_ricco(r), s_nome)
                      for c in celle]
             dati.append([Paragraph(_esc(g.get("numero") or ""), s_num), *celle,
                          Paragraph(_esc(rilasciato(r)), s_piccolo), "", ""])
         else:
             dati.append([""] * len(larghezze))
     assistente = persone.get((distinta.get("ruoli") or {}).get(ASSISTENTE[0]))
-    dati.append([Paragraph(ASSISTENTE[1], s_riga), "", "", "",
-                 Paragraph(_esc(nome_stampa(assistente)).upper() if assistente else "", s_riga), "",
-                 (assistente or {}).get("matricola", ""), "",
-                 SIGLE_DOCUMENTO.get((assistente or {}).get("documento_tipo"), ""),
-                 (assistente or {}).get("documento_numero", ""), "", "", ""])
+    dati.append([Paragraph(f"<b>{ASSISTENTE[1]}</b>", ParagraphStyle("a", parent=s_riga, textColor=BLU)), "", "", "",
+                 Paragraph(_nome_ricco(assistente) if assistente else "", s_riga), "",
+                 Paragraph(_esc((assistente or {}).get("matricola", "")), s_cella), "",
+                 Paragraph(_esc(SIGLE_DOCUMENTO.get((assistente or {}).get("documento_tipo"), "")), s_cella),
+                 Paragraph(_esc((assistente or {}).get("documento_numero", "")), s_cella),
+                 Paragraph(_esc(rilasciato(assistente or {})), s_piccolo), "", ""])
     ultima = len(dati) - 1
-    tabella = Table(dati, colWidths=larghezze, rowHeights=[16, 12] + [17] * MAX_GIOCATORI + [20], repeatRows=0)
+    tabella = Table(dati, colWidths=larghezze, rowHeights=[15, 11] + [17] * MAX_GIOCATORI + [19], repeatRows=0)
     stile = [
-        ("GRID", (0, 0), (-1, -1), 0.6, nero), ("BOX", (0, 0), (-1, -1), 1, nero),
+        ("GRID", (0, 0), (-1, -1), 0.4, LINEE), ("BOX", (0, 0), (-1, -1), 1.2, BLU),
+        ("FONTNAME", (0, 0), (-1, -1), FONT), ("FONTSIZE", (0, 0), (-1, -1), 8.5),
+        ("LINEBELOW", (0, 1), (-1, 1), 1, BLU), ("LINEABOVE", (0, ultima), (-1, ultima), 1, BLU),
         ("SPAN", (1, 0), (3, 0)), ("SPAN", (8, 0), (10, 0)),
         ("SPAN", (0, 0), (0, 1)), ("SPAN", (4, 0), (4, 1)), ("SPAN", (6, 0), (6, 1)), ("SPAN", (7, 0), (7, 1)),
         ("SPAN", (11, 0), (11, 1)), ("SPAN", (12, 0), (12, 1)),
         ("SPAN", (0, ultima), (3, ultima)),
         ("VALIGN", (0, 0), (-1, -1), "MIDDLE"), ("ALIGN", (0, 0), (-1, -1), "CENTER"),
-        ("FONTNAME", (0, 2), (0, ultima - 1), "Helvetica-Bold"), ("FONTSIZE", (0, 2), (0, ultima - 1), 11),
-        ("FONTSIZE", (1, 2), (3, ultima), 7), ("FONTSIZE", (5, 2), (-1, ultima), 7.5),
         ("LEFTPADDING", (0, 0), (-1, -1), 1.5), ("RIGHTPADDING", (0, 0), (-1, -1), 1.5),
+        ("LEFTPADDING", (4, 2), (4, -1), 4),
         ("TOPPADDING", (0, 0), (-1, -1), 1), ("BOTTOMPADDING", (0, 0), (-1, -1), 1),
-        ("BACKGROUND", (0, 0), (-1, 1), colors.HexColor("#F2F2F2")),
-    ]
+        ("BACKGROUND", (0, 0), (-1, 1), BLU_CHIARO), ("BACKGROUND", (0, ultima), (-1, ultima), BLU_CHIARO),
+    ] + [("BACKGROUND", (0, 2 + i), (-1, 2 + i), RIGA_ALTERNA) for i in range(1, MAX_GIOCATORI, 2)]
     tabella.setStyle(TableStyle(stile))
 
     def ammessi(titolo, righe):
         """Tabella delle persone in panchina: etichetta, nome, tessera e documento."""
         colonne = [140, 200, 60, 34, 62]
         colonne.append(larga - sum(colonne))
-        corpo = [[Paragraph(_esc(titolo), ParagraphStyle("t", parent=s_riga, alignment=1)), "",
+        corpo = [[Paragraph(_esc(titolo), s_sezione), "",
                   Paragraph("N° Tessera FIGC", s_testa), Paragraph("Documento di identificazione", s_testa), "", ""],
                  ["", "", "", Paragraph("Tipo", s_testa), Paragraph("Numero", s_testa),
                   Paragraph("Rilasciato", s_testa)]]
         for etichetta_, r in righe:
-            corpo.append([Paragraph(_esc(etichetta_), s_riga),
-                          Paragraph(_esc(nome_stampa(r)).upper() if r else "", s_riga),
-                          (r or {}).get("matricola", ""), SIGLE_DOCUMENTO.get((r or {}).get("documento_tipo"), ""),
-                          (r or {}).get("documento_numero", ""),
+            corpo.append([Paragraph(_esc(etichetta_), ParagraphStyle("e", parent=s_riga, textColor=GRIGIO)),
+                          Paragraph(_nome_ricco(r) if r else "", s_riga),
+                          Paragraph(_esc((r or {}).get("matricola", "")), s_cella),
+                          Paragraph(_esc(SIGLE_DOCUMENTO.get((r or {}).get("documento_tipo"), "")), s_cella),
+                          Paragraph(_esc((r or {}).get("documento_numero", "")), s_cella),
                           Paragraph(_esc(rilasciato(r or {})), s_piccolo)])
-        t = Table(corpo, colWidths=colonne, rowHeights=[11, 9] + [13.5] * len(righe))
+        t = Table(corpo, colWidths=colonne, rowHeights=[12, 9.5] + [13.5] * len(righe))
         t.setStyle(TableStyle([
-            ("GRID", (0, 0), (-1, -1), 0.6, nero), ("BOX", (0, 0), (-1, -1), 1, nero),
+            ("GRID", (0, 0), (-1, -1), 0.4, LINEE), ("BOX", (0, 0), (-1, -1), 1.2, BLU),
+            ("FONTNAME", (0, 0), (-1, -1), FONT), ("LINEBELOW", (0, 1), (-1, 1), 1, BLU),
             ("SPAN", (0, 0), (1, 1)), ("SPAN", (2, 0), (2, 1)), ("SPAN", (3, 0), (5, 0)),
             ("VALIGN", (0, 0), (-1, -1), "MIDDLE"), ("ALIGN", (2, 0), (-1, -1), "CENTER"),
-            ("FONTSIZE", (0, 2), (-1, -1), 7.5), ("LEFTPADDING", (0, 0), (-1, -1), 2),
-            ("RIGHTPADDING", (0, 0), (-1, -1), 2), ("TOPPADDING", (0, 0), (-1, -1), 0.5),
-            ("BOTTOMPADDING", (0, 0), (-1, -1), 0.5), ("BACKGROUND", (0, 0), (-1, 1), colors.HexColor("#F2F2F2")),
-        ]))
+            ("LEFTPADDING", (0, 0), (-1, -1), 3), ("RIGHTPADDING", (0, 0), (-1, -1), 2),
+            ("TOPPADDING", (0, 0), (-1, -1), 0.5), ("BOTTOMPADDING", (0, 0), (-1, -1), 0.5),
+            ("BACKGROUND", (0, 0), (-1, 1), BLU_CHIARO),
+        ] + [("BACKGROUND", (0, 2 + i), (-1, 2 + i), RIGA_ALTERNA) for i in range(1, len(righe), 2)]))
         return t
 
     ruoli = distinta.get("ruoli") or {}
@@ -333,17 +367,18 @@ def genera_pdf_distinta(distinta, persone, nome_societa):
         [(persone[i].get("qualifica") or persone[i].get("tipo", ""), persone[i])
          for i in distinta.get("panchina") or [] if i in persone and i != massaggiatore]
     extra = extra[:RIGHE_PANCHINA_AGGIUNTIVA]
-    aggiuntiva = ammessi("Panchina Aggiuntiva",
+    aggiuntiva = ammessi("Panchina aggiuntiva",
                          extra
                          + [("", None)] * (RIGHE_PANCHINA_AGGIUNTIVA - len(extra)))
 
-    riga_firma, spazio = 180, 90
+    riga_firma, spazio = 190, 80
     bordo = (larga - 2 * riga_firma - spazio) / 2
-    firme = Table([["", "L'Arbitro", "", "Il Dirigente Accompagnatore", ""], [""] * 5],
-                  colWidths=[bordo, riga_firma, spazio, riga_firma, bordo], rowHeights=[14, 20])
-    firme.setStyle(TableStyle([("ALIGN", (0, 0), (-1, -1), "CENTER"), ("FONTSIZE", (0, 0), (-1, -1), 10),
-                               ("LINEBELOW", (1, 1), (1, 1), 0.6, nero), ("LINEBELOW", (3, 1), (3, 1), 0.6, nero)]))
+    firme = Table([["", Paragraph("L'Arbitro", s_firma), "", Paragraph("Il Dirigente Accompagnatore", s_firma), ""],
+                   [""] * 5],
+                  colWidths=[bordo, riga_firma, spazio, riga_firma, bordo], rowHeights=[13, 20])
+    firme.setStyle(TableStyle([("ALIGN", (0, 0), (-1, -1), "CENTER"), ("FONTNAME", (0, 0), (-1, -1), FONT),
+                               ("LINEBELOW", (1, 1), (1, 1), 0.6, BLU), ("LINEBELOW", (3, 1), (3, 1), 0.6, BLU)]))
 
-    doc.build([testa, tabella, Spacer(1, 5), recinto, Spacer(1, 5), aggiuntiva, Spacer(1, 4),
+    doc.build([testa, Spacer(1, 4), tabella, Spacer(1, 4), recinto, Spacer(1, 4), aggiuntiva, Spacer(1, 4),
                Paragraph(_esc(DICHIARAZIONE), s_dich), Spacer(1, 6), firme])
     return buffer.getvalue()

@@ -3,8 +3,7 @@ distinta ufficiale sul modello della società. Le distinte si salvano per riapri
 nuova riparte dall'ultima della stessa squadra (stessi giocatori, numeri e dirigenti). Dal calendario
 del Comitato si preparano in un colpo le distinte vuote di tutte le partite.
 """
-from datetime import date, datetime, timedelta
-from urllib.parse import quote
+from datetime import date
 
 import streamlit as st
 
@@ -12,7 +11,7 @@ from anagrafica import anno_di, data_da_iso, e_calciatore, elenco_ragazzi, nome_
 from calendario import distinte_da_calendario, leggi_calendario, nostra_squadra, partite_di, squadre
 from distinta_ufficiale import (ASSISTENTE, MASSAGGIATORE, MAX_GIOCATORI, RIGHE_PANCHINA_AGGIUNTIVA, RUOLI_PANCHINA, controlli,
                                 distinte_stagione, elimina_distinta, etichetta, genera_pdf_distinta, in_elenco,
-                                in_scadenza, nome_stampa, salva_distinta, salva_distinte, ultima_del_gruppo)
+                                in_scadenza, salva_distinta, salva_distinte, ultima_del_gruppo)
 from presenze import nel_periodo, presenze_gruppo, statistiche
 from nomi_file import nome_file_gara
 from stagioni import gruppi_correnti
@@ -24,7 +23,6 @@ ALTRA = "✏️ Altra competizione..."
 NESSUNO = ""
 VUOTA = "—"  # cella senza giocatore (o senza C/VC) nella tabella delle 20 righe
 ULTIMI_ALLENAMENTI = 12  # la % accanto ai nomi: gli ultimi allenamenti prima della partita (circa 4 settimane)
-GIORNI = ["Lunedì", "Martedì", "Mercoledì", "Giovedì", "Venerdì", "Sabato", "Domenica"]
 
 
 def _messaggio(tipo, testo):
@@ -231,9 +229,8 @@ def render_crea_distinta(utente, ruolo, nome_societa):
                 "competizione": comp.strip(), "data": giorno.isoformat() if giorno else "", "ora": ora.strip(),
                 "localita": localita.strip(), "campo": campo.strip(), "giocatori": giocatori,
                 "ruoli": {c: i for c, i in ruoli.items() if i}, "panchina": panchina,
-                "giornata": base.get("giornata", ""), "ritrovo": base.get("ritrovo", ""),
+                "giornata": base.get("giornata", ""),
                 "autore": base.get("autore") or utente}
-    distinta["ritrovo"] = _render_convocazione(distinta, persone, k)
 
     # --- Controlli, salvataggio e stampa
     problemi = controlli(distinta, persone)
@@ -287,42 +284,6 @@ def render_crea_distinta(utente, ruolo, nome_societa):
         elif st.button("🗑️ Elimina questa distinta", key="cd_elimina_btn"):
             st.session_state["cd_elimina"] = scelta
             st.rerun()
-
-
-def _render_convocazione(distinta, persone, k):
-    """Il messaggio dei convocati da mandare su WhatsApp. Restituisce il ritrovo scritto (si salva con la distinta)."""
-    if not distinta["giocatori"]:
-        return distinta.get("ritrovo", "")
-    with st.expander("💬 Messaggio convocazione (WhatsApp)"):
-        proposta = ""
-        if distinta.get("ora"):
-            try:
-                inizio = datetime.strptime(distinta["ora"].replace(".", ":"), "%H:%M")
-                proposta = f"ore {inizio - timedelta(hours=1, minutes=15):%H:%M}" + \
-                    (" al campo" if distinta["in_casa"] else "")
-            except ValueError:
-                pass
-        ritrovo = st.text_input("⏰ Ritrovo", value=distinta.get("ritrovo") or proposta, key=f"cd_ritrovo_{k}",
-                                placeholder="es. ore 13:15 al campo")
-        giorno = data_da_iso(distinta.get("data"))
-        nomi = sorted(nome_stampa(persone[g["id"]]) for g in distinta["giocatori"] if g["id"] in persone)
-        righe = [f"⚽ *CONVOCATI* {distinta['squadra']}", f"🆚 {distinta['casa']} - {distinta['ospite']}"]
-        if distinta.get("competizione"):
-            righe.append(f"🏆 {distinta['competizione']}")
-        if giorno:
-            righe.append(f"📅 {GIORNI[giorno.weekday()]} {giorno:%d/%m/%Y}"
-                         + (f" ore {distinta['ora']}" if distinta.get("ora") else ""))
-        luogo = ", ".join(x for x in (distinta.get("campo"), distinta.get("localita")) if x)
-        if luogo:
-            righe.append(f"🏟️ {luogo}")
-        if ritrovo.strip():
-            righe.append(f"⏰ Ritrovo: {ritrovo.strip()}")
-        righe += ["", f"👥 *Convocati ({len(nomi)})*"] + nomi
-        testo = "\n".join(righe)
-        st.code(testo, language=None)
-        st.caption("Copialo con l'icona in alto a destra del riquadro, oppure aprilo direttamente in WhatsApp.")
-        st.link_button("📲 Apri in WhatsApp", f"https://wa.me/?text={quote(testo)}", use_container_width=True)
-    return ritrovo.strip()
 
 
 def _render_calendario(stagione, gruppi, miei, distinte, staff, utente, nome_societa):
