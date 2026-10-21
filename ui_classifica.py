@@ -1,0 +1,70 @@
+"""📊 Statistiche → 🏆 Classifica: la classifica del girone di ogni squadra della società, presa da Tuttocampo."""
+import pandas as pd
+import streamlit as st
+
+from classifica import ClassificaErrore, classifiche, leggi, nostra_riga, salva, scarica
+from stagioni import gruppi_correnti
+
+COLONNE = {"pos": "#", "squadra": "Squadra", "pt": "Pt", "g": "G", "v": "V", "n": "N", "p": "P", "gf": "GF",
+           "gs": "GS", "dr": "DR"}
+
+
+def _tabella(righe, nome_societa):
+    nostra = nostra_riga(righe, nome_societa)
+    df = pd.DataFrame([{COLONNE[k]: r.get(k) for k in COLONNE} for r in righe])
+    stile = df.style.apply(lambda riga: ["font-weight:700;background-color:rgba(30,90,200,.12)"
+                                         if riga["#"] == nostra else "" for _ in riga], axis=1)
+    st.dataframe(stile, hide_index=True, use_container_width=True, height=min(35 * len(righe) + 40, 700))
+
+
+def _aggiorna(gruppo, stagione, salvata):
+    def fatto(righe, fonte):
+        salva(gruppo, stagione, righe, fonte)
+        st.session_state["cl_messaggio"] = f"Classifica di {gruppo} aggiornata: {len(righe)} squadre."
+        st.session_state.pop(f"cl_testo_{gruppo}", None)
+        st.rerun()
+
+    link = st.text_input("Link della classifica su Tuttocampo", value=(salvata or {}).get("fonte", ""),
+                         key=f"cl_link_{gruppo}", placeholder="https://www.tuttocampo.it/.../Classifica")
+    if st.button("🔄 Leggi da Tuttocampo", key=f"cl_leggi_{gruppo}", type="primary", disabled=not link.strip()):
+        with st.spinner("Leggo la pagina..."):
+            try:
+                fatto(leggi(scarica(link)), link.strip())
+            except ClassificaErrore as e:
+                st.session_state[f"cl_errore_{gruppo}"] = str(e)
+    if st.session_state.get(f"cl_errore_{gruppo}"):
+        st.warning(st.session_state[f"cl_errore_{gruppo}"])
+    with st.expander("📋 Se la lettura automatica non va: copia e incolla",
+                     expanded=bool(st.session_state.get(f"cl_errore_{gruppo}"))):
+        st.caption("Apri la classifica su Tuttocampo, seleziona tutta la pagina (Ctrl+A, sul telefono "
+                   "\"Seleziona tutto\"), copia e incolla qui sotto.")
+        testo = st.text_area("Testo della pagina", key=f"cl_testo_{gruppo}", height=150)
+        if st.button("Leggi il testo incollato", key=f"cl_leggi_testo_{gruppo}", disabled=not testo.strip()):
+            try:
+                st.session_state.pop(f"cl_errore_{gruppo}", None)
+                fatto(leggi(testo), link.strip() or (salvata or {}).get("fonte", ""))
+            except ClassificaErrore as e:
+                st.error(str(e))
+
+
+def render_classifica(nome_societa=""):
+    stagione, gruppi = gruppi_correnti()
+    nomi = [g["gruppo"] for g in gruppi]
+    if not nomi:
+        st.info("Prima crea le squadre in ⚙️ Opzioni → 🏆 Campionati.")
+        return
+    if st.session_state.get("cl_messaggio"):
+        st.success(st.session_state.pop("cl_messaggio"))
+    gruppo = st.selectbox(f"👥 Squadra ({stagione})", nomi, key="cl_gruppo") if len(nomi) > 1 else nomi[0]
+    salvata = classifiche().get(gruppo)
+    if salvata and salvata.get("stagione") == stagione and salvata.get("righe"):
+        giorno, _, ora = salvata["aggiornata"].partition(" ")
+        st.caption(f"Aggiornata il {giorno[8:10]}/{giorno[5:7]}/{giorno[:4]} alle {ora}"
+                   + (f" · [fonte]({salvata['fonte']})" if salvata.get("fonte") else "")
+                   + " · i dati sono di Tuttocampo e fa fede il Comunicato Ufficiale.")
+        _tabella(salvata["righe"], nome_societa)
+        with st.expander("🔄 Aggiorna la classifica"):
+            _aggiorna(gruppo, stagione, salvata)
+    else:
+        st.info(f"Nessuna classifica per {gruppo}: incolla il link della pagina di Tuttocampo.")
+        _aggiorna(gruppo, stagione, salvata)
