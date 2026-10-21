@@ -58,7 +58,7 @@ from ui_rose import render_opzioni_rose, render_prepara_da_rosa
 from ui_stagioni import render_opzioni_campionati
 from ui_components import render_download_buttons, render_info_match
 from ui_anagrafica import render_anagrafica
-from ui_crea_distinta import render_crea_distinta
+from ui_crea_distinta import render_crea_distinta, render_prendi_da_crea_distinta
 from ui_presenze import render_presenze
 from ui_cronaca import render_cronaca
 from ui_sponsor import loghi_per_pdf, render_gestione_sponsor
@@ -398,9 +398,9 @@ def nome_societa():
     return leggi_secret("NOME_SOCIETA") or "A.S.D. AZZURRA DUE CARRARE"
 
 
-def lista_dalla_rosa(lato, griglia, campionato, firma_correnti):
-    """La nostra lista preparata dalla rosa va nella distinta; l'altra squadra resta da compilare
-    (a mano, da CSV o con la scansione)."""
+def lista_dalla_rosa(lato, griglia, campionato, firma_correnti, gara=None):
+    """La nostra lista preparata dalla rosa (o presa da 📝 Crea distinta, con i dati della gara) va nella
+    distinta; l'altra squadra resta da compilare (a mano, da CSV o con la scansione)."""
     chiave = f"griglia_{lato}"
     if "dati_mappati" not in st.session_state:
         st.session_state["macro_info"] = unisci_scansioni({}, {})
@@ -412,6 +412,9 @@ def lista_dalla_rosa(lato, griglia, campionato, firma_correnti):
     info = st.session_state["macro_info"]
     info["campionato"] = campionato
     info[f"nome_{lato}"] = info.get(f"nome_{lato}") or nome_societa()
+    if gara:
+        info.update({c: v for c, v in gara.items() if v})
+        pulisci_widget_squadra("griglia_ospite" if lato == "casa" else "griglia_casa")
     st.session_state.pop("pdf_interattivo_pronto", None)
     st.rerun()
 
@@ -679,6 +682,9 @@ def render_segreteria():
     dalla_rosa = render_prepara_da_rosa()
     if dalla_rosa:
         lista_dalla_rosa(*dalla_rosa, firma_correnti)
+    da_crea_distinta = render_prendi_da_crea_distinta()
+    if da_crea_distinta:
+        lista_dalla_rosa(*da_crea_distinta[:3], firma_correnti, da_crea_distinta[3])
 
     if file_casa and file_ospite:
         # File cambiati: la scansione precedente (e il PDF) non sono più validi
