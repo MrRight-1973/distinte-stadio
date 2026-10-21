@@ -5,7 +5,9 @@ la classifica in Supabase, come se l'avessero copiata e incollata.
 Lo lancia la GitHub Action "Classifiche" (con SUPABASE_URL e SUPABASE_KEY nei secrets del repository).
 Per le pagine della LND legge anche tutte le giornate (andata e ritorno) con risultati e calendario, così
 l'app ha i numeri di tutte le squadre del girone (📊 Statistiche → 📅 Risultati e 🔍 Avversari). Le giornate già
-finite non si rileggono.
+finite non si rileggono. Dalla classifica prende anche gli stemmi delle squadre (una volta sola per squadra).
+Alla fine scrive nello spazio pubblico di Supabase classifica.json: la classifica che mostra la pagina
+spettatori mentre aspetta la prossima partita (posizione, squadra, punti, partite e stemma).
 
 Nel log solo il nome della squadra e quante righe o partite ha letto (sono dati pubblici).
 """
@@ -14,19 +16,66 @@ import sys
 from datetime import date, timedelta
 from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
+import json
+
 import archivio_cloud as cloud
 import girone
+import loghi
 from classifica import ClassificaErrore, classifiche, leggi, link_attuale, nome_fonte, salva
 
 
-def testo_della_pagina(browser, url):
+# per ogni immagine della pagina: il suo indirizzo e il testo più vicino (la riga con il nome della squadra)
+_IMMAGINI_JS = """() => [...document.images].map(i => {
+  let n = i, t = "";
+  for (let k = 0; k < 4 && n && !t; k++) { n = n.parentElement; t = n ? (n.innerText || "").trim() : ""; }
+  return [i.currentSrc || i.src || "", t.slice(0, 300)];
+})"""
+
+
+def testo_della_pagina(browser, url, immagini=None):
+    """Il testo della pagina; se `immagini` è una lista, ci aggiunge [(indirizzo, testo vicino)] delle immagini."""
     pagina = browser.new_page(locale="it-IT")
     try:
         pagina.goto(url, wait_until="networkidle", timeout=90_000)
         pagina.wait_for_timeout(5_000)  # i dati arrivano dopo il caricamento
+        if immagini is not None:
+            immagini.extend(pagina.evaluate(_IMMAGINI_JS))
         return pagina.inner_text("body")
     finally:
         pagina.close()
+
+
+def aggiorna_loghi(browser, gruppo, immagini, righe):
+    """Copia gli stemmi delle squadre che non l'hanno ancora. Restituisce quanti ne ha aggiunti."""
+    gia = loghi.tutti(fresco=True)
+    nuovi = 0
+    for squadra, src in loghi.abbina(immagini, [r["squadra"] for r in righe]).items():
+        if loghi.di(squadra, gia):
+            continue
+        try:
+            dentro = loghi.dati_immagine(src)
+            if dentro:
+                dati, tipo = dentro
+            else:
+                pagina = browser.new_page()
+                try:
+                    r = pagina.request.get(src, timeout=20_000)
+                    dati, tipo = (r.body(), r.headers.get("content-type", "")) if r.ok else (b"", "")
+                finally:
+                    pagina.close()
+            nuovi += 1 if loghi.salva(squadra, dati, tipo) else 0
+        except Exception:  # noqa: BLE001 - uno stemma mancante non è un problema
+            continue
+    print(f"{gruppo}: stemmi {len(gia) + nuovi} in tutto ({nuovi} nuovi)")
+    return nuovi
+
+
+def pubblica_classifica_attesa():
+    """classifica.json nello spazio pubblico: la legge la pagina spettatori in attesa della prossima partita."""
+    from pagina_attesa import classifica_attesa
+    dati = classifica_attesa(nome_societa=os.environ.get("NOME_SOCIETA", ""))
+    if dati and cloud.carica_pubblico("classifica.json", json.dumps(dati, ensure_ascii=False).encode("utf-8")):
+        print(f"Pagina spettatori: classifica di {dati['gruppo']} pubblicata")
 
 
 def link_giornata(link, numero, fase):
@@ -96,16 +145,22 @@ def main():
         browser = p.chromium.launch(executable_path=os.environ.get("CHROMIUM_PATH") or None)
         for gruppo, c in da_fare.items():
             try:
-                righe = leggi(testo_della_pagina(browser, link_attuale(c["fonte"])))
+                immagini = []
+                righe = leggi(testo_della_pagina(browser, link_attuale(c["fonte"]), immagini))
             except (ClassificaErrore, Exception) as e:  # noqa: BLE001 - una squadra non blocca le altre
                 print(f"{gruppo}: classifica non letta ({type(e).__name__}: {str(e)[:150]})")
                 errori += 1
                 continue
             salva(gruppo, c.get("stagione", ""), righe, link_attuale(c["fonte"]))
             print(f"{gruppo}: classifica aggiornata ({len(righe)} squadre, fonte {nome_fonte(c['fonte'])})")
+            aggiorna_loghi(browser, gruppo, immagini, righe)
             if nome_fonte(c["fonte"]) == "LND":
                 aggiorna_giornate(browser, gruppo, c, righe, os.environ.get("MOSTRA_TESTO") == "si")
         browser.close()
+    try:
+        pubblica_classifica_attesa()
+    except Exception as e:  # noqa: BLE001
+        print(f"Pagina spettatori: classifica non pubblicata ({type(e).__name__})")
     return 1 if errori == len(da_fare) else 0
 
 
