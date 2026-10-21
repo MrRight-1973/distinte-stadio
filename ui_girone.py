@@ -33,7 +33,7 @@ def _scegli_gruppo(chiave):
     gruppo = st.selectbox(f"👥 Squadra ({stagione})", nomi, key=chiave) if len(nomi) > 1 else nomi[0]
     dati = girone.tutti().get(gruppo) or {}
     if dati.get("stagione") != stagione or not dati.get("giornate"):
-        st.info(f"Ancora nessuna giornata per {gruppo}. Arrivano da sole, mattina e sera, quando in 🏆 Classifica "
+        st.info(f"Ancora nessuna giornata per {gruppo}. Arrivano da sole, mattina e sera, quando in ⚙️ Opzioni → 🌐 Dati LND "
                 "è salvato il link della LND (gare.lnd.it).")
         return None
     giorno, _, ora = dati.get("aggiornato", "").partition(" ")
