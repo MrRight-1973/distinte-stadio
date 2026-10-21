@@ -66,6 +66,33 @@ def _render_backup():
             except archivio_cloud.ArchivioErrore as e:
                 st.error(str(e))
             st.rerun()
+    _render_ripristino([n for n, _ in salvati])
+
+
+def _render_ripristino(nomi):
+    with st.expander("♻️ Ripristina da un backup"):
+        st.warning("I dati scelti tornano com'erano il giorno del backup: le modifiche fatte dopo si perdono. "
+                   "Non farlo durante una partita. Prima del ripristino l'app salva comunque un backup di adesso.")
+        nome = st.selectbox("Backup", nomi, key="rip_nome")
+        cartelle = st.multiselect("Cosa ripristinare", list(backup_dati.RIPRISTINABILI),
+                                  format_func=backup_dati.RIPRISTINABILI.get, key="rip_cartelle",
+                                  placeholder="Scegli cosa rimettere com'era")
+        st.caption("Il registro delle modifiche e le partite dell'archivio non si toccano.")
+        conferma = st.checkbox("Ho capito: i dati scelti vengono sostituiti", key="rip_conferma")
+        if st.button("♻️ Ripristina", type="primary", key="rip_vai", disabled=not (nome and cartelle and conferma)):
+            with st.spinner("Ripristino..."):
+                try:
+                    rimessi, sicurezza = backup_dati.ripristina(nome, cartelle)
+                    st.session_state.pop("rip_conferma", None)
+                    st.session_state["rip_esito"] = (f"Ripristinati {rimessi} file da {nome}. I dati di prima sono "
+                                                     f"nel backup {sicurezza}.")
+                except backup_dati.cloud.ArchivioErrore as e:
+                    st.session_state["rip_esito"] = None
+                    st.error(f"Ripristino non riuscito: {e}")
+                else:
+                    st.rerun()
+        if st.session_state.get("rip_esito"):
+            st.success(st.session_state["rip_esito"])
 
 
 def render_registro_e_backup():
