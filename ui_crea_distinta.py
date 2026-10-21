@@ -1,15 +1,19 @@
 """📝 Crea distinta: si scelgono partita, giocatori e persone in panchina dall'anagrafica e si stampa la
 distinta ufficiale sul modello della società. Le distinte si salvano per riaprirle e ristamparle; una
-nuova riparte dall'ultima della stessa squadra (stessi giocatori, numeri e dirigenti).
+nuova riparte dall'ultima della stessa squadra (stessi giocatori, numeri e dirigenti). Dal calendario
+del Comitato si preparano in un colpo le distinte vuote di tutte le partite.
 """
-from datetime import date
+from datetime import date, datetime, timedelta
+from urllib.parse import quote
 
 import streamlit as st
 
 from anagrafica import anno_di, data_da_iso, e_calciatore, elenco_ragazzi, nome_completo, tipo_di
+from calendario import distinte_da_calendario, leggi_calendario, nostra_squadra, partite_di, squadre
 from distinta_ufficiale import (ASSISTENTE, MASSAGGIATORE, MAX_GIOCATORI, RIGHE_PANCHINA_AGGIUNTIVA, RUOLI_PANCHINA, controlli,
-                                distinte_stagione, elimina_distinta, etichetta, genera_pdf_distinta, ordinate,
-                                salva_distinta, ultima_del_gruppo)
+                                distinte_stagione, elimina_distinta, etichetta, genera_pdf_distinta, in_elenco,
+                                in_scadenza, nome_stampa, salva_distinta, salva_distinte, ultima_del_gruppo)
+from presenze import nel_periodo, presenze_gruppo, statistiche
 from nomi_file import nome_file_gara
 from stagioni import gruppi_correnti
 from utenti import gruppi_utente
@@ -19,6 +23,8 @@ IN_CASA, FUORI = "🏠 In casa", "🚌 In trasferta"
 ALTRA = "✏️ Altra competizione..."
 NESSUNO = ""
 VUOTA = "—"  # cella senza giocatore (o senza C/VC) nella tabella delle 20 righe
+ULTIMI_ALLENAMENTI = 12  # la % accanto ai nomi: gli ultimi allenamenti prima della partita (circa 4 settimane)
+GIORNI = ["Lunedì", "Martedì", "Mercoledì", "Giovedì", "Venerdì", "Sabato", "Domenica"]
 
 
 def _messaggio(tipo, testo):
@@ -29,6 +35,10 @@ def _base(scelta, distinte, gruppo, nome_squadra):
     """La distinta da cui partire: quella aperta, oppure per una nuova l'ultima della squadra senza i dati
     della partita (avversario, data, campo cambiano ogni volta)."""
     if scelta != NUOVA:
+        if st.session_state.get("cd_riprendi") == scelta and not distinte[scelta].get("giocatori"):
+            # distinta ancora vuota: giocatori e numeri dall'ultima che li ha
+            prima = ultima_del_gruppo(distinte, gruppo, distinte[scelta].get("data") or "9999", scelta) or {}
+            return {**distinte[scelta], "giocatori": prima.get("giocatori", [])}
         return distinte[scelta]
     ultima = ultima_del_gruppo(distinte, gruppo) or {}
     return {"gruppo": gruppo, "squadra": ultima.get("squadra") or nome_squadra, "in_casa": True,
@@ -64,13 +74,15 @@ def render_crea_distinta(utente, ruolo, nome_societa):
     staff = [r for r in persone.values() if not e_calciatore(r)]
 
     distinte = distinte_stagione(stagione)
-    elenco = [d for d in ordinate(distinte) if d.get("gruppo") in miei]
+    _render_calendario(stagione, gruppi, miei, distinte, staff, utente, nome_societa)
+    elenco = [d for d in in_elenco(distinte, date.today().isoformat()) if d.get("gruppo") in miei]
     if "cd_apri" in st.session_state:  # dopo il salvataggio di una nuova: resta aperta quella
         st.session_state["cd_scelta"] = st.session_state.pop("cd_apri")
     if st.session_state.get("cd_scelta") not in [NUOVA] + [d["id"] for d in elenco]:
         st.session_state["cd_scelta"] = NUOVA
     scelta = st.selectbox("📂 Distinta", [NUOVA] + [d["id"] for d in elenco], key="cd_scelta",
-                          format_func=lambda i: i if i == NUOVA else f"{etichetta(distinte[i])} · {distinte[i]['gruppo']}")
+                          format_func=lambda i: i if i == NUOVA else f"{etichetta(distinte[i])} · {distinte[i]['gruppo']}"
+                          + ("" if distinte[i].get("giocatori") else " · da compilare"))
     n = st.session_state.get("cd_n", 0)
 
     if scelta == NUOVA:
@@ -110,14 +122,17 @@ def render_crea_distinta(utente, ruolo, nome_societa):
                        key=lambda r: (squadra_di[r["id"]] != gruppo, nome_completo(r)))
     precedenti = sorted((g for g in base.get("giocatori", []) if g["id"] in persone),
                         key=lambda g: g.get("numero") or 99)
-    # Etichette uniche per la tendina: nome, anno e (se di un'altra squadra) la squadra
-    etichette, contate = {}, {}
+    # Presenza agli ultimi allenamenti prima della partita, per scegliere i convocati
+    allenamenti = presenze_gruppo(stagione, gruppo)
+    ultimi = nel_periodo(allenamenti, al=giorno.isoformat() if giorno else None)[-ULTIMI_ALLENAMENTI:]
+    allenato = statistiche({s: allenamenti[s] for s in ultimi})
+    # Nella tendina: nome, anno, % di allenamenti e (se di un'altra squadra) la squadra
+    etichette = {}
     for r in giocabili:
-        testo = f"{nome_completo(r)} ({anno_di(r) or '?'})" + \
+        v = allenato.get(r["id"])
+        etichette[r["id"]] = f"{nome_completo(r)} ({anno_di(r) or '?'})" + \
+            (f" · 🏃 {v['percentuale']}%" if v and v["segnati"] else "") + \
             ("" if squadra_di[r["id"]] == gruppo else f" · {squadra_di[r['id']] or 'senza squadra'}")
-        contate[testo] = contate.get(testo, 0) + 1
-        etichette[r["id"]] = testo if contate[testo] == 1 else f"{testo} #{contate[testo]}"
-    da_etichetta = {v: i for i, v in etichette.items()}
     # 20 righe come nel modulo: numero di maglia, giocatore scelto dalla tendina, C/VC. Ogni tendina mostra
     # solo i giocatori non ancora scelti nelle altre righe (e il C o il VC solo se nessun altro li ha).
     chiavi = [(f"cd_num_{k}_{r}", f"cd_gioc_{k}_{r}", f"cd_cap_{k}_{r}") for r in range(MAX_GIOCATORI)]
@@ -125,8 +140,9 @@ def render_crea_distinta(utente, ruolo, nome_societa):
         g = precedenti[riga] if riga < len(precedenti) else {}
         st.session_state.setdefault(c_num, g.get("numero") or riga + 1)
         gia = {st.session_state.get(c) for _, c, _ in chiavi[:riga]}
-        st.session_state.setdefault(c_gioc, etichette.get(g.get("id"), VUOTA) if g.get("id") not in
-                                    {da_etichetta.get(e) for e in gia} else VUOTA)
+        st.session_state.setdefault(c_gioc, g["id"] if g.get("id") in etichette and g["id"] not in gia else VUOTA)
+        if st.session_state[c_gioc] not in etichette:  # tolto dall'anagrafica nel frattempo
+            st.session_state[c_gioc] = VUOTA
         st.session_state.setdefault(c_cap, g.get("cap") or VUOTA)
     scelti = [st.session_state[c_gioc] for _, c_gioc, _ in chiavi]
     fasce = [st.session_state[c_cap] for _, _, c_cap in chiavi]
@@ -150,16 +166,23 @@ def render_crea_distinta(utente, ruolo, nome_societa):
             fasce_altre = set(fasce[:riga] + fasce[riga + 1:])
             c1, c2, c3 = st.columns([1.3, 6, 1.4], vertical_alignment="bottom")
             numero = c1.selectbox("N°", list(range(1, 100)), key=c_num, label_visibility="collapsed")
-            nome = c2.selectbox("Giocatore", [VUOTA] + [e for e in etichette.values() if e not in altri],
-                                key=c_gioc, label_visibility="collapsed")
+            scelto = c2.selectbox("Giocatore", [VUOTA] + [i for i in etichette if i not in altri], key=c_gioc,
+                                  format_func=lambda i: etichette.get(i, VUOTA), label_visibility="collapsed")
             cap = c3.selectbox("Cap.", [VUOTA] + [f for f in ("C", "VC") if f not in fasce_altre],
                                key=c_cap, label_visibility="collapsed")
-            if nome in da_etichetta:
-                giocatori.append({"id": da_etichetta[nome], "numero": int(numero),
+            if scelto in etichette:
+                giocatori.append({"id": scelto, "numero": int(numero),
                                   "cap": cap if cap in ("C", "VC") else ""})
     st.caption("Scegli il nome in ogni riga: chi è già in distinta non compare più nelle altre tendine. Il numero "
                "è quello di maglia; in Cap. metti C per il capitano e VC per il vice. Le righe vuote restano "
-               "vuote nella stampa.")
+               "vuote nella stampa."
+               + (f" 🏃 è la presenza agli ultimi {len(ultimi)} allenamenti prima della partita." if ultimi else ""))
+    if scelta != NUOVA and not giocatori and ultima_del_gruppo(distinte, gruppo, distinte[scelta].get("data") or "9999",
+                                                              scelta):
+        if st.button("📋 Riprendi giocatori e numeri dall'ultima distinta", key=f"cd_riprendi_{k}"):
+            st.session_state["cd_riprendi"] = scelta
+            st.session_state["cd_n"] = n + 1
+            st.rerun()
 
     # --- Panchina
     st.markdown("**👔 Persone ammesse in panchina**")
@@ -198,7 +221,9 @@ def render_crea_distinta(utente, ruolo, nome_societa):
                 "competizione": comp.strip(), "data": giorno.isoformat() if giorno else "", "ora": ora.strip(),
                 "localita": localita.strip(), "campo": campo.strip(), "giocatori": giocatori,
                 "ruoli": {c: i for c, i in ruoli.items() if i}, "panchina": panchina,
+                "giornata": base.get("giornata", ""), "ritrovo": base.get("ritrovo", ""),
                 "autore": base.get("autore") or utente}
+    distinta["ritrovo"] = _render_convocazione(distinta, persone, k)
 
     # --- Controlli, salvataggio e stampa
     problemi = controlli(distinta, persone)
@@ -206,6 +231,12 @@ def render_crea_distinta(utente, ruolo, nome_societa):
         with st.expander(f"⚠️ Da controllare prima di stampare ({len(problemi)})", expanded=True):
             for p in problemi:
                 st.markdown(f"- {p}")
+    avvisi = in_scadenza(distinta, persone)
+    if avvisi:
+        with st.expander(f"⏰ Da rinnovare a breve ({len(avvisi)})"):
+            for a in avvisi:
+                st.markdown(f"- {a}")
+            st.caption("Validi il giorno della gara, ma scadono entro un mese: tutte le scadenze sono in 👦 Anagrafica.")
     c1, c2 = st.columns(2)
     if c1.button("💾 Salva", use_container_width=True, key=f"cd_salva_{k}", disabled=not avversario.strip()):
         salvata = salva_distinta(stagione, distinta)
@@ -246,3 +277,121 @@ def render_crea_distinta(utente, ruolo, nome_societa):
         elif st.button("🗑️ Elimina questa distinta", key="cd_elimina_btn"):
             st.session_state["cd_elimina"] = scelta
             st.rerun()
+
+
+def _render_convocazione(distinta, persone, k):
+    """Il messaggio dei convocati da mandare su WhatsApp. Restituisce il ritrovo scritto (si salva con la distinta)."""
+    if not distinta["giocatori"]:
+        return distinta.get("ritrovo", "")
+    with st.expander("💬 Messaggio convocazione (WhatsApp)"):
+        proposta = ""
+        if distinta.get("ora"):
+            try:
+                inizio = datetime.strptime(distinta["ora"].replace(".", ":"), "%H:%M")
+                proposta = f"ore {inizio - timedelta(hours=1, minutes=15):%H:%M}" + \
+                    (" al campo" if distinta["in_casa"] else "")
+            except ValueError:
+                pass
+        ritrovo = st.text_input("⏰ Ritrovo", value=distinta.get("ritrovo") or proposta, key=f"cd_ritrovo_{k}",
+                                placeholder="es. ore 13:15 al campo")
+        giorno = data_da_iso(distinta.get("data"))
+        nomi = sorted(nome_stampa(persone[g["id"]]) for g in distinta["giocatori"] if g["id"] in persone)
+        righe = [f"⚽ *CONVOCATI* {distinta['squadra']}", f"🆚 {distinta['casa']} - {distinta['ospite']}"]
+        if distinta.get("competizione"):
+            righe.append(f"🏆 {distinta['competizione']}")
+        if giorno:
+            righe.append(f"📅 {GIORNI[giorno.weekday()]} {giorno:%d/%m/%Y}"
+                         + (f" ore {distinta['ora']}" if distinta.get("ora") else ""))
+        luogo = ", ".join(x for x in (distinta.get("campo"), distinta.get("localita")) if x)
+        if luogo:
+            righe.append(f"🏟️ {luogo}")
+        if ritrovo.strip():
+            righe.append(f"⏰ Ritrovo: {ritrovo.strip()}")
+        righe += ["", f"👥 *Convocati ({len(nomi)})*"] + nomi
+        testo = "\n".join(righe)
+        st.code(testo, language=None)
+        st.caption("Copialo con l'icona in alto a destra del riquadro, oppure aprilo direttamente in WhatsApp.")
+        st.link_button("📲 Apri in WhatsApp", f"https://wa.me/?text={quote(testo)}", use_container_width=True)
+    return ritrovo.strip()
+
+
+def _render_calendario(stagione, gruppi, miei, distinte, staff, utente, nome_societa):
+    """Dal PDF del calendario del Comitato: una distinta vuota (partita, data, ora e campo già scritti) per
+    ogni partita della nostra squadra. Le partite che hanno già una distinta si saltano."""
+    with st.expander("📅 Prepara le distinte dal calendario"):
+        st.caption("Carica il PDF del calendario gare del Comitato: preparo una distinta per ogni partita della "
+                   "squadra, con avversario, data, ora e campo. I giocatori si scelgono poi partita per partita.")
+        f = st.file_uploader("Calendario (PDF)", type=["pdf"], key="cd_cal_file")
+        if f is None:
+            return
+        try:
+            cal = leggi_calendario(f.getvalue())
+        except Exception as e:
+            st.error(f"Non riesco a leggere il calendario: {e}")
+            return
+        if not cal["partite"]:
+            st.error("Nel PDF non ho trovato le giornate: serve il calendario gare del Comitato (LND).")
+            return
+        st.success(f"{cal['titolo'] or 'Calendario'}: {2 * max(p['giornata'] for p in cal['partite'])} giornate, "
+                   f"{len(squadre(cal))} squadre.")
+        c1, c2 = st.columns(2)
+        gruppo = c1.selectbox(f"👥 Squadra ({stagione})", miei, key="cd_cal_gruppo")
+        elenco_squadre = squadre(cal)
+        noi = nostra_squadra(cal, nome_societa)
+        nostra = c2.selectbox("Noi nel calendario", elenco_squadre, key="cd_cal_noi",
+                              index=elenco_squadre.index(noi) if noi in elenco_squadre else 0)
+        competizioni = next((g["competizioni"] for g in gruppi if g["gruppo"] == gruppo), []) or [cal["titolo"]]
+        comp = st.selectbox("Valevole per", competizioni, key=f"cd_cal_comp_{gruppo}")
+        da_oggi = st.toggle("Solo le partite ancora da giocare", value=True, key="cd_cal_da_oggi")
+        partite = partite_di(cal, nostra, date.today().isoformat() if da_oggi else "")
+        ultima = ultima_del_gruppo(distinte, gruppo) or {}
+        modello = {"gruppo": gruppo, "squadra": ultima.get("squadra") or nome_societa, "competizione": comp,
+                   "ruoli": ultima.get("ruoli") or _proposta_ruoli(staff, gruppo, stagione), "autore": utente}
+        righe, nuove = distinte_da_calendario(cal, nostra, partite, modello, distinte)
+        if not righe:
+            st.info(f"Nessuna partita di {nostra} da preparare.")
+            return
+        st.dataframe(righe, hide_index=True, use_container_width=True)
+        if st.button(f"📅 Crea {len(nuove)} distint{'a' if len(nuove) == 1 else 'e'} da compilare", type="primary",
+                     use_container_width=True, disabled=not nuove, key="cd_cal_crea"):
+            salvate = salva_distinte(stagione, nuove)
+            st.session_state["cd_apri"] = min(salvate, key=lambda d: d["data"])["id"]  # apre la prossima partita
+            st.session_state["cd_n"] = st.session_state.get("cd_n", 0) + 1
+            _messaggio("success", f"Preparate {len(nuove)} distinte: le trovi nell'elenco 📂 Distinta (qui è aperta "
+                                  "la prossima partita). Scegli i giocatori e salva.")
+            st.rerun()
+
+
+def render_prendi_da_crea_distinta():
+    """Nella 📋 Distinta: la nostra lista presa da una distinta preparata in 📝 Crea distinta, al posto della
+    scansione della nostra foto. Restituisce (lato, griglia, campionato, dati della gara) quando si preme
+    il pulsante, altrimenti None."""
+    from estrattore import data_con_ora
+    from rose import griglia_convocati
+    stagione, _ = gruppi_correnti()
+    distinte = distinte_stagione(stagione)
+    pronte = [d for d in in_elenco(distinte, date.today().isoformat()) if d.get("giocatori")]
+    if not pronte:
+        return None
+    with st.expander("📝 Prendi la nostra lista da Crea distinta (senza scansione)"):
+        scelta = st.selectbox("Distinta", [d["id"] for d in pronte], key="prendi_cd",
+                              format_func=lambda i: f"{etichetta(distinte[i])} · {distinte[i].get('gruppo', '')}")
+        d = distinte[scelta]
+        persone = {r["id"]: r for r in elenco_ragazzi()}
+        giocatori = [{"giocatore": nome_completo(persone[g["id"]]) + (f" ({g['cap']})" if g.get("cap") else ""),
+                      "anno": anno_di(persone[g["id"]]), "numero": g.get("numero")}
+                     for g in d["giocatori"] if g["id"] in persone]
+        st.caption(f"{len(giocatori)} giocatori. L'altra squadra si compila come sempre: foto, CSV o a mano.")
+        if st.button("✅ Metti nella distinta", type="primary", use_container_width=True, key="prendi_cd_ok"):
+            lato = "casa" if d.get("in_casa", True) else "ospite"
+            ruoli = d.get("ruoli") or {}
+
+            def nome(chiave):
+                return nome_completo(persone[ruoli[chiave]]) if ruoli.get(chiave) in persone else ""
+            giorno = data_da_iso(d.get("data"))
+            numero_giornata = "".join(c for c in str(d.get("giornata", "")).split("ª")[0] if c.isdigit())
+            gara = {"data": data_con_ora(f"{giorno:%d/%m/%Y}" if giorno else "", d.get("ora", "")),
+                    "giornata": numero_giornata, "nome_casa": d.get("casa", ""), "nome_ospite": d.get("ospite", ""),
+                    f"all_{lato}": nome("allenatore"), f"ass_{lato}": nome("assistente")}
+            return lato, griglia_convocati(giocatori, []), d.get("competizione", ""), gara
+    return None

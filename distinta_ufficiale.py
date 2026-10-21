@@ -15,7 +15,9 @@ from datetime import datetime
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import ParagraphStyle
-from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+from reportlab.lib.utils import ImageReader
+from reportlab.pdfbase.pdfmetrics import stringWidth
+from reportlab.platypus import Image, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
 from anagrafica import data_da_iso, stato_scadenza
 from cronaca_manager import _cartella_dati, _carica_online, _leggi_file
@@ -33,6 +35,7 @@ RUOLI_PANCHINA = [("accompagnatore", "Dirigente Accompagnatore Sig."),
 ASSISTENTE = ("assistente", "Assistente")  # l'assistente dell'arbitro messo dalla società
 MASSAGGIATORE = ("massaggiatore", "Massaggiatore sportivo")  # prima riga della panchina aggiuntiva
 SIGLE_DOCUMENTO = {"Carta d'identità": "C.I.", "Patente": "PAT", "Passaporto": "PASS"}
+LOGO_LND = os.path.join(os.path.dirname(os.path.abspath(__file__)), "logo_lnd.png")  # in alto a destra
 DICHIARAZIONE = ("Il sottoscritto Dirigente accompagnatore ufficiale dichiara, ai sensi dell'Art.61 N.O.I.F., che i "
                  "calciatori sopraindicati sono regolarmente tesserati e partecipano alla gara sotto la "
                  "responsabilità della Società di appartenenza.")
@@ -74,6 +77,16 @@ def salva_distinta(stagione, distinta):
     return distinta
 
 
+def salva_distinte(stagione, nuove):
+    """Più distinte nuove con una sola scrittura (es. tutte quelle del calendario)."""
+    adesso = datetime.now().strftime("%Y-%m-%d %H:%M")
+    dati = distinte_stagione(stagione)
+    salvate = [{**d, "id": d.get("id") or uuid.uuid4().hex[:12], "aggiornata": adesso} for d in nuove]
+    dati.update({d["id"]: d for d in salvate})
+    _scrivi(stagione, dati)
+    return salvate
+
+
 def elimina_distinta(stagione, id_distinta):
     dati = distinte_stagione(stagione)
     if dati.pop(id_distinta, None) is not None:
@@ -85,14 +98,24 @@ def ordinate(distinte):
     return sorted(distinte.values(), key=lambda d: (d.get("data", ""), d.get("aggiornata", "")), reverse=True)
 
 
-def ultima_del_gruppo(distinte, gruppo):
-    """L'ultima distinta di un gruppo squadra, da cui ripartire per la prossima partita."""
-    return next((d for d in ordinate(distinte) if d.get("gruppo") == gruppo), None)
+def ultima_del_gruppo(distinte, gruppo, prima_del="9999", tranne=""):
+    """L'ultima distinta con i giocatori di un gruppo squadra (prima di quella data), da cui ripartire
+    per la prossima partita. Le distinte ancora vuote preparate dal calendario non contano."""
+    return next((d for d in ordinate(distinte) if d.get("gruppo") == gruppo and d.get("giocatori")
+                 and d.get("data", "") < prima_del and d.get("id") != tranne), None)
+
+
+def in_elenco(distinte, oggi):
+    """Per scegliere: prima le prossime partite (dalla più vicina), poi quelle passate (dalla più recente)."""
+    prossime = sorted((d for d in distinte.values() if d.get("data", "") >= oggi), key=lambda d: d.get("data", ""))
+    passate = [d for d in ordinate(distinte) if d.get("data", "") < oggi]
+    return prossime + passate
 
 
 def etichetta(d):
     giorno = data_da_iso(d.get("data"))
-    return (f"{giorno:%d/%m/%Y} · " if giorno else "") + f"{d.get('casa', '')} - {d.get('ospite', '')}"
+    return (f"{giorno:%d/%m/%Y} · " if giorno else "") + f"{d.get('casa', '')} - {d.get('ospite', '')}" + \
+        (f" · {d['giornata']}" if d.get("giornata") else "")
 
 
 def nome_stampa(r):
@@ -150,6 +173,23 @@ def controlli(distinta, persone):
     return problemi
 
 
+def in_scadenza(distinta, persone):
+    """[testo] per certificati e documenti validi il giorno della gara ma che scadono entro un mese (anagrafica.GIORNI_AVVISO):
+    da rinnovare prima delle prossime partite. Vale per i giocatori e per le persone in panchina."""
+    giorno = data_da_iso(distinta.get("data"))
+    ids = [g["id"] for g in distinta.get("giocatori") or []] + list((distinta.get("ruoli") or {}).values()) + \
+        list(distinta.get("panchina") or [])
+    avvisi = []
+    for i in dict.fromkeys(ids):
+        r = persone.get(i)
+        if not r:
+            continue
+        for campo, cosa in (("certificato_scadenza", "certificato medico"), ("documento_scadenza", "documento")):
+            if r.get(campo) and stato_scadenza(r[campo], giorno) == "in scadenza":
+                avvisi.append(f"{nome_stampa(r)}: il {cosa} scade il {data_da_iso(r[campo]):%d/%m/%Y}.")
+    return avvisi
+
+
 # --- PDF sul modello della società -------------------------------------------------------------
 
 def genera_pdf_distinta(distinta, persone, nome_societa):
@@ -173,19 +213,24 @@ def genera_pdf_distinta(distinta, persone, nome_societa):
     s_dich = ParagraphStyle("D", fontName="Helvetica", fontSize=7.5, leading=9)
     nero = colors.black
 
-    def campo(etichetta_, valore):
-        return [Paragraph(_esc(etichetta_), s_etich), Paragraph(_esc(valore), s_val)]
+    def campo(etichetta_, valore, larghezza):
+        """Il valore su una riga sola: il carattere si rimpicciolisce se il testo è lungo (fino a 7 punti)."""
+        corpo = 11
+        while corpo > 7 and stringWidth(valore, "Helvetica", corpo) > larghezza - 5:
+            corpo -= 0.5
+        stile = ParagraphStyle("V", parent=s_val, fontSize=corpo, leading=corpo + 2)
+        return [Paragraph(_esc(etichetta_), s_etich), Paragraph(_esc(valore), stile)]
 
     # Intestazione: stemma a sinistra, società e dati della gara a destra
     giorno = data_da_iso(distinta.get("data"))
     gara = f"{distinta.get('casa', '')} - {distinta.get('ospite', '')}"
     dati_gara = Table([
         ["", Paragraph(_esc(nome_societa), s_titolo), "", ""],
-        campo("Elenco dei calciatori che partecipano alla gara:", gara) + ["", ""],
-        campo("valevole per:", distinta.get("competizione", "")) + ["", ""],
-        campo("in programma il:", f"{giorno:%d/%m/%Y}" if giorno else "") + campo("a:", distinta.get("localita", "")),
-        campo("stadio/campo:", distinta.get("campo", "")) + campo("ore:", distinta.get("ora", "")),
-    ], colWidths=[105, 200, 30, 97])
+        campo("Elenco dei calciatori che partecipano alla gara:", gara, 286) + ["", ""],
+        campo("valevole per:", distinta.get("competizione", ""), 286) + ["", ""],
+        campo("in programma il:", f"{giorno:%d/%m/%Y}" if giorno else "", 155) + campo("a:", distinta.get("localita", ""), 106),
+        campo("stadio/campo:", distinta.get("campo", ""), 155) + campo("ore:", distinta.get("ora", ""), 106),
+    ], colWidths=[95, 155, 25, 111])
     dati_gara.setStyle(TableStyle([
         ("SPAN", (1, 0), (3, 0)), ("SPAN", (1, 1), (3, 1)), ("SPAN", (1, 2), (3, 2)),
         ("VALIGN", (0, 0), (-1, -1), "BOTTOM"), ("LEFTPADDING", (0, 0), (-1, -1), 2),
@@ -194,8 +239,14 @@ def genera_pdf_distinta(distinta, persone, nome_societa):
         ("LINEBELOW", (3, 3), (3, 4), 0.6, nero), ("BOTTOMPADDING", (0, 0), (-1, 0), 10),
     ]))
     logo = _carica_logo(78) or ""
-    testa = Table([[logo, dati_gara]], colWidths=[larga - 440, 440])
+    try:  # il logo LND in alto a destra, come nel modulo
+        larghezza, altezza = ImageReader(LOGO_LND).getSize()
+        lnd = Image(LOGO_LND, width=52, height=52 * altezza / larghezza)
+    except Exception:
+        lnd = ""
+    testa = Table([[logo, dati_gara, lnd]], colWidths=[larga - 450, 386, 64])
     testa.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "MIDDLE"), ("ALIGN", (0, 0), (0, 0), "CENTER"),
+                               ("ALIGN", (2, 0), (2, 0), "CENTER"), ("VALIGN", (2, 0), (2, 0), "TOP"),
                                ("BOX", (0, 0), (-1, -1), 1, nero), ("LEFTPADDING", (1, 0), (1, 0), 0),
                                ("RIGHTPADDING", (1, 0), (1, 0), 4), ("TOPPADDING", (0, 0), (-1, -1), 4),
                                ("BOTTOMPADDING", (0, 0), (-1, -1), 5)]))
