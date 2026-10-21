@@ -65,6 +65,7 @@ from ui_presenze import render_presenze
 from ui_registro import render_registro_e_backup
 from ui_cronaca import render_cronaca
 from ui_sponsor import loghi_per_pdf, render_gestione_sponsor
+from ui_classifica import render_classifica
 from ui_statistiche import render_statistiche
 
 # Deve essere il PRIMO comando Streamlit
@@ -356,7 +357,7 @@ def pubblica_attesa():
         return False
     from pagina_attesa import dati_attesa  # prossime partite e ultimi risultati: solo dati pubblici
     attesa = json.dumps({"stato": "in_attesa", "aggiornato": datetime.now(timezone.utc).isoformat(timespec="seconds"),
-                         **dati_attesa()}, ensure_ascii=False, indent=2).encode("utf-8")
+                         **dati_attesa(nome_societa=nome_societa())}, ensure_ascii=False, indent=2).encode("utf-8")
     for file in ({"distinta.json": attesa, "distinta.pdf": None}, {"distinta.json": attesa}):
         try:  # il PDF potrebbe non esserci già più: allora si aggiorna solo distinta.json
             pubblica_su_github(token=token, repo=repo, file_da_pubblicare=file,
@@ -717,7 +718,11 @@ def render_segreteria():
         render_presenze(st.session_state.get("utente", ""), st.session_state.get("ruolo"))
         return
     if sezione == "📊 Statistiche":
-        render_statistiche(nome_societa())
+        giocatori, tab_classifica = st.tabs(["📊 Giocatori", "🏆 Classifica"])
+        with giocatori:
+            render_statistiche(nome_societa())
+        with tab_classifica:
+            render_classifica(nome_societa())
         return
     if sezione == ARCHIVIO:
         # Chi ha solo la sola lettura guarda le partite senza cambiarle; un allenatore vede le sue squadre
