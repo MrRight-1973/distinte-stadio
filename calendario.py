@@ -119,8 +119,10 @@ def nostra_squadra(calendario, nome_societa):
 
 
 def partite_di(calendario, squadra, dal=""):
-    """Le partite della squadra, dalla data indicata in poi."""
-    return [p for p in calendario["partite"] if squadra in (p["casa"], p["ospite"]) and p["data"] >= dal]
+    """Le partite della squadra, dalla data indicata in poi, in ordine di data (non di giornata: i recuperi e le
+    partite spostate finiscono al loro posto)."""
+    return sorted((p for p in calendario["partite"] if squadra in (p["casa"], p["ospite"]) and p["data"] >= dal),
+                  key=lambda p: (p["data"], p.get("ora", "")))
 
 
 def distinte_da_calendario(calendario, nostra, partite, modello, distinte):
