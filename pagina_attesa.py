@@ -4,7 +4,7 @@ risultato, mai i nomi dei ragazzi."""
 from datetime import date
 
 import archivio_cloud
-from classifica import classifiche, nostra_riga
+from classifica import classifiche, nome_fonte, nostra_riga
 from distinta_ufficiale import distinte_stagione
 from stagioni import impostazioni_stagioni, stagione_di_oggi
 from ui_archivio import data_ordinabile
@@ -41,6 +41,7 @@ def classifica_attesa(oggi=None, nome_societa=""):
     gruppo = next((d["gruppo"] for d in prossime if d.get("gruppo") in tutte), next(iter(tutte)))
     c = tutte[gruppo]
     return {"gruppo": gruppo, "aggiornata": c.get("aggiornata", ""), "nostra": nostra_riga(c["righe"], nome_societa),
+            "fonte": nome_fonte(c.get("fonte")),
             "righe": [{k: r.get(k) for k in ("pos", "squadra", "pt", "g")} for r in c["righe"]]}
 
 

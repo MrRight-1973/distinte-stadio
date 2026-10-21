@@ -1,0 +1,31 @@
+# Aggiorna da sola le classifiche salvate nell'app (📊 Statistiche → 🏆 Classifica): per ogni squadra con un
+# link della LND (gare.lnd.it) o di Tuttocampo, un browser apre la pagina, legge la classifica e la salva in
+# Supabase. Usa gli stessi secrets della "Sveglia archivio Supabase": SUPABASE_URL e SUPABASE_KEY.
+name: Classifiche
+
+on:
+  schedule:
+    - cron: "23 6,20 * * *"  # ogni giorno alle 6:23 e alle 20:23 UTC
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  classifiche:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Prepara Python e il browser
+        run: |
+          pip install --quiet -r requirements.txt playwright==1.48.0
+          python -m playwright install --with-deps chromium
+      - name: Leggi e salva le classifiche
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+        run: python aggiorna_classifiche.py
