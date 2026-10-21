@@ -1,0 +1,49 @@
+# Tiene sveglia l'app su Streamlit Community Cloud: senza visite per circa 12 ore l'app si addormenta
+# e al primo accesso bisogna premere "Yes, get this app back up!" e aspettare. Ogni 4 ore un browser
+# apre l'app; se la trova addormentata preme il pulsante e aspetta che riparta.
+# Serve la variabile del repository APP_URL con l'indirizzo dell'app, es. https://nome.streamlit.app
+# (Settings > Secrets and variables > Actions > scheda Variables).
+name: Sveglia app Streamlit
+
+on:
+  schedule:
+    - cron: "41 */4 * * *"  # ogni 4 ore
+  workflow_dispatch: {}
+
+jobs:
+  sveglia:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Prepara il browser
+        if: ${{ vars.APP_URL != '' }}
+        run: |
+          pip install --quiet playwright==1.48.0
+          python -m playwright install --with-deps chromium
+      - name: Apri l'app
+        env:
+          APP_URL: ${{ vars.APP_URL }}
+        run: |
+          if [ -z "$APP_URL" ]; then
+            echo "Variabile APP_URL non configurata: niente da fare."
+            exit 0
+          fi
+          python - <<'PY'
+          import os
+          from playwright.sync_api import sync_playwright
+
+          url = os.environ["APP_URL"]
+          with sync_playwright() as p:
+              browser = p.chromium.launch()
+              pagina = browser.new_page()
+              pagina.goto(url, wait_until="domcontentloaded", timeout=90_000)
+              pagina.wait_for_timeout(8_000)
+              pulsante = pagina.get_by_role("button", name="get this app back up")
+              if pulsante.count():
+                  print("L'app dormiva: la risveglio.")
+                  pulsante.first.click()
+                  pagina.wait_for_timeout(120_000)  # il riavvio richiede un paio di minuti
+              else:
+                  print("L'app è sveglia.")
+              browser.close()
+          PY
