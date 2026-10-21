@@ -15,7 +15,7 @@ ETICHETTE_CAMPI = {
     "cognome": "cognome", "nome": "nome", "matricola": "matricola", "nascita": "data di nascita",
     "anno_nascita": "anno di nascita", "documento_tipo": "tipo documento", "documento_numero": "numero documento",
     "documento_rilascio": "rilascio documento", "documento_scadenza": "scadenza documento",
-    "certificato_scadenza": "scadenza certificato", "gruppi": "squadra", "tipo": "tipo",
+    "certificato_scadenza": "scadenza certificato", "consenso_foto": "consenso foto", "gruppi": "squadra", "tipo": "tipo",
 }
 
 

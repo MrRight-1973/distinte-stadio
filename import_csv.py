@@ -157,6 +157,7 @@ COLONNE_ANAGRAFICA = {  # campo della scheda -> nomi accettati nell'intestazione
     "documento_rilascio": ("rilasciatoda", "rilascio", "rilasciato", "enterilascio"),
     "documento_scadenza": ("scadenzadocumento", "scadenzadoc", "scadenza"),
     "certificato_scadenza": ("scadenzacertificato", "certificato", "certificatomedico"),
+    "consenso_foto": ("consensofoto", "consenso", "liberatoria", "liberatoriafoto", "foto"),
     "ruolo": ("ruolo",), "gruppo": ("squadra", "gruppo", "grupposquadra"),
 }
 
