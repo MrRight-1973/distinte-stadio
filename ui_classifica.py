@@ -25,7 +25,7 @@ def _tabella(righe, nome_societa):
     stile = df.style.apply(lambda riga: ["font-weight:700;background-color:rgba(30,90,200,.12)"
                                          if riga["#"] == nostra else "" for _ in riga], axis=1)
     piccole = {COLONNE[k]: st.column_config.NumberColumn(COLONNE[k], width=40) for k in chiavi if k != "squadra"}
-    st.dataframe(stile, hide_index=True, width="content", height=min(35 * len(righe) + 40, 700),
+    st.dataframe(stile, hide_index=True, width="stretch", height=min(35 * len(righe) + 40, 700),
                  column_config={**piccole, "Stemma": st.column_config.ImageColumn("", width=40),
                                 "Squadra": st.column_config.TextColumn("Squadra", width=180)})
 
@@ -44,10 +44,9 @@ def _grafico(gruppo, stagione, righe, nome_societa):
     nostra = next((s for s in squadre if nostra and s.lower() == nostra.lower()), None)
     prime = [r["squadra"] for r in righe[:3]]
     proposte = [s for s in squadre if s == nostra or s.lower() in (p.lower() for p in prime)]
-    c1, c2 = st.columns([3, 1])
-    scelte = c1.multiselect("Squadre", squadre, default=proposte, key=f"cl_grafico_{gruppo}",
+    scelte = st.multiselect("Squadre", squadre, default=proposte, key=f"cl_grafico_{gruppo}",
                             label_visibility="collapsed", placeholder="Scegli le squadre da confrontare")
-    misura = c2.segmented_control("Mostra", ["Punti", "Posizione"], default="Punti", key=f"cl_misura_{gruppo}",
+    misura = st.segmented_control("Mostra", ["Punti", "Posizione"], default="Punti", key=f"cl_misura_{gruppo}",
                                   label_visibility="collapsed") or "Punti"
     if not scelte:
         return
@@ -79,8 +78,12 @@ def render_classifica(nome_societa=""):
                    + (f" · [fonte]({salvata['fonte']})" if salvata.get("fonte") else "")
                    + (f" · dati {nome_fonte(salvata.get('fonte'))}" if nome_fonte(salvata.get("fonte")) else "")
                    + " · fa fede il Comunicato Ufficiale.")
-        _tabella(salvata["righe"], nome_societa)
-        _grafico(gruppo, stagione, salvata["righe"], nome_societa)
+        # su PC il grafico sta accanto alla classifica, sul telefono sotto
+        sinistra, destra = st.columns([5, 6], gap="large")
+        with sinistra:
+            _tabella(salvata["righe"], nome_societa)
+        with destra:
+            _grafico(gruppo, stagione, salvata["righe"], nome_societa)
     elif salvata and nome_fonte(salvata.get("fonte")):
         st.info(f"Link salvato per {gruppo}: la classifica arriva con il prossimo aggiornamento.")
     else:
