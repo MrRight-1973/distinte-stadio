@@ -4,6 +4,7 @@ import pandas as pd
 import streamlit as st
 
 import girone
+import loghi
 from classifica import classifiche, nostra_riga
 from stagioni import gruppi_correnti
 
@@ -47,11 +48,17 @@ def _evidenzia(df, colonne, nome):
 
 
 def _tabella_partite(partite, nostra, con_giornata=False):
+    stemmi = loghi.tutti()
+    con_stemmi = any(loghi.di(p[lato], stemmi) for _, p in partite for lato in ("casa", "ospite"))
     righe = [{**({"Giornata": girone.etichetta(k)} if con_giornata else {}), "Data": _data(p.get("data")),
-              "Ora": p.get("ora", ""), "Casa": p["casa"], "Risultato": _risultato(p), "Ospite": p["ospite"],
-              "Campo": p.get("campo", "")} for k, p in partite]
+              "Ora": p.get("ora", ""), **({"S1": loghi.di(p["casa"], stemmi) or None} if con_stemmi else {}),
+              "Casa": p["casa"], "Risultato": _risultato(p),
+              **({"S2": loghi.di(p["ospite"], stemmi) or None} if con_stemmi else {}),
+              "Ospite": p["ospite"], "Campo": p.get("campo", "")} for k, p in partite]
     df = pd.DataFrame(righe)
-    st.dataframe(_evidenzia(df, ["Casa", "Ospite"], nostra), hide_index=True, width="stretch")
+    st.dataframe(_evidenzia(df, ["Casa", "Ospite"], nostra), hide_index=True, width="stretch",
+                 column_config={"S1": st.column_config.ImageColumn("", width="small"),
+                                "S2": st.column_config.ImageColumn("", width="small")})
 
 
 def _giornata_attuale(giornate):
@@ -118,6 +125,8 @@ def render_avversari(nome_societa=""):
     squadra = st.selectbox("🔍 Squadra da guardare", avversari + ([nostra] if nostra else []),
                            key=f"gi_squadra_{gruppo}")
     sc = girone.scheda_squadra(giornate, squadra)
+    if loghi.di(squadra):
+        st.image(loghi.di(squadra), width=64)
     riga = next((r for r in (classifiche().get(gruppo) or {}).get("righe", [])
                  if r["squadra"].lower() == squadra.lower()), None)
     c1, c2, c3, c4 = st.columns(4)

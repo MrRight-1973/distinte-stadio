@@ -4,6 +4,7 @@ risultato, mai i nomi dei ragazzi."""
 from datetime import date
 
 import archivio_cloud
+import loghi
 from classifica import classifiche, nome_fonte, nostra_riga
 from distinta_ufficiale import distinte_stagione
 from stagioni import impostazioni_stagioni, stagione_di_oggi
@@ -40,15 +41,21 @@ def classifica_attesa(oggi=None, nome_societa=""):
                       key=lambda d: d.get("data", ""))
     gruppo = next((d["gruppo"] for d in prossime if d.get("gruppo") in tutte), next(iter(tutte)))
     c = tutte[gruppo]
+    try:
+        stemmi = loghi.tutti()
+    except Exception:  # noqa: BLE001 - senza stemmi la classifica si mostra lo stesso
+        stemmi = {}
     return {"gruppo": gruppo, "aggiornata": c.get("aggiornata", ""), "nostra": nostra_riga(c["righe"], nome_societa),
             "fonte": nome_fonte(c.get("fonte")),
-            "righe": [{k: r.get(k) for k in ("pos", "squadra", "pt", "g")} for r in c["righe"]]}
+            "righe": [{**{k: r.get(k) for k in ("pos", "squadra", "pt", "g")}, "logo": loghi.di(r["squadra"], stemmi)}
+                      for r in c["righe"]]}
 
 
 def dati_attesa(oggi=None, nome_societa=""):
-    """{"prossime": [...], "risultati": [...], "classifica": {...}}; quello che non si riesce a leggere resta
-    vuoto."""
-    dati = {}
+    """{"prossime": [...], "risultati": [...], "classifica": {...}, "classifica_url": ...}; quello che non si
+    riesce a leggere resta vuoto. classifica_url è la copia pubblica che l'Action "Classifiche" aggiorna mattina
+    e sera: la pagina spettatori la preferisce a quella scritta qui, che resta ferma a quando si pubblica."""
+    dati = {"classifica_url": archivio_cloud.url_pubblico("classifica.json")}
     for chiave, funzione in (("prossime", lambda: prossime_partite(oggi)), ("risultati", ultimi_risultati),
                              ("classifica", lambda: classifica_attesa(oggi, nome_societa))):
         try:

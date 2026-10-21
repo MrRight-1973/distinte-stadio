@@ -35,5 +35,6 @@ jobs:
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+          NOME_SOCIETA: "A.S.D. Azzurra Due Carrare"  # per evidenziare la nostra riga sulla pagina spettatori
           MOSTRA_TESTO: ${{ inputs.mostra_testo || 'no' }}
         run: python aggiorna_classifiche.py

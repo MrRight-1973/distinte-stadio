@@ -3,6 +3,7 @@ dalla pagina della LND (il link si imposta in ⚙️ Opzioni → 🌐 Dati LND).
 import pandas as pd
 import streamlit as st
 
+import loghi
 from classifica import classifiche, nome_fonte, nostra_riga
 from stagioni import gruppi_correnti
 
@@ -13,10 +14,15 @@ COLONNE = {"pos": "#", "squadra": "Squadra", "pt": "Pt", "g": "G", "v": "V", "n"
 def _tabella(righe, nome_societa):
     nostra = nostra_riga(righe, nome_societa)
     chiavi = [k for k in COLONNE if any(r.get(k) is not None for r in righe)]  # la LND non dà GF e GS
-    df = pd.DataFrame([{COLONNE[k]: r.get(k) for k in chiavi} for r in righe])
+    stemmi = loghi.tutti()
+    con_stemmi = any(loghi.di(r["squadra"], stemmi) for r in righe)
+    df = pd.DataFrame([{COLONNE["pos"]: r.get("pos"), **({"Stemma": loghi.di(r["squadra"], stemmi) or None}
+                                                          if con_stemmi else {}),
+                        **{COLONNE[k]: r.get(k) for k in chiavi if k != "pos"}} for r in righe])
     stile = df.style.apply(lambda riga: ["font-weight:700;background-color:rgba(30,90,200,.12)"
                                          if riga["#"] == nostra else "" for _ in riga], axis=1)
-    st.dataframe(stile, hide_index=True, width="stretch", height=min(35 * len(righe) + 40, 700))
+    st.dataframe(stile, hide_index=True, width="stretch", height=min(35 * len(righe) + 40, 700),
+                 column_config={"Stemma": st.column_config.ImageColumn("", width="small")})
 
 
 def render_classifica(nome_societa=""):
