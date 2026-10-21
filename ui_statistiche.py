@@ -10,8 +10,10 @@ from cronaca_manager import carica_cronaca
 from giornata import etichetta_giornata
 from presenze import allenato_complessivo
 from stagioni import gruppo_di, impostazioni_stagioni, stagione_partita
-from statistiche import chiave_squadra, risultati_squadra, squadre_presenti, statistiche_squadra
-from statistiche_pdf import PARTI, genera_pdf_statistiche
+from statistiche import (chiave_giocatore, chiave_squadra, data_ordinabile, etichetta_partita, giocata,
+                         lato_della_squadra, risultati_squadra, squadre_presenti, statistiche_partita,
+                         statistiche_squadra)
+from statistiche_pdf import PARTI, genera_pdf_scheda, genera_pdf_statistiche
 
 COLONNE = {"giocatore": "Giocatore", "convocazioni": "Convocato", "presenze": "Presenze", "titolare": "Da titolare",
            "minuti": "Minuti", "media": "Min/partita", "gol": "⚽ Gol", "assist": "🅰️ Assist",
@@ -45,6 +47,41 @@ def _allenato(stagioni, gruppi, riepilogo):
             svolti, segnati = totali[scheda["id"]]
             risultato[r["giocatore"]] = round(100 * svolti / segnati)
     return risultato
+
+
+def _scheda(riepilogo, partite, chiave, allenato, squadra, filtro):
+    """Un giocatore alla volta: i suoi numeri e le sue partite, da mostrare o stampare."""
+    nome = st.selectbox("Giocatore", [r["giocatore"] for r in riepilogo], index=None, key="stat_scheda",
+                        placeholder="Scegli un giocatore")
+    if not nome:
+        return
+    totali = next(r for r in riepilogo if r["giocatore"] == nome)
+    k = chiave_giocatore(nome)
+    righe = []
+    for c in sorted(partite, key=data_ordinabile):
+        lato = lato_della_squadra(c, chiave)
+        g = statistiche_partita(c, lato).get(k) if lato and giocata(c) else None
+        if g:
+            etichetta = etichetta_partita(c, lato)
+            righe.append({"data": str((c.get("partita") or {}).get("data") or "").split(" ore")[0],
+                          "partita": " · ".join(x for x in etichetta.split(" · ") if "/" not in x),
+                          **{x: g[x] for x in ("titolare", "minuti", "gol", "assist", "ammonizioni", "espulsioni")}})
+    m = st.columns(4)
+    m[0].metric("Presenze", f"{totali['presenze']} su {totali['convocazioni']}",
+                help="Partite in cui è entrato in campo, sulle convocazioni")
+    m[1].metric("Minuti", totali["minuti"], help=f"Da titolare {totali['titolare']} volte")
+    m[2].metric("⚽ Gol / 🅰️ Assist", f"{totali['gol']} / {totali['assist']}")
+    m[3].metric("🟨 / 🟥", f"{totali['ammonizioni']} / {totali['espulsioni']}")
+    if allenato.get(nome) is not None:
+        st.caption(f"🏃 Allenamenti svolti: {allenato[nome]}%")
+    st.dataframe(pd.DataFrame([{"Data": r["data"], "Partita": r["partita"], "Titolare": "✓" if r["titolare"] else "",
+                                "Minuti": r["minuti"], "⚽": r["gol"] or "", "🅰️": r["assist"] or "",
+                                "🟨": r["ammonizioni"] or "", "🟥": r["espulsioni"] or ""} for r in reversed(righe)]),
+                 hide_index=True, use_container_width=True)
+    st.download_button("🖨️ Scarica la scheda (PDF)", genera_pdf_scheda(nome, squadra, filtro, totali, righe,
+                                                                        allenato.get(nome)),
+                       file_name=f"Scheda_{nome.replace(' ', '_')}.pdf", mime="application/pdf",
+                       key="stat_scheda_pdf", use_container_width=True)
 
 
 def render_statistiche(nome_societa=""):
@@ -137,6 +174,9 @@ def render_statistiche(nome_societa=""):
         griglia = pd.DataFrame({t: minuti for t, (_, minuti) in zip(intestazioni, per_partita)})
         griglia = griglia.reindex([r["giocatore"] for r in riepilogo]).fillna(0).astype(int)
         st.dataframe(griglia, use_container_width=True)
+
+    with st.expander("🧑 Scheda del giocatore"):
+        _scheda(riepilogo, partite, chiave, allenato, dict(squadre)[chiave], " · ".join(filtro))
 
     with st.expander("🖨️ Crea PDF delle statistiche"):
         scelte = [k for k, testo in PARTI.items() if st.checkbox(testo, value=k != "minuti", key=f"stat_pdf_{k}")]

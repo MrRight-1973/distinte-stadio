@@ -301,3 +301,47 @@ def _grafico_presenze(righe, larghezza, riga=15):
         px = etichette + barra_max * media / 100
         disegno.add(Line(px, 12, px, alto, strokeColor=BLU, strokeWidth=1, strokeDashArray=[3, 2]))
     return disegno
+
+
+def genera_pdf_scheda(giocatore, squadra, filtro, totali, partite, allenato=None):
+    """Una pagina per un giocatore: i numeri della stagione e le sue partite una per riga.
+    totali: la riga del riepilogo; partite: [{data, partita, titolare, minuti, gol, assist, ammonizioni, espulsioni}]."""
+    buffer = io.BytesIO()
+    doc = BaseDocTemplate(buffer, pagesize=A4, title=f"Scheda {giocatore}",
+                          leftMargin=MARGINE, rightMargin=MARGINE, topMargin=MARGINE, bottomMargin=MARGINE)
+    doc.addPageTemplates([PageTemplate("verticale", [Frame(MARGINE, MARGINE, A4[0] - 2 * MARGINE,
+                                                           A4[1] - 2 * MARGINE)])])
+    larghezza = A4[0] - 2 * MARGINE
+    stili = getSampleStyleSheet()
+    s_titolo = ParagraphStyle("T", parent=stili["Heading1"], fontSize=16, leading=19, textColor=BLU, spaceAfter=2)
+    s_sezione = ParagraphStyle("S", parent=stili["Heading2"], fontSize=12, leading=14, textColor=BLU,
+                               spaceBefore=10, spaceAfter=5)
+    s_info = ParagraphStyle("I", parent=stili["Normal"], fontSize=8.5, leading=11, textColor=GRIGIO)
+
+    logo = _carica_logo()
+    intestazione = [Paragraph(f"<b>{_esc(giocatore)}</b>", s_titolo),
+                    Paragraph(_esc(" · ".join(x for x in (squadra, filtro) if x)), s_info)]
+    t = Table([[intestazione, logo or ""]], colWidths=[larghezza - 60, 60])
+    t.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "MIDDLE"), ("ALIGN", (1, 0), (1, 0), "RIGHT"),
+                           ("LEFTPADDING", (0, 0), (-1, -1), 0), ("LINEBELOW", (0, 0), (-1, -1), 1, LINEA),
+                           ("BOTTOMPADDING", (0, 0), (-1, -1), 6)]))
+    titoli = ["Convocato", "Presenze", "Da titolare", "Minuti", "Gol", "Assist", "Ammonizioni", "Espulsioni"]
+    valori = [totali[k] for k in ("convocazioni", "presenze", "titolare", "minuti", "gol", "assist", "ammonizioni",
+                                  "espulsioni")]
+    if allenato is not None:
+        titoli.append("Allenato")
+        valori.append(f"{allenato}%")
+    numeri = Table([titoli, valori], colWidths=[larghezza / len(titoli)] * len(titoli))
+    numeri.setStyle(_stile_tabella(0))
+    righe = [["Data", "Partita", "Tit.", "Minuti", "Gol", "Assist", "Amm.", "Esp."]]
+    for p in partite:
+        righe.append([p["data"], Paragraph(_esc(p["partita"]), ParagraphStyle("c", fontSize=8, leading=9.5)),
+                      "Sì" if p["titolare"] else "", p["minuti"], p["gol"] or "", p["assist"] or "",
+                      p["ammonizioni"] or "", p["espulsioni"] or ""])
+    elenco = Table(righe, colWidths=[55, larghezza - 55 - 6 * 42] + [42] * 6, repeatRows=1)
+    elenco.setStyle(_stile_tabella(2))
+    adesso = datetime.now(ORA_ITALIANA)
+    story = [t, Paragraph("Stagione", s_sezione), numeri, Paragraph("Partita per partita", s_sezione), elenco,
+             Spacer(1, 8), Paragraph(f"Dati dalla cronaca delle partite · {adesso:%d/%m/%Y}", s_info)]
+    doc.build(story)
+    return buffer.getvalue()
