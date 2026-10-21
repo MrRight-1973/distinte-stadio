@@ -161,9 +161,12 @@ def controlli(distinta, persone):
     doppi = sorted({n for n in numeri if numeri.count(n) > 1})
     if doppi:
         problemi.append("Numeri di maglia ripetuti: " + ", ".join(str(n) for n in doppi) + ".")
-    capitani = [g for g in giocatori if g.get("cap") == "C"]
-    if len(capitani) > 1:
-        problemi.append("C'è più di un capitano.")
+    for fascia, chi in (("C", "capitano"), ("VC", "vicecapitano")):
+        quanti = sum(1 for g in giocatori if g.get("cap") == fascia)
+        if giocatori and not quanti:
+            problemi.append(f"Manca il {chi}: mettilo nella colonna Cap. ({fascia}).")
+        elif quanti > 1:
+            problemi.append(f"C'è più di un {chi}.")
     for g in giocatori:
         r = persone.get(g["id"])
         if not r:
