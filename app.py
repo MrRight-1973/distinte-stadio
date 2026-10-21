@@ -66,6 +66,7 @@ from ui_registro import render_registro_e_backup
 from ui_cronaca import render_cronaca
 from ui_sponsor import loghi_per_pdf, render_gestione_sponsor
 from ui_classifica import render_classifica
+from ui_girone import render_avversari, render_risultati
 from ui_statistiche import render_statistiche
 
 # Deve essere il PRIMO comando Streamlit
@@ -718,11 +719,16 @@ def render_segreteria():
         render_presenze(st.session_state.get("utente", ""), st.session_state.get("ruolo"))
         return
     if sezione == "📊 Statistiche":
-        giocatori, tab_classifica = st.tabs(["📊 Giocatori", "🏆 Classifica"])
+        giocatori, tab_classifica, risultati, avversari = st.tabs(
+            ["📊 Giocatori", "🏆 Classifica", "📅 Risultati", "🔍 Avversari"])
         with giocatori:
             render_statistiche(nome_societa())
         with tab_classifica:
             render_classifica(nome_societa())
+        with risultati:
+            render_risultati(nome_societa())
+        with avversari:
+            render_avversari(nome_societa())
         return
     if sezione == ARCHIVIO:
         # Chi ha solo la sola lettura guarda le partite senza cambiarle; un allenatore vede le sue squadre
