@@ -9,7 +9,7 @@ from datetime import date
 import pandas as pd
 import streamlit as st
 
-from anagrafica import (CALCIATORE, GIORNI_AVVISO, RUOLI_CAMPO, TIPI_DOCUMENTO, TIPI_PERSONA, applica_tabulato,
+from anagrafica import (CALCIATORE, CONSENSI_FOTO, CONSENSO_NO, CONSENSO_SI, GIORNI_AVVISO, RUOLI_CAMPO, TIPI_DOCUMENTO, TIPI_PERSONA, applica_tabulato,
                         confronta_tabulato, data_da_iso, doppione,
                         e_calciatore, elenco_ragazzi, elimina_scheda, importa_rose, importa_schede, nome_completo, salva_scheda, scadenze,
                         stato_scadenza)
@@ -21,6 +21,7 @@ from utenti import gruppi_utente
 TUTTI, SENZA = "Tutti", "Senza squadra quest'anno"
 RAGAZZI, STAFF = "👦 Calciatori", "👔 Dirigenti e staff"
 SEGNI = {"scaduto": "🔴", "in scadenza": "🟠", "ok": "🟢", "": ""}
+SEGNI_FOTO = {CONSENSO_SI: "✅ Sì", CONSENSO_NO: "🚫 No", "": "❔"}
 
 
 def _data(valore):
@@ -113,12 +114,19 @@ def render_anagrafica(utente, ruolo):
                   "Nato": _data(r.get("nascita")) or r.get("anno_nascita", ""),
                   "Squadra": squadra_di[r["id"]], "Ruolo": r.get("ruolo", ""), "Matricola": r.get("matricola", ""),
                   "Certificato": _con_segno(r.get("certificato_scadenza")),
-                  "Documento": _con_segno(r.get("documento_scadenza"))} for r in elenco]
+                  "Documento": _con_segno(r.get("documento_scadenza")),
+                  "Foto": SEGNI_FOTO[r.get("consenso_foto", "")]} for r in elenco]
         tabella = pd.DataFrame(righe)
         scelta = st.dataframe(tabella, hide_index=True, use_container_width=True, on_select="rerun",
                               selection_mode="single-row", key=f"anag_tabella_{filtro}_{cerca}_{n}",
                               height=min(35 * len(righe) + 40, 460))
-        st.caption(f"{len(elenco)} ragazzi. Seleziona una riga per aprire la scheda.")
+        st.caption(f"{len(elenco)} ragazzi. Seleziona una riga per aprire la scheda. Foto = consenso a foto e "
+                   "video sui canali della società (❔ non ancora chiesto).")
+        no_foto = [r for r in elenco if r.get("consenso_foto") == CONSENSO_NO]
+        if no_foto:
+            with st.expander(f"🚫 Senza consenso foto ({len(no_foto)}): da non pubblicare"):
+                st.markdown("\n".join(f"- {nome_completo(r)} · {squadra_di[r['id']] or 'senza squadra'}"
+                                       for r in no_foto))
         if scelta.selection.rows:
             _scheda(elenco[scelta.selection.rows[0]], stagione, miei if not staff else nomi_gruppi, staff, n)
 
@@ -180,6 +188,16 @@ def _scheda(r, stagione, gruppi_ammessi, staff, n, nuova=False):
                                       format="DD/MM/YYYY", min_value=date(2000, 1, 1), max_value=date(2100, 1, 1))
             genitore = c2.text_input("Genitore di riferimento", value=r.get("genitore", ""))
             telefono = c3.text_input("Telefono", value=r.get("telefono", ""))
+        if persona_staff:
+            consenso_foto = r.get("consenso_foto", "")
+        else:
+            consenso_foto = st.selectbox(
+                "📷 Consenso a foto e video", CONSENSI_FOTO,
+                index=CONSENSI_FOTO.index(r.get("consenso_foto", "")) if r.get("consenso_foto", "") in CONSENSI_FOTO else 0,
+                format_func=lambda x: {"": "❔ Non ancora chiesto", CONSENSO_SI: "✅ Sì, firmato",
+                                       CONSENSO_NO: "🚫 No"}[x],
+                help="Il modulo firmato dai genitori (o dal giocatore maggiorenne) resta in segreteria: qui si "
+                     "segna solo la risposta.")
         salva, annulla = st.columns(2)
         premuto = salva.form_submit_button("💾 Salva", type="primary", use_container_width=True)
         chiudi = annulla.form_submit_button("✖️ Chiudi", use_container_width=True)
@@ -197,7 +215,7 @@ def _scheda(r, stagione, gruppi_ammessi, staff, n, nuova=False):
                   "ruolo": ruolo, "matricola": matricola, "documento_tipo": tipo, "documento_numero": numero_doc,
                   "documento_rilascio": rilascio,
                   "documento_scadenza": scad_doc, "certificato_scadenza": scad_cert, "genitore": genitore,
-                  "telefono": telefono, "gruppi": gruppi}
+                  "telefono": telefono, "consenso_foto": consenso_foto, "gruppi": gruppi}
         uguale = doppione({**scheda, "cognome": cognome.upper(), "nome": nome.upper(),
                            "nascita": nascita.strftime("%Y-%m-%d") if nascita else ""}, elenco_ragazzi())
         if uguale:

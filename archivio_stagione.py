@@ -23,7 +23,8 @@ from statistiche_pdf import PARTI, genera_pdf_presenze, genera_pdf_statistiche
 CAMPI_CSV = [("cognome", "Cognome"), ("nome", "Nome"), ("nascita", "Data di nascita"), ("matricola", "Matricola"),
              ("ruolo", "Ruolo"), ("documento_tipo", "Tipo documento"), ("documento_numero", "Numero documento"),
              ("documento_rilascio", "Rilasciato da"), ("documento_scadenza", "Scadenza documento"),
-             ("certificato_scadenza", "Scadenza certificato"), ("genitore", "Genitore"), ("telefono", "Telefono")]
+             ("certificato_scadenza", "Scadenza certificato"), ("genitore", "Genitore"), ("telefono", "Telefono"),
+             ("consenso_foto", "Consenso foto")]
 
 
 def _file(nome):

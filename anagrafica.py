@@ -20,13 +20,22 @@ from cronaca_manager import _cartella_dati, _carica_online, _leggi_file
 from statistiche import chiave_giocatore
 
 PERCORSO_ONLINE = "impostazioni/anagrafica.json"
-RUOLI_CAMPO = ["", "Portiere", "Difensore", "Centrocampista", "Attaccante"]
+# I ruoli generici (Difensore, Centrocampista, Attaccante) restano per le schede già salvate e per chi non vuole
+# essere più preciso
+RUOLI_CAMPO = ["", "Portiere",
+               "Difensore", "Difensore centrale", "Terzino destro", "Terzino sinistro", "Esterno difensivo",
+               "Centrocampista", "Centrocampista centrale", "Centrocampista destro", "Centrocampista sinistro",
+               "Mediano", "Regista", "Mezzala destra", "Mezzala sinistra", "Trequartista",
+               "Attaccante", "Ala destra", "Ala sinistra", "Seconda punta", "Centravanti"]
+# Consenso dei genitori (o del giocatore maggiorenne) a foto e video sui canali della società
+CONSENSO_SI, CONSENSO_NO = "Sì", "No"
+CONSENSI_FOTO = ["", CONSENSO_SI, CONSENSO_NO]
 TIPI_DOCUMENTO = ["", "Carta d'identità", "Passaporto", "Patente", "Altro"]
 CALCIATORE = "Calciatore"
 TIPI_PERSONA = [CALCIATORE, "Dirigente", "Allenatore", "Staff sanitario", "Altro staff"]
 GIORNI_AVVISO = 30  # scadenze segnalate con un mese di anticipo
 CAMPI_TESTO = ("cognome", "nome", "matricola", "documento_tipo", "documento_numero", "documento_rilascio",
-               "ruolo", "genitore", "telefono", "tipo", "qualifica")
+               "ruolo", "genitore", "telefono", "tipo", "qualifica", "consenso_foto")
 CAMPI_DATA = ("nascita", "documento_scadenza", "certificato_scadenza")
 
 
@@ -78,6 +87,7 @@ def pulisci_scheda(scheda):
     pulita = {k: _testo(scheda.get(k)) for k in CAMPI_TESTO}
     pulita["cognome"], pulita["nome"] = pulita["cognome"].upper(), pulita["nome"].upper()
     pulita["tipo"] = pulita["tipo"] if pulita["tipo"] in TIPI_PERSONA else CALCIATORE
+    pulita["consenso_foto"] = consenso(pulita["consenso_foto"])
     pulita["matricola"] = re.sub(r"\s+", "", pulita["matricola"]).upper()
     pulita["documento_numero"] = re.sub(r"\s+", "", pulita["documento_numero"]).upper()
     pulita.update({k: data_iso(scheda.get(k)) for k in CAMPI_DATA})
@@ -87,6 +97,14 @@ def pulisci_scheda(scheda):
     pulita["gruppi"] = {s: g for s, g in (scheda.get("gruppi") or {}).items() if g}
     pulita["id"] = scheda.get("id") or uuid.uuid4().hex[:12]
     return pulita
+
+
+def consenso(testo):
+    """"si", "SI", "x", "1" -> "Sì"; "no", "0" -> "No"; altro -> "" (non ancora chiesto)."""
+    t = str(testo or "").strip().lower()
+    if t in ("sì", "si", "s", "x", "1", "true", "ok", "yes"):
+        return CONSENSO_SI
+    return CONSENSO_NO if t in ("no", "n", "0", "false") else ""
 
 
 def tipo_di(r):
