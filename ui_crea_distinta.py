@@ -53,21 +53,17 @@ def _base(scelta, distinte, gruppo, nome_squadra):
     ultima = ultima_del_gruppo(distinte, gruppo) or {}
     return {"gruppo": gruppo, "squadra": ultima.get("squadra") or nome_squadra, "in_casa": True,
             "competizione": ultima.get("competizione", ""), "giocatori": ultima.get("giocatori", []),
-            "ruoli": ultima.get("ruoli", {}), "panchina": ultima.get("panchina", [])}
-
-
-RESTANO = ("allenatore", "accompagnatore")  # il pulsante 🧹 Svuota non li toglie
+            **({"ruoli": ultima["ruoli"]} if "ruoli" in ultima else {}), "panchina": ultima.get("panchina", [])}
 
 
 def _svuota(k, chiavi):
-    """Prima del disegno della pagina: righe dei giocatori, C/VC e panchina tornano vuote. Allenatore e dirigente
-    accompagnatore restano: di solito sono gli stessi ogni partita."""
+    """Prima del disegno della pagina: righe dei giocatori, C/VC e tutta la panchina (anche allenatore e dirigente
+    accompagnatore) tornano vuote."""
     for c_gioc, c_cap in chiavi:
         st.session_state[c_gioc] = VUOTA
         st.session_state[c_cap] = VUOTA
     for chiave, _ in [ASSISTENTE] + RUOLI_PANCHINA + [MASSAGGIATORE]:
-        if chiave not in RESTANO:
-            st.session_state[f"cd_{chiave}_{k}"] = NESSUNO
+        st.session_state[f"cd_{chiave}_{k}"] = NESSUNO
     st.session_state[f"cd_panchina_{k}"] = []
     _messaggio("info", "Distinta svuotata: scegli i giocatori e salva.")
 
@@ -219,12 +215,11 @@ def render_crea_distinta(utente, ruolo, nome_societa):
                "altre tendine. In Cap. metti C per il capitano e VC per il vice. Le righe vuote restano vuote nella "
                "stampa."
                + (f" 🏃 è la presenza agli ultimi {len(ultimi)} allenamenti prima della partita." if ultimi else ""))
-    if giocatori or any(st.session_state.get(f"cd_{c}_{k}") for c, _ in [ASSISTENTE] + RUOLI_PANCHINA + [MASSAGGIATORE]
-                        if c not in RESTANO) \
+    if giocatori or any(st.session_state.get(f"cd_{c}_{k}") for c, _ in [ASSISTENTE] + RUOLI_PANCHINA + [MASSAGGIATORE]) \
             or st.session_state.get(f"cd_panchina_{k}"):
         st.button("🧹 Svuota giocatori e panchina", key=f"cd_svuota_{k}", on_click=_svuota, args=(k, chiavi),
-                  help="Toglie tutti i giocatori, capitano e vice, e le persone in panchina tranne allenatore e "
-                       "dirigente accompagnatore. I dati della partita restano. Finché non salvi, la distinta salvata non cambia.")
+                  help="Toglie tutti i giocatori, capitano e vice, e tutte le persone in panchina, "
+                       "allenatore e dirigente compresi. I dati della partita restano. Finché non salvi, la distinta salvata non cambia.")
     if scelta != NUOVA and not giocatori and ultima_del_gruppo(distinte, gruppo, distinte[scelta].get("data") or "9999",
                                                               scelta):
         if st.button("📋 Riprendi giocatori e numeri dall'ultima distinta", key=f"cd_riprendi_{k}"):
@@ -245,7 +240,8 @@ def render_crea_distinta(utente, ruolo, nome_societa):
         r = persone[i]
         return f"{nome_completo(r)} ({r.get('qualifica') or tipo_di(r)})"
 
-    ruoli_base = base.get("ruoli") or _proposta_ruoli(staff, gruppo, stagione)
+    # una distinta salvata con la panchina vuota (🧹 Svuota) resta vuota: la proposta vale solo per le nuove
+    ruoli_base = base["ruoli"] if "ruoli" in base else _proposta_ruoli(staff, gruppo, stagione)
     ruoli = {}
     for posto, (chiave, etichetta_) in enumerate([ASSISTENTE] + RUOLI_PANCHINA + [MASSAGGIATORE]):
         if posto % 2 == 0:  # una riga per coppia: sul telefono restano nell'ordine del modulo
