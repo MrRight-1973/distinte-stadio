@@ -606,14 +606,14 @@ def render_segreteria():
     with col_titolo:
         titolo_con_logo(f"{TITOLO_PORTALE} - {sezione_attuale.split(' ', 1)[1]}")
     with col_esci:
-        st.write("")
+        st.markdown(f"<div style='text-align:right;font-size:.85rem;opacity:.75;margin-bottom:.2rem'>"
+                    f"👤 {html.escape(st.session_state.get('utente', ''))}</div>", unsafe_allow_html=True)
         if st.button("Esci", type="secondary", use_container_width=True):
             for chiave in ("autenticato", "utente", "ruolo", "sezione_segreteria"):
                 st.session_state.pop(chiave, None)
             st.rerun()
 
     sezione = st.radio("Sezione", sezioni, horizontal=True, label_visibility="collapsed", key="sezione_segreteria")
-    st.caption(f"👤 {st.session_state.get('utente', '')}")
     if sezione == "⚙️ Opzioni":
         if st.session_state.get("sottosezione_opzioni") not in pagine_opzioni:
             st.session_state.pop("sottosezione_opzioni", None)

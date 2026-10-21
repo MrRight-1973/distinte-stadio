@@ -9,11 +9,13 @@ from datetime import date
 import pandas as pd
 import streamlit as st
 
-from anagrafica import (CALCIATORE, GIORNI_AVVISO, RUOLI_CAMPO, TIPI_DOCUMENTO, TIPI_PERSONA, data_da_iso, doppione,
+from anagrafica import (CALCIATORE, GIORNI_AVVISO, RUOLI_CAMPO, TIPI_DOCUMENTO, TIPI_PERSONA, applica_tabulato,
+                        confronta_tabulato, data_da_iso, doppione,
                         e_calciatore, elenco_ragazzi, elimina_scheda, importa_rose, importa_schede, nome_completo, salva_scheda, scadenze,
                         stato_scadenza)
 from import_csv import CsvErrore, schede_da_csv
 from stagioni import gruppi_correnti
+from tabulato import leggi_tabulato
 from utenti import gruppi_utente
 
 TUTTI, SENZA = "Tutti", "Senza squadra quest'anno"
@@ -121,6 +123,7 @@ def render_anagrafica(utente, ruolo):
             _scheda(elenco[scelta.selection.rows[0]], stagione, miei if not staff else nomi_gruppi, staff, n)
 
     if staff and not dello_staff:
+        _importa_tabulato(stagione, gruppi)
         _importa_csv(stagione, gruppi)
     if ruolo == "admin" and not dello_staff:
         _importa(stagione, nomi_gruppi)
@@ -270,3 +273,64 @@ def _importa_csv(stagione, gruppi):
                 st.session_state["anag_n"] = st.session_state.get("anag_n", 0) + 1
                 _messaggio("success", f"Aggiunti {aggiunti} ragazzi, completate {aggiornati} schede.")
                 st.rerun()
+
+
+def _importa_tabulato(stagione, gruppi):
+    """Dal tabulato calciatori del portale FIGC-LND: matricola e data di nascita a chi non le ha, e una scheda
+    nuova per i tesserati che non sono in anagrafica (nella squadra scelta riga per riga)."""
+    nomi = [g["gruppo"] for g in gruppi]
+    with st.expander("🪪 Completa dal tabulato tesserati FIGC (PDF)"):
+        st.caption("Carica il «Tabulato calciatori dilettanti» scaricato dal portale della società. Aggiungo "
+                   "matricola e data di nascita a chi non le ha e creo le schede dei tesserati che mancano. Il "
+                   "codice fiscale serve solo a separare cognome e nome e non viene salvato.")
+        n = st.session_state.get("anag_n", 0)
+        file = st.file_uploader("Tabulato (PDF)", type=["pdf"], key=f"anag_tab_{n}")
+        if file is None:
+            return
+        try:
+            tesserati = leggi_tabulato(file.getvalue())
+        except Exception as e:
+            st.error(f"Non riesco a leggere il PDF: {e}")
+            return
+        if not tesserati:
+            st.error("Nel PDF non ho trovato tesserati: serve il «Tabulato calciatori dilettanti» del portale FIGC-LND.")
+            return
+        ragazzi = elenco_ragazzi()
+        per_id = {r["id"]: r for r in ragazzi}
+        confronti = confronta_tabulato(tesserati, ragazzi)
+        predefinita = _prima_squadra(gruppi)
+        righe = []
+        for c in confronti:
+            t = c["tesserato"]
+            if c["id"] is None:
+                esito = "➕ nuovo"
+            elif c["mancanti"]:
+                esito = "✏️ aggiungo " + " e ".join({"matricola": "matricola", "nascita": "data di nascita"}[m]
+                                                    for m in c["mancanti"])
+            else:
+                esito = "✅ già a posto"
+            if c["diverso"]:
+                esito = f"✏️ correggo la data di nascita ({c['diverso']})" + \
+                    (" e aggiungo la matricola" if "matricola" in c["mancanti"] else "")
+            r = per_id.get(c["id"]) or {}
+            righe.append({"Sì": c["id"] is None or bool(c["mancanti"]), "Cognome": t["cognome"], "Nome": t["nome"],
+                          "Nato il": f"{data_da_iso(t['nascita']):%d/%m/%Y}", "Matricola": t["matricola"],
+                          "Esito": esito,
+                          "Squadra": ((r.get("gruppi") or {}).get(stagione) or SENZA) if r else (predefinita or SENZA)})
+        nuovi = sum(c["id"] is None for c in confronti)
+        da_completare = sum(bool(c["mancanti"]) for c in confronti)
+        st.caption(f"{len(tesserati)} tesserati: {nuovi} nuovi, {da_completare} schede da completare, "
+                   f"{len(tesserati) - nuovi - da_completare} già a posto. Per i nuovi scegli la squadra; togli la "
+                   "spunta a chi non vuoi importare.")
+        tabella = st.data_editor(pd.DataFrame(righe), hide_index=True, use_container_width=True, key=f"anag_tab_ed_{n}",
+                                 disabled=["Cognome", "Nome", "Nato il", "Matricola", "Esito"],
+                                 column_config={"Sì": st.column_config.CheckboxColumn(width="small"),
+                                                "Squadra": st.column_config.SelectboxColumn(options=nomi + [SENZA])})
+        scelte = [(c, "" if riga["Squadra"] == SENZA else riga["Squadra"])
+                  for c, riga in zip(confronti, tabella.to_dict("records"))
+                  if riga["Sì"] and (c["id"] is None or c["mancanti"])]
+        if st.button(f"🪪 Applica ({len(scelte)})", type="primary", key="anag_tab_ok", disabled=not scelte):
+            aggiunti, completati = applica_tabulato(scelte, stagione)
+            st.session_state["anag_n"] = n + 1
+            _messaggio("success", f"Aggiunti {aggiunti} tesserati, completate {completati} schede.")
+            st.rerun()
