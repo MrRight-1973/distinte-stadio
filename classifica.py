@@ -1,4 +1,5 @@
-"""Classifica del girone, letta dalla pagina di Tuttocampo oppure dal testo copiato da quella pagina.
+"""Classifica del girone, letta dalla pagina di Tuttocampo oppure dal testo copiato da quella pagina o da quella
+della LND (gare.lnd.it, che si costruisce nel browser e quindi si può solo copiare e incollare).
 
 Tuttocampo non ha un servizio ufficiale per questi dati: la pagina si legge come la leggerebbe un browser,
 quindi un giorno può cambiare o bloccare le letture automatiche. Per questo c'è sempre la riserva:
@@ -24,7 +25,8 @@ CAMPI = ("pt", "g", "v", "n", "p", "gf", "gs")
 ORDINI = (("pt", "g", "v", "n", "p", "gf", "gs"),
           ("g", "v", "n", "p", "gf", "gs", "dr", "pt"),
           ("g", "v", "n", "p", "gf", "gs", "pt"),
-          ("pt", "g", "v", "p", "n", "gf", "gs"))
+          ("pt", "g", "v", "p", "n", "gf", "gs"),
+          ("g", "v", "n", "p", "dr", "pt"))  # gare.lnd.it: PG V N S DR P, senza gol fatti e subiti
 _NUMERO = re.compile(r"^[+-]?\d+$")
 
 
@@ -85,7 +87,7 @@ def _righe_grezze(parole):
                     break  # comincia la riga della squadra dopo
                 numeri.append(_numero(parole[j]))
                 j += 1
-            if nome and len(numeri) >= 7 and len(nome) <= 8:
+            if nome and len(numeri) >= 6 and len(nome) <= 8:
                 righe.append((pos, " ".join(nome).strip(" .-"), numeri))
                 attesa, i = pos + 1, j
                 continue
@@ -99,27 +101,30 @@ def _valida(r):
 
 
 def leggi(testo):
-    """[{pos, squadra, pt, g, v, n, p, gf, gs}] dalla pagina (HTML) o dal testo copiato. Errore se non trova
+    """[{pos, squadra, pt, g, v, n, p, gf, gs, dr}] (gf e gs None se la pagina non li ha) dalla pagina (HTML) o dal testo copiato. Errore se non trova
     una classifica credibile (partite = vinte + pareggiate + perse per quasi tutte le squadre)."""
     grezze = _righe_grezze(_parole(testo or ""))
     if len(grezze) < 4:
         raise ClassificaErrore("Non trovo la classifica in questa pagina.")
     migliore, valide = None, -1
     for ordine in ORDINI:
-        righe = [{"pos": pos, "squadra": nome, **dict(zip(ordine, numeri)), "dr": None} for pos, nome, numeri in grezze]
+        righe = [{"pos": pos, "squadra": nome, **dict(zip(ordine, numeri))} for pos, nome, numeri in grezze]
         quante = sum(1 for r, (_, _, numeri) in zip(righe, grezze) if len(numeri) >= len(ordine) and _valida(r))
         if quante > valide:
             migliore, valide = righe, quante
     if valide < len(grezze) * 0.8:
         raise ClassificaErrore("Ho trovato una tabella, ma i numeri non sembrano una classifica.")
-    return [{"pos": r["pos"], "squadra": r["squadra"], **{k: r.get(k, 0) for k in CAMPI},
-             "dr": r.get("gf", 0) - r.get("gs", 0)} for r in migliore]
+    return [{"pos": r["pos"], "squadra": r["squadra"], **{k: r.get(k) for k in CAMPI},
+             "dr": r["dr"] if "dr" in r else r["gf"] - r["gs"]} for r in migliore]
 
 
 def scarica(url):
     """Il testo della pagina di Tuttocampo. Errore con un messaggio chiaro se non si riesce."""
     indirizzo = urlparse(url.strip())
     if indirizzo.scheme not in ("http", "https") or not (indirizzo.hostname or "").endswith("tuttocampo.it"):
+        if (indirizzo.hostname or "").endswith("lnd.it"):
+            raise ClassificaErrore("La pagina della LND si costruisce nel browser e non si legge dal link: aprila, "
+                                   "copia tutto il testo e incollalo qui sotto.")
         raise ClassificaErrore("Serve il link di una pagina di tuttocampo.it.")
     try:
         r = requests.get(url.strip(), timeout=20, headers={
@@ -157,6 +162,11 @@ def salva(gruppo, stagione, righe, fonte=""):
         json.dump(dati, f, ensure_ascii=False, indent=1)
     _carica_online(PERCORSO_ONLINE, _percorso(), "application/json")
     return dati[gruppo]
+
+
+def nome_fonte(link):
+    host = urlparse(str(link or "").strip()).hostname or ""
+    return "LND" if host.endswith("lnd.it") else "Tuttocampo" if host.endswith("tuttocampo.it") else ""
 
 
 def nostra_riga(righe, nome_societa):
