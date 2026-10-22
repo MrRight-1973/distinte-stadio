@@ -29,7 +29,7 @@ def _lista(squadra):
         return
     st.dataframe(pd.DataFrame([{"N°": str(g.get("N°") or i + 1), "Giocatore": g.get("GIOCATORE") or "",
                                 "Anno": str(g.get("ANNO") or "")} for i, g in enumerate(giocatori)]),
-                 hide_index=True, use_container_width=True)
+                 hide_index=True, width="stretch")
 
 
 def render_partita_sola_lettura(id_partita, dati, loghi_sponsor=lambda: None):
@@ -60,7 +60,7 @@ def render_partita_sola_lettura(id_partita, dati, loghi_sponsor=lambda: None):
                                             "Squadra": nomi.get(e.get("squadra"), ""),
                                             "Giocatore": e.get("giocatore", ""), "Nota": e.get("nota", "")}
                                            for e in eventi]),
-                             hide_index=True, use_container_width=True)
+                             hide_index=True, width="stretch")
             else:
                 st.caption("Nessun gol, cartellino o cambio segnato.")
         with note:
@@ -69,7 +69,7 @@ def render_partita_sola_lettura(id_partita, dati, loghi_sponsor=lambda: None):
                                             "Squadra": nomi.get(n.get("squadra"), ""),
                                             "Giocatori": descrizione_nota(n), "Commento": n.get("testo", "")}
                                            for n in note_in_ordine(cronaca)]),
-                             hide_index=True, use_container_width=True)
+                             hide_index=True, width="stretch")
             else:
                 st.caption("Nessuna nota.")
         with articolo:
@@ -93,13 +93,13 @@ def render_partita_sola_lettura(id_partita, dati, loghi_sponsor=lambda: None):
                     for i, nome in enumerate(cronaca[elenco]):
                         with colonne[i % 3]:
                             try:
-                                st.image(leggi_foto_referto(nome), use_container_width=True)
+                                st.image(leggi_foto_referto(nome), width="stretch")
                             except OSError:
                                 st.caption("Foto non più disponibile")
 
         pdf = st.session_state.get("lett_pdf")
         if not pdf or pdf["id"] != id_partita:
-            if st.button("📄 Prepara il PDF del resoconto", key=f"lett_prepara_{id_partita}", use_container_width=True):
+            if st.button("📄 Prepara il PDF del resoconto", key=f"lett_prepara_{id_partita}", width="stretch"):
                 with st.spinner("Preparo il PDF..."):
                     st.session_state["lett_pdf"] = {"id": id_partita,
                                                     "pdf": genera_pdf_resoconto(cronaca, sponsor_loghi=loghi_sponsor())}
@@ -107,4 +107,4 @@ def render_partita_sola_lettura(id_partita, dati, loghi_sponsor=lambda: None):
         else:
             st.download_button("💾 Scarica il PDF del resoconto", pdf["pdf"], mime="application/pdf",
                                file_name=nome_file_gara("Resoconto", p.get("data"), p.get("casa"), p.get("ospite")),
-                               key=f"lett_scarica_{id_partita}", type="primary", use_container_width=True)
+                               key=f"lett_scarica_{id_partita}", type="primary", width="stretch")

@@ -41,7 +41,7 @@ def render_opzioni_campionati():
 
     gruppi = imp["stagioni"].get(corrente, [])
     precedenti = [a for a in sorted(imp["stagioni"], reverse=True) if a < corrente and imp["stagioni"][a]]
-    if not gruppi and precedenti and st.button(f"📋 Copia squadre e competizioni del {precedenti[0]}", use_container_width=True):
+    if not gruppi and precedenti and st.button(f"📋 Copia squadre e competizioni del {precedenti[0]}", width="stretch"):
         _salva(imp, corrente, imp["stagioni"][precedenti[0]], f"Copiate squadre e competizioni del {precedenti[0]}.")
 
     # 2️⃣ Gruppo squadra
@@ -52,7 +52,7 @@ def render_opzioni_campionati():
         c1, c2 = st.columns(2)
         nome = _pulito(c1.text_input("Nome del gruppo squadra", key="opz_nuovo_gruppo", placeholder="es. Prima Squadra"))
         prima = _pulito(c2.text_input("Prima competizione", key="opz_nuova_prima", placeholder="es. Prima Categoria girone E"))
-        if st.button("➕ Aggiungi il gruppo", use_container_width=True, disabled=not (nome and prima)):
+        if st.button("➕ Aggiungi il gruppo", width="stretch", disabled=not (nome and prima)):
             if nome.lower() in (n.lower() for n in nomi):
                 st.error(f"«{nome}» c'è già.")
             elif prima.lower() in (c.lower() for g in gruppi for c in g["competizioni"]):
@@ -63,7 +63,7 @@ def render_opzioni_campionati():
                        {f"opz_gruppo_{corrente}": nome, "opz_nuovo_gruppo": None, "opz_nuova_prima": None})
         _riepilogo(gruppi)
         return
-    with st.popover("✏️ Rinomina o elimina il gruppo", use_container_width=True):
+    with st.popover("✏️ Rinomina o elimina il gruppo", width="stretch"):
         nuovo = _pulito(st.text_input("Nuovo nome", value=gruppo, key=f"opz_rinomina_gruppo_{gruppo}"))
         if st.button("💾 Rinomina", key="opz_rinomina_gruppo_ok", disabled=not nuovo or nuovo == gruppo):
             if nuovo.lower() in (n.lower() for n in nomi if n != gruppo):
@@ -91,14 +91,14 @@ def render_opzioni_campionati():
     if scelta == NUOVA_COMPETIZIONE:
         nome = _pulito(st.text_input("Nome della nuova competizione", key="opz_nuova_competizione",
                                      placeholder="es. Coppa Veneto"))
-        if st.button("➕ Aggiungi la competizione", use_container_width=True, disabled=not nome):
+        if st.button("➕ Aggiungi la competizione", width="stretch", disabled=not nome):
             if nome.lower() in tutte:
                 st.error(f"«{nome}» c'è già.")
             else:
                 _salva(imp, corrente, con_competizioni(competizioni + [nome]), f"«{nome}» aggiunta a {gruppo}.",
                        {f"opz_competizione_{corrente}_{gruppo}": nome, "opz_nuova_competizione": None})
     else:
-        with st.popover("✏️ Rinomina o elimina la competizione", use_container_width=True):
+        with st.popover("✏️ Rinomina o elimina la competizione", width="stretch"):
             nuovo = _pulito(st.text_input("Nuovo nome", value=scelta, key=f"opz_rinomina_comp_{scelta}",
                                           help="Le partite già salvate tengono il nome di prima"))
             if st.button("💾 Rinomina", key="opz_rinomina_comp_ok", disabled=not nuovo or nuovo == scelta):

@@ -40,31 +40,31 @@ def render_opzioni_rose(nome_societa, partite):
     if rosa_da_anagrafica(stagione, gruppo):
         st.info(f"La rosa di {gruppo} viene dall'anagrafica ({len(rosa)} ragazzi): si cambia nella sezione "
                 "👦 Anagrafica, assegnando i ragazzi alla squadra.")
-        st.dataframe(_tabella_rosa(rosa), hide_index=True, use_container_width=True)
+        st.dataframe(_tabella_rosa(rosa), hide_index=True, width="stretch")
         return
     n = st.session_state.get("rose_n", 0)
 
-    with st.popover("📥 Riempi dall'ultima partita di questa squadra", use_container_width=True):
+    with st.popover("📥 Riempi dall'ultima partita di questa squadra", width="stretch"):
         ultima = ultima_lista(partite(), competizioni[gruppo], nome_societa)
         if not ultima:
             st.caption("Nessuna partita di questo gruppo con la distinta collegata.")
         else:
             st.caption(f"Aggiunge alla rosa i {len(ultima)} giocatori dell'ultima distinta (chi c'è già resta).")
-            if st.button("📥 Aggiungi", use_container_width=True, key="rose_aggiungi"):
+            if st.button("📥 Aggiungi", width="stretch", key="rose_aggiungi"):
                 nuova = salva_rosa(stagione, gruppo, rosa + ultima)
                 st.session_state["rose_n"] = n + 1
                 st.session_state["rose_messaggi"] = [("success", f"Rosa di {gruppo}: {len(nuova)} giocatori.")]
                 st.rerun()
 
     tabella = st.data_editor(
-        _tabella_rosa(rosa), num_rows="dynamic", hide_index=True, use_container_width=True,
+        _tabella_rosa(rosa), num_rows="dynamic", hide_index=True, width="stretch",
         key=f"rose_tabella_{stagione}_{gruppo}_{n}",
         column_config={"Giocatore": st.column_config.TextColumn(max_chars=40, width="large"),
                        "Anno": st.column_config.TextColumn(max_chars=4),
                        "N° abituale": st.column_config.NumberColumn(min_value=1, max_value=99, step=1)})
     nuova = pulisci_rosa(_da_tabella(tabella))
     if nuova != rosa:
-        if st.button("💾 Salva la rosa", type="primary", use_container_width=True):
+        if st.button("💾 Salva la rosa", type="primary", width="stretch"):
             salva_rosa(stagione, gruppo, nuova)
             st.session_state["rose_n"] = n + 1
             st.session_state["rose_messaggi"] = [("success", f"Rosa di {gruppo} salvata: {len(nuova)} giocatori.")]
@@ -91,7 +91,7 @@ def render_prepara_da_rosa():
         df = pd.DataFrame([{"Conv.": False, "Tit.": False, "N°": g.get("numero"), "Giocatore": g["giocatore"],
                             "Anno": g.get("anno") or ""} for g in rosa])
         df["N°"] = pd.array(df["N°"], dtype="Int64")
-        scelta = st.data_editor(df, hide_index=True, use_container_width=True, key=f"conv_tabella_{gruppo}",
+        scelta = st.data_editor(df, hide_index=True, width="stretch", key=f"conv_tabella_{gruppo}",
                                 disabled=["Giocatore", "Anno"],
                                 column_config={"Conv.": st.column_config.CheckboxColumn(help="Convocato"),
                                                "Tit.": st.column_config.CheckboxColumn(help="Titolare (gli 11 in alto)"),
@@ -110,7 +110,7 @@ def render_prepara_da_rosa():
             st.error(p)
         if len(titolari) not in (0, 11) and not problemi:
             st.warning(f"Titolari spuntati: {len(titolari)} (di solito 11). Puoi comunque proseguire.")
-        if st.button("✅ Metti nella distinta", type="primary", use_container_width=True,
+        if st.button("✅ Metti nella distinta", type="primary", width="stretch",
                      disabled=bool(problemi) or convocati.empty):
             def giocatori(righe):
                 return [{"giocatore": r["Giocatore"], "anno": r["Anno"],

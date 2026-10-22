@@ -78,11 +78,11 @@ def _scheda(riepilogo, partite, chiave, allenato, squadra, filtro):
     st.dataframe(pd.DataFrame([{"Data": r["data"], "Partita": r["partita"], "Titolare": "✓" if r["titolare"] else "",
                                 "Minuti": r["minuti"], "⚽": r["gol"] or "", "🅰️": r["assist"] or "",
                                 "🟨": r["ammonizioni"] or "", "🟥": r["espulsioni"] or ""} for r in reversed(righe)]),
-                 hide_index=True, use_container_width=True)
+                 hide_index=True, width="stretch")
     st.download_button("🖨️ Scarica la scheda (PDF)", genera_pdf_scheda(nome, squadra, filtro, totali, righe,
                                                                         allenato.get(nome)),
                        file_name=f"Scheda_{nome.replace(' ', '_')}.pdf", mime="application/pdf",
-                       key="stat_scheda_pdf", use_container_width=True)
+                       key="stat_scheda_pdf", width="stretch")
 
 
 def render_statistiche(nome_societa=""):
@@ -151,10 +151,10 @@ def render_statistiche(nome_societa=""):
         st.dataframe(pd.DataFrame([{
             "Giornata": etichetta_giornata(r["giornata"]), "Data": r["data"], "Avversario": r["avversario"],
             "": "🏠 Casa" if r["in_casa"] else "🚌 Trasferta", "Fatti": r["fatti"], "Subiti": r["subiti"],
-        } for r in reversed(risultati)]), hide_index=True, use_container_width=True)
+        } for r in reversed(risultati)]), hide_index=True, width="stretch")
 
     with st.expander(f"👥 Giocatori ({len(riepilogo)})"):
-        st.dataframe(tabella, hide_index=True, use_container_width=True,
+        st.dataframe(tabella, hide_index=True, width="stretch",
                      column_config={"🏃 Allenato %": st.column_config.NumberColumn(format="%d%%")})
         if allenato:
             st.caption("🏃 Allenato %: allenamenti svolti (C, P o D) su quelli segnati in 🏃 Allenamenti, "
@@ -167,28 +167,28 @@ def render_statistiche(nome_societa=""):
         if cartellini.empty:
             st.caption("Nessun cartellino.")
         else:
-            st.dataframe(cartellini[["Giocatore", "🟨", "🟥", "Presenze"]], hide_index=True, use_container_width=True)
+            st.dataframe(cartellini[["Giocatore", "🟨", "🟥", "Presenze"]], hide_index=True, width="stretch")
 
     with st.expander("⏱️ Minuti partita per partita"):
         corte = [e.split(" · ")[0] for e, _ in per_partita]  # "3ª giornata" o la data
         intestazioni = corte if len(set(corte)) == len(corte) else [e for e, _ in per_partita]
         griglia = pd.DataFrame({t: minuti for t, (_, minuti) in zip(intestazioni, per_partita)})
         griglia = griglia.reindex([r["giocatore"] for r in riepilogo]).fillna(0).astype(int)
-        st.dataframe(griglia, use_container_width=True)
+        st.dataframe(griglia, width="stretch")
 
     with st.expander("🧑 Scheda del giocatore"):
         _scheda(riepilogo, partite, chiave, allenato, dict(squadre)[chiave], " · ".join(filtro))
 
     with st.expander("🖨️ Crea PDF delle statistiche"):
         scelte = [k for k, testo in PARTI.items() if st.checkbox(testo, value=k != "minuti", key=f"stat_pdf_{k}")]
-        if st.button("🖨️ Crea PDF", type="primary", use_container_width=True, disabled=not scelte):
+        if st.button("🖨️ Crea PDF", type="primary", width="stretch", disabled=not scelte):
             st.session_state["stat_pdf"] = (filtro, scelte, genera_pdf_statistiche(
                 dict(squadre)[chiave], " · ".join(filtro),
                 riepilogo, per_partita, risultati, scelte))
         pronto = st.session_state.get("stat_pdf")
         if pronto and pronto[:2] == (filtro, scelte):  # cambiate le scelte: si ricrea
             st.download_button("⬇️ Scarica il PDF", pronto[2], mime="application/pdf",
-                               file_name=f"Statistiche_{datetime.now():%Y-%m-%d}.pdf", use_container_width=True)
+                               file_name=f"Statistiche_{datetime.now():%Y-%m-%d}.pdf", width="stretch")
 
     st.caption("I titolari sono i primi 11 della distinta. I minuti si calcolano dalle sostituzioni e dalle "
                "espulsioni segnate in cronaca, sulla durata regolamentare: perché siano giusti, nelle note scegli "

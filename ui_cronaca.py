@@ -90,19 +90,19 @@ def _conferma_tempo(stato):
     _, domanda, tempo, avvia = AZIONI_TEMPO[stato]
     st.write(domanda)
     si, no = st.columns(2)
-    if si.button("Sì, conferma", type="primary", use_container_width=True):
+    if si.button("Sì, conferma", type="primary", width="stretch"):
         cronaca = carica_cronaca()
         if stato_gara(cronaca) == stato:  # evita il doppio avvio se si preme due volte
             (avvia_tempo if avvia else chiudi_tempo)(cronaca, tempo)
         st.rerun()
-    if no.button("Annulla", use_container_width=True):
+    if no.button("Annulla", width="stretch"):
         st.rerun()
 
 
 def _pulsanti_tempo(cronaca):
     stato = stato_gara(cronaca)
     if stato in AZIONI_TEMPO:
-        if st.button(AZIONI_TEMPO[stato][0], type="primary", use_container_width=True, key=f"tempo_{stato}"):
+        if st.button(AZIONI_TEMPO[stato][0], type="primary", width="stretch", key=f"tempo_{stato}"):
             _conferma_tempo(stato)
     else:
         st.success("Partita finita: puoi generare il resoconto qui sotto.")
@@ -128,10 +128,10 @@ def _galleria_foto(cronaca, elenco, etichetta_caricatore):
         for i, nome in enumerate(nomi):
             with colonne[i % len(colonne)]:
                 try:
-                    st.image(leggi_foto_referto(nome), use_container_width=True)
+                    st.image(leggi_foto_referto(nome), width="stretch")
                 except OSError:
                     st.caption("Foto non più disponibile")
-                if st.button("🗑️ Togli", key=f"togli_{elenco}_{nome}", use_container_width=True):
+                if st.button("🗑️ Togli", key=f"togli_{elenco}_{nome}", width="stretch"):
                     togli_foto_referto(cronaca, nome, elenco)
                     st.rerun()
 
@@ -153,7 +153,7 @@ def _confronta_foglio(cronaca, api_key):
             return
         scelta = st.selectbox("Foto da leggere", foto, format_func=lambda n: f"Foto {foto.index(n) + 1}",
                               key="foglio_foto") if len(foto) > 1 else foto[0]
-        if st.button("🔍 Leggi il foglio e confronta", use_container_width=True, disabled=not api_key):
+        if st.button("🔍 Leggi il foglio e confronta", width="stretch", disabled=not api_key):
             modello = impostazioni_lettura()["modello"]
             try:
                 with st.spinner("Lettura del foglio in corso..."):
@@ -189,7 +189,7 @@ def _confronta_foglio(cronaca, api_key):
                 "Min. note": (e["nota"].get("minuto") or "–") if e["nota"] else "",
                 "Sistema": e["stato"] != "uguale",
             } for e in dal_foglio])
-            scelte = st.data_editor(tabella, hide_index=True, use_container_width=True,
+            scelte = st.data_editor(tabella, hide_index=True, width="stretch",
                                     key=f"foglio_tabella_{st.session_state.get('foglio_tabella_n', 0)}",
                                     disabled=[c for c in tabella.columns if c != "Sistema"])
         if solo_note:
@@ -197,12 +197,12 @@ def _confronta_foglio(cronaca, api_key):
             st.dataframe(pd.DataFrame([{"Min.": n.get("minuto") or "–",
                                         "Evento": f"{ICONE_TIPO.get(n.get('tipo'), '')} {n.get('tipo')}",
                                         "Squadra": nomi[n["squadra"]], "Giocatori": descrizione_nota(n) or "—"}
-                                       for n in solo_note]), hide_index=True, use_container_width=True)
+                                       for n in solo_note]), hide_index=True, width="stretch")
         st.caption("I nomi del foglio arrivano dai numeri di maglia della distinta. «Sistema» aggiunge alle note "
                    "gli eventi che mancano e corregge i minuti con quelli del foglio.")
         c1, c2 = st.columns(2)
         da_sistemare = [e for e, si in zip(dal_foglio, scelte["Sistema"]) if si and e["stato"] != "uguale"] if dal_foglio else []
-        if c1.button(f"✅ Sistema le note ({len(da_sistemare)})", type="primary", use_container_width=True,
+        if c1.button(f"✅ Sistema le note ({len(da_sistemare)})", type="primary", width="stretch",
                      disabled=not da_sistemare):
             for e in da_sistemare:
                 if e["stato"] == "manca":
@@ -213,7 +213,7 @@ def _confronta_foglio(cronaca, api_key):
             st.session_state["foglio_tabella_n"] = st.session_state.get("foglio_tabella_n", 0) + 1
             st.session_state["cronaca_messaggio"] = ("success", f"Note sistemate dal foglio dell'arbitro: {len(da_sistemare)}.")
             st.rerun()
-        if c2.button("✖️ Chiudi il confronto", use_container_width=True):
+        if c2.button("✖️ Chiudi il confronto", width="stretch"):
             st.session_state.pop("foglio_letto", None)
             st.rerun()
         _messaggio_nota()
@@ -334,12 +334,12 @@ def _form_nota(cronaca, api_key, giocatori):
 
     with st.form(f"cronaca_nota_testo_{n_form}"):
         testo = st.text_input("✏️ Commento scritto", placeholder="es. tiro a giro sul secondo palo")
-        if st.form_submit_button("✅ Registra", type="primary", use_container_width=True):
+        if st.form_submit_button("✅ Registra", type="primary", width="stretch"):
             if testo.strip() or dettagli or tipo != "Nota":
                 registrata(aggiungi_nota(cronaca, testo, tipo, squadra, "testo", None, minuto, dettagli))
             else:
                 st.warning("Per una nota scrivi o detta un commento.")
-    if st.button("✖️ Annulla", use_container_width=True, key=f"cronaca_annulla_{n_form}"):
+    if st.button("✖️ Annulla", width="stretch", key=f"cronaca_annulla_{n_form}"):
         st.session_state["cronaca_form_n"] = n_form + 1
         st.rerun()
     _messaggio_nota()
@@ -383,7 +383,7 @@ def _elenco_note(cronaca, api_key, giocatori):
             pd.DataFrame([{"Min.": n.get("minuto", ""), "Tipo": n.get("tipo", ""),
                            "Squadra": nomi.get(n.get("squadra"), ""), "Giocatori": descrizione_nota(n),
                            "Commento": n.get("testo", "")} for n in note_in_ordine(cronaca)]),
-            hide_index=True, use_container_width=True,
+            hide_index=True, width="stretch",
         )
     _modifica_nota(cronaca)
 
@@ -393,7 +393,7 @@ def _importa_note(cronaca):
     from import_csv import CsvErrore, note_da_csv, unisci_note
 
     n = st.session_state.setdefault("cronaca_csv_n", 0)
-    with st.popover("📥 Carica note da CSV", use_container_width=True):
+    with st.popover("📥 Carica note da CSV", width="stretch"):
         st.caption("Il CSV scaricato dall'icona ⬇️ della tabella delle note (Min., Tipo, Squadra, Giocatori, "
                    "Commento). Le note si aggiungono a quelle presenti; quelle già uguali si saltano.")
         f = st.file_uploader("CSV delle note", type=["csv"], key=f"cronaca_csv_{n}", label_visibility="collapsed")
@@ -446,7 +446,7 @@ def _modifica_nota(cronaca):
         testo = st.text_area("Commento", nota.get("testo", ""), key=f"cronaca_mod_testo_{k}", height=80)
 
         c_salva, c_togli = st.columns(2)
-        if c_salva.button("💾 Salva" if nota else "➕ Aggiungi", type="primary", use_container_width=True,
+        if c_salva.button("💾 Salva" if nota else "➕ Aggiungi", type="primary", width="stretch",
                           key=f"cronaca_mod_salva_{k}"):
             if not (testo.strip() or dettagli):
                 st.warning("Scrivi un commento o scegli un giocatore.")
@@ -460,7 +460,7 @@ def _modifica_nota(cronaca):
                 st.session_state["cronaca_mod_n"] = n_mod + 1
                 st.rerun()
         if nota:
-            with c_togli.popover("🗑️ Togli", use_container_width=True):
+            with c_togli.popover("🗑️ Togli", width="stretch"):
                 st.write("Togliere questa nota?")
                 if st.button("Sì, togli", type="primary", key=f"cronaca_mod_togli_{k}"):
                     cronaca["note"] = [n for n in cronaca["note"] if n["id"] != nota["id"]]
@@ -480,7 +480,7 @@ def _eventi(cronaca):
     df = pd.DataFrame(eventi, columns=["tipo", "squadra", "minuto", "giocatore", "nota"])
     chiave = f"cronaca_eventi_{st.session_state.setdefault('cronaca_eventi_n', 0)}"
     modificato = st.data_editor(
-        df, key=chiave, hide_index=True, num_rows="dynamic", use_container_width=True,
+        df, key=chiave, hide_index=True, num_rows="dynamic", width="stretch",
         column_config={
             "tipo": st.column_config.SelectboxColumn("Tipo", options=TIPI_EVENTO, format_func=ICONE_EVENTO.get,
                                                      required=True),
@@ -515,7 +515,7 @@ def _eventi(cronaca):
 def _resoconto(cronaca, api_key, giocatori, loghi_sponsor, leggi_distinta):
     st.subheader("📰 Resoconto per i giornalisti")
     lunghezza = st.selectbox("Lunghezza dell'articolo", list(LUNGHEZZE), index=1, filter_mode=None)
-    if st.button("✍️ Genera resoconto e PDF", type="primary", use_container_width=True, disabled=not cronaca["note"]):
+    if st.button("✍️ Genera resoconto e PDF", type="primary", width="stretch", disabled=not cronaca["note"]):
         # Si riprende l'ultima distinta pubblicata: la cronaca potrebbe essere partita prima della Fase 3
         try:
             distinta = leggi_distinta()
@@ -547,22 +547,22 @@ def _resoconto(cronaca, api_key, giocatori, loghi_sponsor, leggi_distinta):
         file_name=nome_file_gara("Resoconto", p.get("data"), p.get("casa"), p.get("ospite")),
         mime="application/pdf",
         type="primary",
-        use_container_width=True,
+        width="stretch",
     )
 
 
 def _gestione_partita(cronaca):
     """Ricarica della distinta, archiviazione e cancellazione della partita aperta."""
     b1, b2, b3 = st.columns(3)
-    if b1.button("🔄 Ricarica la distinta pubblicata", use_container_width=True):
+    if b1.button("🔄 Ricarica la distinta pubblicata", width="stretch"):
         st.session_state["cronaca_ricarica_distinta"] = True
         cronaca["distinta"] = None
         salva_cronaca(cronaca)
         st.rerun()
-    if b2.button("🆕 Nuova partita (archivia questa)", use_container_width=True):
+    if b2.button("🆕 Nuova partita (archivia questa)", width="stretch"):
         st.session_state["cronaca_conferma"] = "archivia"
         st.rerun()
-    if b3.button("🗑️ Cancella tutto e ricomincia", use_container_width=True):
+    if b3.button("🗑️ Cancella tutto e ricomincia", width="stretch"):
         st.session_state["cronaca_conferma"] = "cancella"
         st.rerun()
     conferma = st.session_state.get("cronaca_conferma")
@@ -577,12 +577,12 @@ def _gestione_partita(cronaca):
                  "non si potranno recuperare. Poi tutto riparte vuoto, anche la scheda 📋 Distinta. Continuare?")
         etichetta = "🗑️ Sì, cancella tutto"
     c1, c2 = st.columns(2)
-    if c1.button(etichetta, type="primary", use_container_width=True):
+    if c1.button(etichetta, type="primary", width="stretch"):
         st.session_state.pop("cronaca_conferma", None)
         (archivia_e_azzera if conferma == "archivia" else cancella_e_azzera)(cronaca)
         st.session_state["azzera_distinta"] = True  # anche la sezione Distinta riparte da zero
         st.rerun()
-    if c2.button("Annulla", use_container_width=True):
+    if c2.button("Annulla", width="stretch"):
         st.session_state.pop("cronaca_conferma", None)
         st.rerun()
 
@@ -617,7 +617,7 @@ def render_cronaca(api_key, macro_info=None, loghi_sponsor=lambda: None, leggi_d
         # Senza liste dei giocatori la cronaca non serve ancora: si apre quando arrivano le distinte
         st.info("📋 In attesa delle distinte di questa partita: carica le foto nella scheda 📋 Distinta qui sopra, "
                 "esegui la scansione e pubblica. La cronaca si apre da sola appena la distinta è pubblicata.")
-        if st.button("🔄 Ricarica la distinta pubblicata", use_container_width=True,
+        if st.button("🔄 Ricarica la distinta pubblicata", width="stretch",
                      help="Ricontrolla se la distinta di questa partita è stata pubblicata"):
             st.session_state["cronaca_ricarica_distinta"] = True
             st.rerun()

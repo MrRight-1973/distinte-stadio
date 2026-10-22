@@ -91,7 +91,7 @@ def render_anagrafica(utente, ruolo):
         return
 
     if st.button("➕ Nuovo dirigente, allenatore o staff" if dello_staff else "➕ Nuovo ragazzo",
-                 use_container_width=True):
+                 width="stretch"):
         st.session_state["anag_nuovo"] = True
         st.rerun()
 
@@ -103,7 +103,7 @@ def render_anagrafica(utente, ruolo):
         righe = [{"Nome": nome_completo(r), "Tipo": r.get("tipo", ""), "Qualifica": r.get("qualifica", ""),
                   "Squadra": squadra_di[r["id"]], "Tessera FIGC": r.get("matricola", ""),
                   "Documento": _con_segno(r.get("documento_scadenza"))} for r in elenco]
-        scelta = st.dataframe(pd.DataFrame(righe), hide_index=True, use_container_width=True, on_select="rerun",
+        scelta = st.dataframe(pd.DataFrame(righe), hide_index=True, width="stretch", on_select="rerun",
                               selection_mode="single-row", key=f"anag_staff_{filtro}_{cerca}_{n}",
                               height=min(35 * len(righe) + 40, 460))
         st.caption(f"{len(elenco)} persone. Seleziona una riga per aprire la scheda.")
@@ -117,7 +117,7 @@ def render_anagrafica(utente, ruolo):
                   "Documento": _con_segno(r.get("documento_scadenza")),
                   "Foto": SEGNI_FOTO[r.get("consenso_foto", "")]} for r in elenco]
         tabella = pd.DataFrame(righe)
-        scelta = st.dataframe(tabella, hide_index=True, use_container_width=True, on_select="rerun",
+        scelta = st.dataframe(tabella, hide_index=True, width="stretch", on_select="rerun",
                               selection_mode="single-row", key=f"anag_tabella_{filtro}_{cerca}_{n}",
                               height=min(35 * len(righe) + 40, 460))
         st.caption(f"{len(elenco)} ragazzi. Seleziona una riga per aprire la scheda. Foto = consenso a foto e "
@@ -199,8 +199,8 @@ def _scheda(r, stagione, gruppi_ammessi, staff, n, nuova=False):
                 help="Il modulo firmato dai genitori (o dal giocatore maggiorenne) resta in segreteria: qui si "
                      "segna solo la risposta.")
         salva, annulla = st.columns(2)
-        premuto = salva.form_submit_button("💾 Salva", type="primary", use_container_width=True)
-        chiudi = annulla.form_submit_button("✖️ Chiudi", use_container_width=True)
+        premuto = salva.form_submit_button("💾 Salva", type="primary", width="stretch")
+        chiudi = annulla.form_submit_button("✖️ Chiudi", width="stretch")
     if chiudi:
         st.session_state.pop("anag_nuovo", None)
         st.session_state["anag_n"] = n + 1
@@ -231,13 +231,13 @@ def _scheda(r, stagione, gruppi_ammessi, staff, n, nuova=False):
         if st.session_state.get("anag_elimina") == r["id"]:
             st.warning(f"Eliminare la scheda di {nome_completo(r)}? Non si può annullare.")
             c1, c2 = st.columns(2)
-            if c1.button("🗑️ Sì, elimina", type="primary", use_container_width=True, key="anag_elimina_si"):
+            if c1.button("🗑️ Sì, elimina", type="primary", width="stretch", key="anag_elimina_si"):
                 elimina_scheda(r["id"])
                 st.session_state.pop("anag_elimina", None)
                 st.session_state["anag_n"] = n + 1
                 _messaggio("success", f"Scheda di {nome_completo(r)} eliminata.")
                 st.rerun()
-            if c2.button("Annulla", use_container_width=True, key="anag_elimina_no"):
+            if c2.button("Annulla", width="stretch", key="anag_elimina_no"):
                 st.session_state.pop("anag_elimina", None)
                 st.rerun()
         elif st.button("🗑️ Elimina la scheda", key="anag_elimina_btn"):
@@ -340,7 +340,7 @@ def _importa_tabulato(stagione, gruppi):
         st.caption(f"{len(tesserati)} tesserati: {nuovi} nuovi, {da_completare} schede da completare, "
                    f"{len(tesserati) - nuovi - da_completare} già a posto. Per i nuovi scegli la squadra; togli la "
                    "spunta a chi non vuoi importare.")
-        tabella = st.data_editor(pd.DataFrame(righe), hide_index=True, use_container_width=True, key=f"anag_tab_ed_{n}",
+        tabella = st.data_editor(pd.DataFrame(righe), hide_index=True, width="stretch", key=f"anag_tab_ed_{n}",
                                  disabled=["Cognome", "Nome", "Nato il", "Matricola", "Esito"],
                                  column_config={"Sì": st.column_config.CheckboxColumn(width="small"),
                                                 "Squadra": st.column_config.SelectboxColumn(options=nomi + [SENZA])})

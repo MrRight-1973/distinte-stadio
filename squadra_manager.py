@@ -74,7 +74,7 @@ def _importa_csv(chiave_griglia):
     from import_csv import CsvErrore, griglia_da_csv
 
     n = st.session_state.setdefault(f"csv_n_{chiave_griglia}", 0)
-    with st.popover("📥 Carica lista da CSV", use_container_width=True):
+    with st.popover("📥 Carica lista da CSV", width="stretch"):
         st.caption("Il CSV scaricato dall'icona ⬇️ della tabella (colonne N°, GIOCATORE, ANNO). "
                    "Sostituisce la lista di questa squadra.")
         f = st.file_uploader("CSV della lista", type=["csv"], key=f"csv_{chiave_griglia}_{n}",
@@ -102,7 +102,7 @@ def render_colonna_squadra(label_titolo, chiave_griglia, default_all, default_no
     st.session_state[chiave_griglia] = st.data_editor(
         st.session_state[chiave_griglia],
         key=f"ed_{chiave_griglia}",
-        use_container_width=True,
+        width="stretch",
         column_config={
             "GIOCATORE": st.column_config.TextColumn("GIOCATORE", max_chars=40),
             "ANNO": st.column_config.TextColumn("ANNO", max_chars=4),
@@ -122,10 +122,10 @@ def render_colonna_squadra(label_titolo, chiave_griglia, default_all, default_no
         st.markdown("<div style='padding-top: 24px;'></div>", unsafe_allow_html=True)
         b1, b2 = st.columns(2)
         with b1:
-            st.button("⬇️", key=f"down_{chiave_griglia}", use_container_width=True,
+            st.button("⬇️", key=f"down_{chiave_griglia}", width="stretch",
                       on_click=applica_shift, args=(chiave_griglia, "giù"))
         with b2:
-            st.button("⬆️", key=f"up_{chiave_griglia}", use_container_width=True,
+            st.button("⬆️", key=f"up_{chiave_griglia}", width="stretch",
                       on_click=applica_shift, args=(chiave_griglia, "su"))
 
     return {"squadra": nome, "allenatore": alln}
