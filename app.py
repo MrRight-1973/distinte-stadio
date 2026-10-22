@@ -170,7 +170,7 @@ def carica_distinta(colonna, etichetta, lato):
         colonna.markdown(f"**{etichetta}**")
         c_nome, c_cambia = colonna.columns([3, 1])
         c_nome.success(f"📎 {salvato['nome']}")
-        if c_cambia.button("Cambia", key=f"cambia_{lato}", use_container_width=True):
+        if c_cambia.button("Cambia", key=f"cambia_{lato}", width="stretch"):
             st.session_state[chiave] = None
             st.session_state.pop(f"uploader_file_{lato}", None)
             togli_distinte_caricate([lato])
@@ -243,7 +243,7 @@ def render_costi_letture(dettaglio=False):
                "Lettura": MODELLI_LETTURA.get(v["modello"], v["modello"]).split(" (")[0]
                           + (" ingrandita" if v.get("ingrandita") else ""),
                "Costo": formatta_dollari(v["costo"])} for v in reversed(storico[-10:])]
-    st.dataframe(pd.DataFrame(ultime), hide_index=True, use_container_width=True)
+    st.dataframe(pd.DataFrame(ultime), hide_index=True, width="stretch")
     st.caption("Calcolato sui prezzi di listino OpenAI; il credito residuo si vede solo su platform.openai.com.")
 
 
@@ -373,21 +373,21 @@ def pubblica_attesa():
 
 def render_forza_attesa():
     """Mette subito la pagina spettatori in attesa della prossima partita, senza toccare liste e cronaca."""
-    if st.button("⏳ Metti la pagina live in attesa della prossima partita", use_container_width=True):
+    if st.button("⏳ Metti la pagina live in attesa della prossima partita", width="stretch"):
         st.session_state["conferma_attesa"] = True
         st.rerun()
     if st.session_state.get("conferma_attesa"):
         st.warning("La pagina degli spettatori toglie liste e PDF e mostra «In attesa della prossima partita». "
                    "Qui nell'app non cambia nulla: per rimettere la distinta basta pubblicarla di nuovo. Continuare?")
         c1, c2 = st.columns(2)
-        if c1.button("✅ Sì, metti in attesa", type="primary", use_container_width=True):
+        if c1.button("✅ Sì, metti in attesa", type="primary", width="stretch"):
             st.session_state.pop("conferma_attesa", None)
             with st.spinner("Aggiorno la pagina spettatori..."):
                 if pubblica_attesa():
                     st.session_state["messaggio_attesa"] = ("⏳ Pagina spettatori in attesa della prossima partita "
                                                             "(si aggiorna entro 1-2 minuti).")
                     st.rerun()
-        if c2.button("Annulla", key="annulla_attesa", use_container_width=True):
+        if c2.button("Annulla", key="annulla_attesa", width="stretch"):
             st.session_state.pop("conferma_attesa", None)
             st.rerun()
     messaggio = st.session_state.pop("messaggio_attesa", None)
@@ -510,7 +510,7 @@ def render_login():
         nome = st.text_input("Utente", key="utente_segreteria",
                              help="Lascia vuoto per entrare con la password della segreteria.")
         password_inserita = st.text_input("Password", type="password", key="pwd_segreteria")
-        if st.button("Accedi", type="primary", use_container_width=True):
+        if st.button("Accedi", type="primary", width="stretch"):
             accesso = accedi(nome, password_inserita, password_emergenza)
             if accesso:
                 st.session_state["autenticato"] = True
@@ -633,7 +633,7 @@ def render_gestione_utenti():
                     st.caption("Prima crea le squadre in 🏆 Campionati.")
             nuova = st.text_input("Nuova password", type="password", key=f"nuova_pwd_{nome}")
             c1, c2 = st.columns(2)
-            if c1.button("🔑 Cambia password", key=f"cambia_pwd_{nome}", use_container_width=True):
+            if c1.button("🔑 Cambia password", key=f"cambia_pwd_{nome}", width="stretch"):
                 try:
                     cambia_password(nome, nuova)
                     st.session_state["utenti_messaggi"] = [("success", f"Password di {nome} cambiata.")]
@@ -641,7 +641,7 @@ def render_gestione_utenti():
                     st.rerun()
                 except UtentiErrore as e:
                     st.error(str(e))
-            if c2.button("🗑️ Elimina utente", key=f"elimina_{nome}", use_container_width=True,
+            if c2.button("🗑️ Elimina utente", key=f"elimina_{nome}", width="stretch",
                          disabled=nome == st.session_state.get("utente")):
                 elimina_utente(nome)
                 st.session_state["utenti_messaggi"] = [("success", f"Utente {nome} eliminato.")]
@@ -685,10 +685,10 @@ def promemoria_scadenze():
         c1.markdown(f"⏰ **{len(avvisi)} scadenze da sistemare**: "
                     + (f"{scaduti} già scadute, " if scaduti else "")
                     + f"le altre entro {GIORNI_AVVISO} giorni (certificati medici e documenti).")
-        if c2.button("👦 Vedi in Anagrafica", key="promemoria_apri", use_container_width=True):
+        if c2.button("👦 Vedi in Anagrafica", key="promemoria_apri", width="stretch"):
             st.session_state["vai_a_sezione"] = "👦 Anagrafica"
             st.rerun()
-        if c3.button("Visto", key="promemoria_ok", use_container_width=True):
+        if c3.button("Visto", key="promemoria_ok", width="stretch"):
             st.session_state["promemoria_visto"] = True
             st.rerun()
 
@@ -711,7 +711,7 @@ def render_segreteria():
     with col_esci:
         st.markdown(f"<div style='text-align:right;font-size:.85rem;opacity:.75;margin-bottom:.2rem'>"
                     f"👤 {html.escape(st.session_state.get('utente', ''))}</div>", unsafe_allow_html=True)
-        if st.button("Esci", type="secondary", use_container_width=True):
+        if st.button("Esci", type="secondary", width="stretch"):
             for chiave in ("autenticato", "utente", "ruolo", "sezione_segreteria"):
                 st.session_state.pop(chiave, None)
             st.rerun()
@@ -830,7 +830,7 @@ def render_sezione_distinta():
 
     c_scan, c_reset = st.columns(2)
     with c_reset:
-        if st.button("🗑️ Svuota Liste e Ripristina Scansione", type="secondary", use_container_width=True):
+        if st.button("🗑️ Svuota Liste e Ripristina Scansione", type="secondary", width="stretch"):
             reset_solo_dati_ai()
 
     firma_correnti = f"{firma_file(file_casa)}__{firma_file(file_ospite)}"
@@ -847,7 +847,7 @@ def render_sezione_distinta():
         lato, f = una_sola[0]
         with c_scan:
             if st.button(f"🔍 Leggi solo la distinta {'LOCALE' if lato == 'casa' else 'OSPITE'}", type="primary",
-                         use_container_width=True, disabled=not api_key_openai, key="leggi_un_lato",
+                         width="stretch", disabled=not api_key_openai, key="leggi_un_lato",
                          help="Legge solo questa distinta; l'altra squadra resta com'è (Crea distinta, rosa o a mano)."):
                 leggi_un_lato(f, lato, api_key_openai, firma_correnti)
 
@@ -863,7 +863,7 @@ def render_sezione_distinta():
             st.caption(f"🤖 Lettura con {descrizione_lettura(modello, ingrandita)} (si cambia in ⚙️ Opzioni).")
             render_costi_letture()
             with c_scan:
-                if st.button("🔍 Fase 1: Esegui Scansione AI delle Liste", type="primary", use_container_width=True):
+                if st.button("🔍 Fase 1: Esegui Scansione AI delle Liste", type="primary", width="stretch"):
                     with st.spinner(f"Estrazione giocatori e date in corso con {MODELLI_LETTURA[modello].split(' (')[0]}"
                                     + (" (lettura ingrandita)" if ingrandita else "") + "..."):
                         try:
@@ -894,7 +894,7 @@ def render_sezione_distinta():
                             st.rerun()
 
     if "dati_mappati" not in st.session_state:
-        if st.button("✍️ Compila le liste a mano o da CSV (senza scansione)", use_container_width=True):
+        if st.button("✍️ Compila le liste a mano o da CSV (senza scansione)", width="stretch"):
             st.session_state["macro_info"] = unisci_scansioni({}, {})
             st.session_state["dati_mappati"] = True
             st.session_state["firma_scansione_attiva"] = firma_correnti
@@ -936,7 +936,7 @@ def render_sezione_distinta():
         render_controllo_liste(dati_c, dati_o)
 
         st.markdown("---")
-        if st.button("⚡ Fase 3: Pubblica su Web e Genera PDF A4", type="primary", use_container_width=True):
+        if st.button("⚡ Fase 3: Pubblica su Web e Genera PDF A4", type="primary", width="stretch"):
             with st.spinner("Generazione PDF e pubblicazione su GitHub..."):
                 dati_c = {**dati_c, "giocatori": giocatori_da_griglia("griglia_casa")}
                 dati_o = {**dati_o, "giocatori": giocatori_da_griglia("griglia_ospite")}

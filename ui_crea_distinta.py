@@ -296,13 +296,13 @@ def render_crea_distinta(utente, ruolo, nome_societa):
                 st.markdown(f"- {a}")
             st.caption("Validi il giorno della gara, ma scadono entro un mese: tutte le scadenze sono in 👦 Anagrafica.")
     c1, c2 = st.columns(2)
-    if c1.button("💾 Salva", use_container_width=True, key=f"cd_salva_{k}", disabled=not avversario.strip()):
+    if c1.button("💾 Salva", width="stretch", key=f"cd_salva_{k}", disabled=not avversario.strip()):
         salvata = salva_distinta(stagione, distinta)
         st.session_state["cd_apri"] = salvata["id"]
         st.session_state["cd_n"] = n + 1
         _messaggio("success", f"Distinta {etichetta(salvata)} salvata.")
         st.rerun()
-    if c2.button("🖨️ Salva e prepara il PDF", type="primary", use_container_width=True, key=f"cd_pdf_{k}",
+    if c2.button("🖨️ Salva e prepara il PDF", type="primary", width="stretch", key=f"cd_pdf_{k}",
                  disabled=not avversario.strip() or not giocatori):
         salvata = salva_distinta(stagione, distinta)
         st.session_state["cd_pdf_pronto"] = (salvata["id"], genera_pdf_distinta(salvata, persone, squadra.strip()),
@@ -316,20 +316,20 @@ def render_crea_distinta(utente, ruolo, nome_societa):
     pronto = st.session_state.get("cd_pdf_pronto")
     if pronto and pronto[0] == scelta:
         st.download_button("⬇️ Scarica la distinta (PDF)", pronto[1], file_name=pronto[2], mime="application/pdf",
-                           type="primary", use_container_width=True, key="cd_scarica")
+                           type="primary", width="stretch", key="cd_scarica")
         st.caption("Stampala e falla firmare al dirigente accompagnatore. Se cambi qualcosa, prepara di nuovo il PDF.")
 
     if scelta != NUOVA:
         if st.session_state.get("cd_elimina") == scelta:
             st.warning(f"Eliminare la distinta {etichetta(distinte[scelta])}?")
             c1, c2 = st.columns(2)
-            if c1.button("🗑️ Sì, elimina", type="primary", use_container_width=True, key="cd_elimina_si"):
+            if c1.button("🗑️ Sì, elimina", type="primary", width="stretch", key="cd_elimina_si"):
                 elimina_distinta(stagione, scelta)
                 st.session_state.pop("cd_elimina", None)
                 st.session_state["cd_n"] = n + 1
                 _messaggio("success", "Distinta eliminata.")
                 st.rerun()
-            if c2.button("Annulla", use_container_width=True, key="cd_elimina_no"):
+            if c2.button("Annulla", width="stretch", key="cd_elimina_no"):
                 st.session_state.pop("cd_elimina", None)
                 st.rerun()
         elif st.button("🗑️ Elimina questa distinta", key="cd_elimina_btn"):
@@ -374,11 +374,11 @@ def _render_calendario(stagione, gruppi, miei, distinte, staff, utente, nome_soc
             st.info(f"Nessuna partita di {nostra} da preparare.")
             return
         st.caption("Tocca una partita per prepararne la distinta, oppure creale tutte insieme.")
-        tabella = st.dataframe(righe, hide_index=True, use_container_width=True, on_select="rerun",
+        tabella = st.dataframe(righe, hide_index=True, width="stretch", on_select="rerun",
                                selection_mode="single-row", key=f"cd_cal_tab_{gruppo}_{nostra}")
         selezionate = tabella.selection.rows if tabella else []
         c1, c2 = st.columns(2)
-        if c1.button("✏️ Prepara la partita scelta", type="primary", use_container_width=True,
+        if c1.button("✏️ Prepara la partita scelta", type="primary", width="stretch",
                      disabled=not selezionate, key="cd_cal_una"):
             scelta = per_riga[selezionate[0]]
             if isinstance(scelta, dict):  # ancora da creare: si crea solo questa
@@ -389,7 +389,7 @@ def _render_calendario(stagione, gruppi, miei, distinte, staff, utente, nome_soc
                                   "📂 Distinta, e salva.")
             st.session_state["cd_n"] = st.session_state.get("cd_n", 0) + 1
             st.rerun()
-        if c2.button(f"📅 Crea tutte ({len(nuove)})", use_container_width=True, disabled=not nuove, key="cd_cal_crea"):
+        if c2.button(f"📅 Crea tutte ({len(nuove)})", width="stretch", disabled=not nuove, key="cd_cal_crea"):
             salvate = salva_distinte(stagione, nuove)
             st.session_state["cd_apri"] = min(salvate, key=lambda d: d["data"])["id"]  # apre la prossima partita
             st.session_state["cd_n"] = st.session_state.get("cd_n", 0) + 1
@@ -418,7 +418,7 @@ def render_prendi_da_crea_distinta():
                       "anno": anno_di(persone[g["id"]]), "numero": g.get("numero")}
                      for g in d["giocatori"] if g["id"] in persone]
         st.caption(f"{len(giocatori)} giocatori. L'altra squadra si compila come sempre: foto, CSV o a mano.")
-        if st.button("✅ Metti nella distinta", type="primary", use_container_width=True, key="prendi_cd_ok"):
+        if st.button("✅ Metti nella distinta", type="primary", width="stretch", key="prendi_cd_ok"):
             lato = "casa" if d.get("in_casa", True) else "ospite"
             ruoli = d.get("ruoli") or {}
 

@@ -160,7 +160,7 @@ def render_gestione_sponsor(token, repo, branch=None):
         if modificato:
             st.warning("Ci sono modifiche non ancora pubblicate.")
         if st.button("💾 Salva e pubblica sponsor", type="primary", disabled=not modificato,
-                     key="sponsor_salva", use_container_width=True):
+                     key="sponsor_salva", width="stretch"):
             with st.spinner("Pubblicazione degli sponsor su GitHub..."):
                 try:
                     salva_sponsor(token, repo, lista, branch)

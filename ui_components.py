@@ -63,5 +63,5 @@ def render_download_buttons():
             file_name=_nome_distinta(),
             mime="application/pdf",
             type="primary",
-            use_container_width=True,
+            width="stretch",
         )

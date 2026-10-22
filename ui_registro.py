@@ -28,7 +28,7 @@ def _render_registro():
         return
     st.dataframe(pd.DataFrame([{"Quando": v.get("quando", ""), "Chi": v.get("chi") or "—", "Cosa": v.get("cosa", ""),
                                 "Dettaglio": v.get("dettaglio", "")} for v in voci]),
-                 hide_index=True, use_container_width=True)
+                 hide_index=True, width="stretch")
 
 
 def _render_backup():
@@ -59,8 +59,8 @@ def _render_backup():
         pronto = st.session_state.get("bk_pronto")
         if pronto and pronto[0] == nome:
             c2.download_button("💾 Scarica", pronto[1], file_name=nome, mime="application/zip",
-                               key=f"bk_scarica_{nome}", use_container_width=True)
-        elif c2.button("⬇️ Prepara", key=f"bk_prepara_{nome}", use_container_width=True):
+                               key=f"bk_scarica_{nome}", width="stretch")
+        elif c2.button("⬇️ Prepara", key=f"bk_prepara_{nome}", width="stretch"):
             try:
                 st.session_state["bk_pronto"] = (nome, backup_dati.scarica_backup(nome))
             except archivio_cloud.ArchivioErrore as e:

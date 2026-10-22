@@ -82,7 +82,7 @@ def _dettaglio_spazio(file, tutte):
                f"{_misura(gruppi['aperta'])} · foto delle distinte caricate e pubblicate {_misura(gruppi['distinte'])}"
                + (f" · file non più usati {_misura(gruppi['orfani'])}" if orfani else ""))
     if orfani and st.button(f"🧽 Elimina {len(orfani)} file non più usati ({_misura(gruppi['orfani'])})",
-                            use_container_width=True):
+                            width="stretch"):
         if _prova(pulisci_file_orfani, orfani):
             st.session_state["arch_messaggio"] = f"🧽 Eliminati {len(orfani)} file che nessuna partita usava."
             st.rerun()
@@ -167,7 +167,7 @@ def _tabella_partite(partite, dettagli, file_online, ordine, aperta_da=None, sol
         if not sola_lettura:
             righe[-1]["File"] = (("✏️ aperta in Cronaca · " if p["id"] == aperta_da else "")
                                  + _descrizione_file(dettagli.get(p["id"], {}), file_online))
-    scelta = st.dataframe(pd.DataFrame(righe), hide_index=True, use_container_width=True,
+    scelta = st.dataframe(pd.DataFrame(righe), hide_index=True, width="stretch",
                           on_select="rerun", selection_mode="single-row" if sola_lettura else "multi-row",
                           key=f"arch_tabella_{ordine}_{st.session_state.get('arch_tabella_n', 0)}",
                           height=min(35 * len(righe) + 40, 420),
@@ -181,22 +181,22 @@ def _azioni_partita(p, cronaca):
     if st.session_state.get("arch_da_eliminare") == p["id"]:
         st.warning(f"Eliminare definitivamente {p.get('casa')} – {p.get('ospite')}, con foto e note vocali?")
         c1, c2 = st.columns(2)
-        if c1.button("🗑️ Sì, elimina", key="arch_si", type="primary", use_container_width=True):
+        if c1.button("🗑️ Sì, elimina", key="arch_si", type="primary", width="stretch"):
             if _prova(elimina_partita_archiviata, p["id"]):
                 st.session_state.pop("arch_da_eliminare", None)
                 _deseleziona()
                 st.rerun()
-        if c2.button("Annulla", key="arch_no", use_container_width=True):
+        if c2.button("Annulla", key="arch_no", width="stretch"):
             st.session_state.pop("arch_da_eliminare", None)
             st.rerun()
         return
     c0, c1, c2 = st.columns(3)
     guardata = st.session_state.get("arch_guarda") == p["id"]
     if c0.button("🙈 Chiudi la visione" if guardata else "👁️ Guarda in sola lettura", key="arch_guarda_btn",
-                 use_container_width=True):
+                 width="stretch"):
         st.session_state["arch_guarda"] = None if guardata else p["id"]
         st.rerun()
-    if c1.button("📂 Riapri in Cronaca", key="arch_apri", use_container_width=True):
+    if c1.button("📂 Riapri in Cronaca", key="arch_apri", width="stretch"):
         if fase_in_corso(cronaca):
             st.error("C'è un tempo in corso nella Cronaca: chiudilo prima di riaprire un'altra partita.")
         else:
@@ -208,7 +208,7 @@ def _azioni_partita(p, cronaca):
             st.session_state["cronaca_messaggio"] = ("success", "📂 Partita riaperta: in archivio resta com'era finché "
                                                                 "non la archivi di nuovo. Quella di prima è in archivio.")
             st.rerun()
-    if c2.button("🗑️ Elimina", key="arch_elimina", use_container_width=True):
+    if c2.button("🗑️ Elimina", key="arch_elimina", width="stretch"):
         st.session_state["arch_da_eliminare"] = p["id"]
         st.rerun()
 
@@ -243,7 +243,7 @@ def _azioni_selezione(selezionate, loghi_sponsor, cronaca):
     backup = st.session_state.get("arch_backup")
     if not backup or backup["ids"] != chiave:
         st.caption("Il backup è un file ZIP con dati, resoconto PDF, foto e note vocali: salvalo sul PC o su Google Drive.")
-        if st.button("📦 Prepara backup", type="primary", use_container_width=True):
+        if st.button("📦 Prepara backup", type="primary", width="stretch"):
             with st.spinner("Preparo il backup (scarico foto e creo i PDF)..."):
                 loghi = loghi_sponsor()
                 try:
@@ -265,7 +265,7 @@ def _azioni_selezione(selezionate, loghi_sponsor, cronaca):
         st.session_state["arch_backup"]["scaricato"] = True
 
     st.download_button(f"⬇️ Scarica backup ({_misura(len(backup['zip']))})", backup["zip"], file_name=nome,
-                       mime="application/zip", on_click=scaricato, type="primary", use_container_width=True)
+                       mime="application/zip", on_click=scaricato, type="primary", width="stretch")
     if not backup["scaricato"]:
         st.caption("Dopo aver scaricato il backup potrai liberare spazio.")
         return
@@ -276,7 +276,7 @@ def _azioni_selezione(selezionate, loghi_sponsor, cronaca):
         "Tutta la partita: resta solo nel backup",
     ], key="arch_cosa_togliere")
     conferma = st.checkbox("Ho salvato il backup in un posto sicuro", key="arch_conferma_backup")
-    if st.button("🧹 Libera spazio", disabled=not conferma, use_container_width=True):
+    if st.button("🧹 Libera spazio", disabled=not conferma, width="stretch"):
         azione = alleggerisci_partita if scelta.startswith("Solo") else elimina_partita_archiviata
         for id_partita in chiave:
             if not _prova(azione, id_partita):
@@ -291,7 +291,7 @@ def _ripristino(cronaca):
     with st.expander("♻️ Ripristina da un backup"):
         st.caption("Rimette nell'archivio le partite di un file ZIP creato qui, con foto e note vocali.")
         f = st.file_uploader("File di backup (.zip)", type=["zip"], key=f"arch_zip_{st.session_state.get('arch_zip_n', 0)}")
-        if f and st.button("♻️ Ripristina", use_container_width=True):
+        if f and st.button("♻️ Ripristina", width="stretch"):
             try:
                 nomi, saltate = ripristina_backup(f.getvalue(), cronaca.get("id", ""))
             except Exception as e:
@@ -317,7 +317,7 @@ def _chiudi_stagione(dettagli, loghi_sponsor, cronaca, nome_societa):
         stagione = st.selectbox("Stagione", stagioni, key="arch_stagione")
         archivio = st.session_state.get("arch_stagione_zip")
         if not archivio or archivio["stagione"] != stagione:
-            if st.button("📦 Prepara archivio stagione", type="primary", use_container_width=True):
+            if st.button("📦 Prepara archivio stagione", type="primary", width="stretch"):
                 with st.spinner("Preparo l'archivio (scarico foto, creo resoconti e statistiche)..."):
                     loghi = loghi_sponsor()
                     try:
@@ -343,7 +343,7 @@ def _chiudi_stagione(dettagli, loghi_sponsor, cronaca, nome_societa):
 
         st.download_button(f"⬇️ Scarica archivio {stagione} ({_misura(len(archivio['zip']))})", archivio["zip"],
                            file_name=f"Archivio_stagione_{re.sub(r'[^0-9]+', '-', stagione).strip('-')}.zip",
-                           mime="application/zip", on_click=scaricato, type="primary", use_container_width=True)
+                           mime="application/zip", on_click=scaricato, type="primary", width="stretch")
         aperta = {cronaca.get("id"), cronaca.get("archivio_id")} - {None, ""}
         ids = sorted(set(partite_della_stagione(stagione)) - aperta)
         if not archivio["scaricato"] or not ids:
@@ -358,7 +358,7 @@ def _chiudi_stagione(dettagli, loghi_sponsor, cronaca, nome_societa):
         ], key="arch_stagione_cosa")
         st.caption("Anagrafica e presenze agli allenamenti restano nell'app.")
         conferma = st.checkbox("Ho salvato l'archivio in un posto sicuro", key="arch_stagione_conferma")
-        if st.button("🧹 Libera spazio della stagione", disabled=not conferma, use_container_width=True):
+        if st.button("🧹 Libera spazio della stagione", disabled=not conferma, width="stretch"):
             azione = alleggerisci_partita if scelta.startswith("Solo") else elimina_partita_archiviata
             for id_partita in ids:
                 if not _prova(azione, id_partita):

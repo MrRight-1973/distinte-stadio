@@ -108,7 +108,7 @@ def _segna(stagione, gruppo, ragazzi, allenamenti):
                         default=(gia or {}).get(r["id"], "completo" if not gia else "assente"),
                         key=f"pres_{gruppo}_{chiave}_{n}_{r['id']}")
         salva = st.form_submit_button("💾 Salva modifiche" if gia else "💾 Salva presenze", type="primary",
-                                      use_container_width=True)
+                                      width="stretch")
     stati = list(segnati.values())
     if salva:
         if gia and nuova != chiave:
@@ -121,7 +121,7 @@ def _segna(stagione, gruppo, ragazzi, allenamenti):
         _messaggio("success", f"Allenamento del {_gg(nuova)} salvato: {in_campo} allenati su {len(stati)} "
                               f"({_riassunto(segnati)}).")
         st.rerun()
-    if gia and st.button("🗑️ Togli questo allenamento", use_container_width=True, key="pres_elimina"):
+    if gia and st.button("🗑️ Togli questo allenamento", width="stretch", key="pres_elimina"):
         elimina_allenamento(stagione, gruppo, chiave)
         st.session_state["pres_n"] = n + 1
         _messaggio("success", f"Allenamento del {_gg(chiave)} tolto.")
@@ -151,7 +151,7 @@ def _salvati(stagione, allenamenti, aperta, n):
         righe.append(riga)
     tabella = pd.DataFrame(righe)
     usate = [c for c in tabella.columns if c in ("Data", "Allenati") or tabella[c].sum()]
-    scelta = st.dataframe(tabella[usate], hide_index=True, use_container_width=True, on_select="rerun",
+    scelta = st.dataframe(tabella[usate], hide_index=True, width="stretch", on_select="rerun",
                           selection_mode="single-row", key=f"pres_salvati_{mese}_{n}_{aperta}",
                           height=min(35 * len(righe) + 40, 320))
     if scelta.selection.rows:
@@ -219,7 +219,7 @@ def _statistiche(stagione, gruppo, ragazzi, allenamenti):
     with st.expander(f"🔎 Allenamento per allenamento ({len(sedute)})"):
         griglia = pd.DataFrame([{"Ragazzo": nome_di[i], **{etichetta_corta(s): SIGLE.get(allenamenti[s].get(i), "")
                                                             for s in sedute}} for i in ordine])
-        st.dataframe(griglia, hide_index=True, use_container_width=True)
+        st.dataframe(griglia, hide_index=True, width="stretch")
 
     firma = (gruppo, periodo, tuple(sedute), segnati, in_campo)
     if st.button("🖨️ Prepara il PDF come la tabella del mister", key="pres_pdf"):
@@ -311,7 +311,7 @@ def _importa(stagione, gruppo, ragazzi, allenamenti):
     st.caption(f"Controlla gli abbinamenti con l'anagrafica. {NUOVO} crea la scheda nella squadra {gruppo}; "
                f"{SALTA} non importa le sue presenze.")
     scelte = st.data_editor(
-        tabella, hide_index=True, use_container_width=True, disabled=["Nella tabella"], key=f"pres_imp_abb_{n}",
+        tabella, hide_index=True, width="stretch", disabled=["Nella tabella"], key=f"pres_imp_abb_{n}",
         height=min(35 * len(tabella) + 40, 700),
         column_config={"In anagrafica": st.column_config.SelectboxColumn(
             options=[NUOVO, SALTA] + list(etichette.values()), required=True)})
