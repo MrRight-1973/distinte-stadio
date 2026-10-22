@@ -632,22 +632,26 @@ TIPI_EVENTO = ["gol", "ammonizione", "espulsione", "sostituzione"]
 _TIPO_DA_NOTA = {"Gol": "gol", "Ammonizione": "ammonizione", "Espulsione": "espulsione"}
 
 
-_MINUTI_A_PAROLE = {"pre": (-1, 0), "inter": (45, 99), "fine": (999, 0)}
+_MINUTI_A_PAROLE = {"pre": (-1, 0), "fine": (999, 0)}
 
 
-def _minuti(minuto):
-    """Chiave d'ordine per 23', 45+2', Pre-gara, Intervallo, Fine gara."""
+def _minuti(minuto, durata=45):
+    """Chiave d'ordine per 23', 45+2', Pre-gara, Intervallo, Fine gara. L'intervallo (es. i cambi fatti
+    tra un tempo e l'altro) va dopo il recupero del primo tempo e prima del primo minuto del secondo."""
     numeri = [int(x) for x in "".join(c if c.isdigit() else " " for c in str(minuto)).split()]
     if numeri:
         return (numeri[0], numeri[1] if len(numeri) > 1 else 0)
     testo = str(minuto or "").strip().lower()
+    if testo.startswith("inter"):
+        return (durata, 99)
     return next((v for k, v in _MINUTI_A_PAROLE.items() if testo.startswith(k)), (999, 0))
 
 
 def note_in_ordine(cronaca):
     """Le note in ordine di minuto di gioco (a parità di minuto, nell'ordine in cui sono state prese),
     non nell'ordine in cui sono state scritte o corrette."""
-    return sorted(cronaca.get("note") or [], key=lambda n: (_minuti(n.get("minuto")), n.get("ts", 0)))
+    durata = int(cronaca.get("durata_tempo") or 45)
+    return sorted(cronaca.get("note") or [], key=lambda n: (_minuti(n.get("minuto"), durata), n.get("ts", 0)))
 
 
 def pulisci_eventi(eventi):

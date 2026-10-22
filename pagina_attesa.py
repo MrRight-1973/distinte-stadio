@@ -1,6 +1,7 @@
 """Cosa mostra la pagina spettatori tra una partita e l'altra: le prossime partite (dalle distinte preparate in
 📝 Crea distinta) e gli ultimi risultati (dall'archivio). Solo dati pubblici: squadre, data, ora, campo e
 risultato, mai i nomi dei ragazzi."""
+import re
 from datetime import date
 
 import archivio_cloud
@@ -13,10 +14,44 @@ from ui_archivio import data_ordinabile
 PROSSIME, RISULTATI = 3, 5
 
 
+def _parole(nome):
+    return {p for p in re.findall(r"[^\W\d_]{3,}", str(nome or "").upper())} - {"ASD", "SSD", "CALCIO"}
+
+
+def _giocate():
+    """{data iso: [parole delle squadre]} delle partite già in archivio con il risultato."""
+    giocate = {}
+    for p in archivio_cloud.elenco_partite():
+        a, m, g = data_ordinabile(p.get("data"))
+        if a and p.get("gol_casa") is not None:
+            giocate.setdefault(f"{a:04d}-{m:02d}-{g:02d}", []).append(_parole(p.get("casa")) | _parole(p.get("ospite")))
+    return giocate
+
+
+def da_giocare(distinte, oggi):
+    """Le distinte da oggi in poi, tranne le partite già chiuse in Cronaca e archiviate (es. quella appena
+    finita, che ha la data di oggi): stessa data e lo stesso avversario."""
+    try:
+        giocate = _giocate()
+    except Exception:  # noqa: BLE001 - senza archivio si mostrano tutte
+        giocate = {}
+    distinte = [d for d in distinte if d.get("data", "") >= oggi]
+    per_data = {}
+    for d in distinte:
+        per_data[d.get("data")] = per_data.get(d.get("data"), 0) + 1
+
+    def giocata(d):
+        squadre = giocate.get(d.get("data"), [])
+        # nomi scritti diversi (calendario LND e foglio dell'arbitro): se quel giorno c'è una sola partita, è lei
+        return bool(squadre) and (per_data[d.get("data")] == 1
+                                  or any(_parole(d.get("avversario")) & s for s in squadre))
+    return [d for d in distinte if not giocata(d)]
+
+
 def prossime_partite(oggi=None):
     oggi = (oggi or date.today()).isoformat()
     stagione = impostazioni_stagioni().get("corrente") or stagione_di_oggi()
-    distinte = [d for d in distinte_stagione(stagione).values() if d.get("data", "") >= oggi and d.get("avversario")]
+    distinte = [d for d in da_giocare(distinte_stagione(stagione).values(), oggi) if d.get("avversario")]
     return [{k: d.get(k, "") for k in ("data", "ora", "casa", "ospite", "competizione", "giornata", "campo", "localita")}
             for d in sorted(distinte, key=lambda d: (d.get("data", ""), d.get("ora", "")))[:PROSSIME]]
 
@@ -37,7 +72,7 @@ def classifica_attesa(oggi=None, nome_societa=""):
     if not tutte:
         return {}
     oggi = (oggi or date.today()).isoformat()
-    prossime = sorted((d for d in distinte_stagione(stagione).values() if d.get("data", "") >= oggi),
+    prossime = sorted(da_giocare(distinte_stagione(stagione).values(), oggi),
                       key=lambda d: d.get("data", ""))
     gruppo = next((d["gruppo"] for d in prossime if d.get("gruppo") in tutte), next(iter(tutte)))
     c = tutte[gruppo]
