@@ -291,7 +291,7 @@ def salva_liste_se_cambiate(info_gara, dati_c, dati_o):
 def reset_solo_dati_ai():
     togli_liste_in_lavorazione()
     st.session_state.pop("liste_salvate", None)
-    for chiave in ["dati_mappati", "macro_info", "firma_scansione_attiva", "pdf_interattivo_pronto"]:
+    for chiave in ["dati_mappati", "macro_info", "firma_scansione_attiva", "pdf_interattivo_pronto", "letto_un_lato"]:
         st.session_state.pop(chiave, None)
     reset_stato_squadra("griglia_casa")
     reset_stato_squadra("griglia_ospite")
@@ -426,6 +426,48 @@ def lista_dalla_rosa(lato, griglia, campionato, firma_correnti, gara=None):
     st.rerun()
 
 
+def leggi_un_lato(file, lato, api_key, firma_correnti):
+    """Scansione di una sola distinta (es. quella dell'altra squadra, quando la nostra viene da 📝 Crea distinta
+    o dalla rosa): riempie solo quel lato e completa i dati della gara che mancano, senza toccare l'altro."""
+    lettura = impostazioni_lettura()
+    modello, ingrandita = lettura["modello"], lettura["ingrandita"]
+    with st.spinner(f"Lettura della distinta {'LOCALE' if lato == 'casa' else 'OSPITE'} con "
+                    f"{MODELLI_LETTURA[modello].split(' (')[0]}..."):
+        try:
+            raw = analizza_distinta(file, lato.upper(), api_key, modello, ingrandita)
+        except Exception as e:
+            st.error(f"Errore nell'estrazione: {e}")
+            return
+    letti = unisci_scansioni(raw if lato == "casa" else {}, raw if lato == "ospite" else {})
+    if "dati_mappati" not in st.session_state:
+        st.session_state["macro_info"] = letti
+        if campionati_correnti()[1]:  # il campionato si sceglie dall'elenco delle Opzioni
+            st.session_state["macro_info"]["campionato"] = ""
+        reset_stato_squadra("griglia_ospite" if lato == "casa" else "griglia_casa")
+        st.session_state["firma_scansione_attiva"] = firma_correnti
+        st.session_state["dati_mappati"] = True
+    else:
+        info = st.session_state["macro_info"]
+        for campo in (f"nome_{lato}", f"all_{lato}", f"ass_{lato}"):  # il lato letto: vale la scansione
+            info[campo] = letti.get(campo) or info.get(campo, "")
+        for campo in ("giornata", "data", "arbitro"):  # la gara: solo quello che manca
+            info[campo] = info.get(campo) or letti.get(campo, "")
+        info.setdefault("avvisi", []).extend(letti.get("avvisi", []))
+    st.session_state[f"griglia_{lato}"] = pd.DataFrame(raw["giocatori"]).set_index("N°")
+    pulisci_widget_squadra(f"griglia_{lato}")
+    info = st.session_state["macro_info"]
+    info["lettura"] = descrizione_lettura(modello, ingrandita)
+    info["costo_lettura"] = raw.get("consumo", {}).get("costo", 0)
+    try:
+        registra_costo_lettura(f"{info.get('nome_casa', '')} - {info.get('nome_ospite', '')}", modello, ingrandita,
+                               info["costo_lettura"])
+    except OSError:
+        pass  # il costo è solo informativo: non deve bloccare la scansione
+    st.session_state["letto_un_lato"] = firma_file(file)
+    st.session_state.pop("pdf_interattivo_pronto", None)
+    st.rerun()
+
+
 def nomi_come_in_rosa(casa_raw, ospite_raw):
     """Dopo la scansione: i nomi della nostra squadra scritti come nella rosa (accenti, doppie, ordine)."""
     info = st.session_state["macro_info"]
@@ -481,7 +523,7 @@ def render_login():
 
 def azzera_sezione_distinta():
     """Dopo l'archiviazione di una partita: via foto caricate, dati letti, PDF e ultima distinta."""
-    for chiave in ["dati_mappati", "macro_info", "firma_scansione_attiva", "pdf_interattivo_pronto",
+    for chiave in ["dati_mappati", "macro_info", "firma_scansione_attiva", "pdf_interattivo_pronto", "letto_un_lato",
                    "ultima_distinta", "uploader_file_casa", "uploader_file_ospite",
                    "distinta_caricata_casa", "distinta_caricata_ospite", "liste_salvate"]:
         st.session_state.pop(chiave, None)
@@ -798,6 +840,16 @@ def render_sezione_distinta():
     da_crea_distinta = render_prendi_da_crea_distinta()
     if da_crea_distinta:
         lista_dalla_rosa(*da_crea_distinta[:3], firma_correnti, da_crea_distinta[3])
+
+    # Una sola distinta caricata (di solito l'altra squadra, con la nostra presa da Crea distinta o dalla rosa)
+    una_sola = [(lato, f) for lato, f in (("casa", file_casa), ("ospite", file_ospite)) if f]
+    if len(una_sola) == 1 and st.session_state.get("letto_un_lato") != firma_file(una_sola[0][1]):
+        lato, f = una_sola[0]
+        with c_scan:
+            if st.button(f"🔍 Leggi solo la distinta {'LOCALE' if lato == 'casa' else 'OSPITE'}", type="primary",
+                         use_container_width=True, disabled=not api_key_openai, key="leggi_un_lato",
+                         help="Legge solo questa distinta; l'altra squadra resta com'è (Crea distinta, rosa o a mano)."):
+                leggi_un_lato(f, lato, api_key_openai, firma_correnti)
 
     if file_casa and file_ospite:
         # File cambiati: la scansione precedente (e il PDF) non sono più validi
