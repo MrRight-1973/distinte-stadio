@@ -2,7 +2,8 @@
 📝 Crea distinta) e gli ultimi risultati (dall'archivio). Solo dati pubblici: squadre, data, ora, campo e
 risultato, mai i nomi dei ragazzi."""
 import re
-from datetime import date
+from datetime import date, datetime, timedelta
+from zoneinfo import ZoneInfo
 
 import archivio_cloud
 import girone
@@ -13,6 +14,48 @@ from stagioni import gruppi_correnti, gruppo_di, impostazioni_stagioni, stagione
 from ui_archivio import data_ordinabile
 
 PROSSIME, RISULTATI = 3, 5
+DURATA = timedelta(hours=2)  # una partita resta "prossima" fino a due ore dopo il calcio d'inizio
+FUSO = ZoneInfo("Europe/Rome")
+
+
+# dai più grandi ai più piccoli; "Under 17" e simili si ordinano per età
+_CATEGORIE = [("ECCELLENZA", 0), ("PROMOZIONE", 0), ("PRIMA", 0), ("SECONDA", 0), ("TERZA", 0), ("SENIOR", 0),
+              ("AMATORI", 0), ("JUNIORES", 19), ("ALLIEVI", 17), ("GIOVANISSIMI", 15), ("ESORDIENTI", 13),
+              ("PULCINI", 11), ("PRIMI CALCI", 9), ("PICCOLI AMICI", 7)]
+
+
+def eta(gruppo):
+    """Per ordinare le squadre: 0 la prima squadra, poi l'età della categoria al contrario (Under 19 prima di
+    Under 15). Le squadre non riconosciute vanno in fondo."""
+    nome = str(gruppo or "").upper()
+    under = re.search(r"\b(?:UNDER|U)\s*(\d{1,2})\b", nome)
+    if under:
+        return (1, -int(under[1]), nome)
+    for parola, anni in _CATEGORIE:
+        if parola in nome:
+            return (0, 0, nome) if anni == 0 else (1, -anni, nome)
+    return (2, 0, nome)
+
+
+def ancora_da_giocare(p, adesso):
+    """Con data e ora: fino a due ore dopo l'inizio. Senza ora: per tutto il giorno."""
+    try:
+        giorno = datetime.strptime(p.get("data", ""), "%Y-%m-%d")
+    except ValueError:
+        return True
+    try:
+        h, m = (int(x) for x in str(p.get("ora") or "").replace(".", ":").split(":")[:2])
+        fine = giorno.replace(hour=h, minute=m) + DURATA
+    except ValueError:
+        fine = giorno + timedelta(days=1)
+    return fine > adesso
+
+
+def _adesso(oggi):
+    """L'ora italiana senza fuso (come le date delle partite); con un giorno dato (prove): la sua mezzanotte."""
+    if oggi:
+        return datetime(oggi.year, oggi.month, oggi.day)
+    return datetime.now(FUSO).replace(tzinfo=None)
 
 
 def _parole(nome):
@@ -179,10 +222,11 @@ def _aggiungi_dal_girone(sezione, giornate, oggi, nome_societa):
 
 
 def squadre_attesa(oggi=None, nome_societa=""):
-    """Una sezione per squadra della società: [{"gruppo", "prossime", "risultati", "classifica"}], prima le
-    squadre che giocano prima. Prossime partite dalle distinte preparate e dal calendario LND, risultati
-    dall'archivio e dalla LND. Solo le squadre che hanno qualcosa da mostrare."""
-    oggi = (oggi or date.today()).isoformat()
+    """Una sezione per squadra della società: [{"gruppo", "prossime", "risultati", "classifica"}], dai più grandi
+    ai più piccoli. Prossime partite dalle distinte preparate e dal calendario LND (solo quelle non ancora finite,
+    guardando data e ora), risultati dall'archivio e dalla LND. Solo le squadre che hanno qualcosa da mostrare."""
+    adesso = _adesso(oggi)
+    oggi = adesso.date().isoformat()
     stagione, gruppi = gruppi_correnti()
     stagione = stagione or stagione_di_oggi()
     ordine = [g["gruppo"] for g in gruppi]
@@ -219,14 +263,15 @@ def squadre_attesa(oggi=None, nome_societa=""):
             sezione(g)["classifica"] = c
     except Exception:  # noqa: BLE001 - senza classifiche le sezioni restano
         pass
+    for sez in sezioni.values():  # quella di stamattina, già finita, non è più "prossima"
+        sez["prossime"] = [p for p in sez["prossime"] if ancora_da_giocare(p, adesso)]
     for sez in sezioni.values():  # le partite senza LND (coppe, amichevoli): niente nomi tutti maiuscoli
         for p in sez["prossime"] + sez["risultati"]:
             for k in ("casa", "ospite", "campo", "localita"):
                 if k in p:
                     p[k] = leggibile(p[k])
     piene = [sezioni[g] for g in ordine if sezioni[g]["prossime"] or sezioni[g]["risultati"] or sezioni[g]["classifica"]]
-    # prima chi gioca prima; le squadre senza partite in programma restano nell'ordine dei gruppi
-    return sorted(piene, key=lambda s: (s["prossime"][0]["data"] + s["prossime"][0]["ora"]) if s["prossime"] else "~")
+    return sorted(piene, key=lambda s: eta(s["gruppo"]))
 
 
 def dati_attesa(oggi=None, nome_societa=""):
