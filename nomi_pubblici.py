@@ -1,7 +1,7 @@
 """Come compaiono i giocatori sulla pagina pubblica (distinta e diretta): la scelta per gruppo squadra.
 
-Per le giovanili si mostrano solo cognome e iniziale del nome, senza anno di nascita e senza il PDF; chi ha
-detto No al nome in pubblico (consenso in 👦 Anagrafica) compare solo col numero. I nomi completi restano
+Per le giovanili si mostrano solo cognome e iniziale del nome, senza anno di nascita e senza il PDF; il consenso
+al nome in 👦 Anagrafica vale più della squadra: con No solo il numero, con Sì il nome completo (senza anno). I nomi completi restano
 nell'app, nel PDF per la segreteria e su Supabase privato: nei file pubblici va solo la versione ridotta.
 Salvato in impostazioni/nomi_pubblici.json (disco dell'app e Supabase), uguale per tutti i dispositivi.
 """
@@ -67,9 +67,10 @@ def nome_ridotto(nome, modo, persone=()):
     """"ROSSI MARIO (C)" -> "ROSSI M. (C)" con INIZIALE; "" con NUMERI o senza consenso."""
     testo = str(nome or "").strip()
     persona = _persona(testo, persone) if testo else None
-    if not testo or modo == NUMERI or (persona and persona.get("consenso_nome") == "No"):
+    consenso = (persona or {}).get("consenso_nome")
+    if not testo or consenso == "No" or (modo == NUMERI and consenso != "Sì"):
         return ""
-    if modo == COMPLETI:
+    if modo == COMPLETI or consenso == "Sì":  # i genitori hanno firmato: nome completo (l'anno resta fuori)
         return testo
     fascia = _FASCIA.search(testo)
     base = testo[:fascia.start()] if fascia else testo
@@ -83,29 +84,73 @@ def nome_ridotto(nome, modo, persone=()):
     return base + (fascia.group(0) if fascia else "")
 
 
-def squadra_pubblica(dati, modo, persone=()):
+def minorenne(nome, anno, giorno, persone=()):
+    """Il giocatore ha meno di 18 anni il giorno della partita: dalla data di nascita dell'anagrafica se c'è,
+    altrimenti dall'anno scritto in distinta (per prudenza conta minorenne anche chi li compie in quell'anno)."""
+    if not giorno:
+        return False
+    persona = _persona(nome, persone)
+    nascita = str((persona or {}).get("nascita") or "")
+    if re.fullmatch(r"\d{4}-\d{2}-\d{2}", nascita):
+        a, m, g = map(int, nascita.split("-"))
+        return (giorno.year - a - ((giorno.month, giorno.day) < (m, g))) < 18
+    cifre = re.sub(r"\D", "", str(anno or (persona or {}).get("anno_nascita") or ""))
+    if len(cifre) == 2:
+        cifre = str(2000 + int(cifre) if int(cifre) <= giorno.year % 100 else 1900 + int(cifre))
+    return len(cifre) == 4 and giorno.year - int(cifre) <= 18
+
+
+def _modo_giocatore(nome, anno, modo, giorno, persone):
+    """Con i nomi completi, un minorenne (es. un Allievo in prima squadra) va comunque ridotto."""
+    return INIZIALE if modo == COMPLETI and minorenne(nome, anno, giorno, persone) else modo
+
+
+def squadra_pubblica(dati, modo, persone=(), giorno=None):
     """La squadra come va sulla pagina pubblica: nomi ridotti e, se non sono completi, niente anno di nascita.
-    Le righe senza nome restano col numero solo se c'era un giocatore (chi non ha il consenso)."""
+    I minorenni sono ridotti anche quando la squadra ha i nomi completi. Le righe senza nome restano col numero
+    solo se c'era un giocatore (chi non ha il consenso)."""
     giocatori = []
     for g in (dati or {}).get("giocatori") or []:
         nome = str(g.get("GIOCATORE") or "").strip()
         if not nome:
             giocatori.append({**g, "ANNO": ""} if modo != COMPLETI else g)
             continue
-        ridotto = nome_ridotto(nome, modo, persone)
-        giocatori.append({**g, "GIOCATORE": ridotto or "—", "ANNO": g.get("ANNO", "") if modo == COMPLETI else ""})
+        suo = _modo_giocatore(nome, g.get("ANNO"), modo, giorno, persone)
+        ridotto = nome_ridotto(nome, suo, persone)
+        giocatori.append({**g, "GIOCATORE": ridotto or "—", "ANNO": g.get("ANNO", "") if suo == COMPLETI else ""})
     return {**(dati or {}), "giocatori": giocatori}
 
 
-def evento_pubblico(testo, modo, persone=()):
-    """Il giocatore di un evento della diretta; le sostituzioni sono "entra X, esce Y"."""
+def ci_sono_minorenni(squadre, giorno, persone=()):
+    return any(minorenne(g.get("GIOCATORE"), g.get("ANNO"), giorno, persone)
+               for d in squadre for g in (d or {}).get("giocatori") or [] if str(g.get("GIOCATORE") or "").strip())
+
+
+def giorno_partita(info_gara):
+    from ui_archivio import data_ordinabile
+    from datetime import date
+    a, m, g = data_ordinabile((info_gara or {}).get("data"))
+    return date(a, m, g) if a else None
+
+
+def evento_pubblico(testo, modo, persone=(), anni=None, giorno=None):
+    """Il giocatore di un evento della diretta; le sostituzioni sono "entra X, esce Y".
+    anni: {nome in distinta: anno} per riconoscere i minorenni anche con i nomi completi."""
+    anni = anni or {}
+
+    def uno(nome):
+        nome = nome.strip()
+        senza = _FASCIA.sub("", nome).upper()
+        anno = next((a for n, a in anni.items() if _FASCIA.sub("", n).upper() == senza), "")
+        return nome_ridotto(nome, _modo_giocatore(nome, anno, modo, giorno, persone), persone)
+
     parti = []
     for parte in str(testo or "").split(", "):
         m = re.match(r"(?i)(entra|esce)\s+(.*)", parte)
         if m:
-            parti.append(f"{m.group(1)} {nome_ridotto(m.group(2), modo, persone) or '—'}")
+            parti.append(f"{m.group(1)} {uno(m.group(2)) or '—'}")
         else:
-            parti.append(nome_ridotto(parte, modo, persone))
+            parti.append(uno(parte))
     return ", ".join(p for p in parti if p)
 
 
