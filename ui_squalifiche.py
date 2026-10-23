@@ -66,14 +66,14 @@ def render_squalifiche(stagione, miei, nome_societa, utente):
 
     st.markdown("**➕ Segna una squalifica**")
     squadra_di = {i: (r.get("gruppi") or {}).get(stagione, "") for i, r in persone.items()}
-    altre = st.toggle("Anche chi è di altre squadre (es. un Juniores che gioca in questa)", key="anag_sq_altre")
+    altre = st.toggle("Anche chi è di altre squadre (es. un Juniores che gioca in questa)", key=f"anag_sq_altre_{gruppo}")  # per squadra: cambiando squadra riparte spento
     scelti = sorted((r for r in persone.values() if altre or squadra_di[r["id"]] == gruppo),
                     key=lambda r: (not e_calciatore(r), squadra_di[r["id"]] != gruppo, nome_completo(r)))
     nomi = {r["id"]: nome_completo(r) + ("" if e_calciatore(r) else f" ({r.get('qualifica') or r.get('tipo')})")
             + ("" if squadra_di[r["id"]] == gruppo else f" · {squadra_di[r['id']] or 'senza squadra'}")
             for r in scelti}
     chi = st.selectbox("Calciatore, dirigente o staff", list(nomi), format_func=nomi.get, index=None,
-                       placeholder="Scegli la persona", key="anag_sq_chi")
+                       placeholder="Scegli la persona", key=f"anag_sq_chi_{gruppo}")
     c1, c2 = st.columns(2)
     data_cu = c1.date_input("Data del Comunicato", value=date.today(), format="DD/MM/YYYY", key="anag_sq_cu")
     modo = c2.segmented_control("Squalifica", ["📅 A giornate", "⏳ A tempo"], default="📅 A giornate",
@@ -90,6 +90,6 @@ def render_squalifiche(stagione, miei, nome_societa, utente):
         squalifiche.aggiungi(chi, stagione, gruppo, tipo, data_cu.isoformat(), giornate,
                              fino.isoformat() if fino else "", utente)
         st.session_state["anag_sq_msg"] = f"⚖️ Squalifica di {nomi[chi]} segnata."
-        for chiave in ("anag_sq_chi", "anag_sq_fino"):
+        for chiave in (f"anag_sq_chi_{gruppo}", f"anag_sq_altre_{gruppo}", "anag_sq_fino"):
             st.session_state.pop(chiave, None)
         st.rerun()
