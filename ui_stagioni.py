@@ -3,6 +3,7 @@ import streamlit as st
 
 from anagrafica import rinomina_gruppo
 from presenze import rinomina_gruppo as rinomina_gruppo_presenze
+from nomi_pubblici import MODI, modo_gruppo, salva_scelta, scelte_salvate
 from rose import rinomina_rosa
 from utenti import rinomina_gruppo_allenatori
 from stagioni import impostazioni_stagioni, salva_stagioni, stagione_di_oggi
@@ -73,6 +74,8 @@ def render_opzioni_campionati():
                 rinomina_gruppo(corrente, gruppo, nuovo)  # i ragazzi dell'anagrafica
                 rinomina_gruppo_presenze(corrente, gruppo, nuovo)
                 rinomina_gruppo_allenatori(gruppo, nuovo)
+                if gruppo in scelte_salvate():  # la scelta dei nomi sulla pagina live segue il gruppo
+                    salva_scelta(nuovo, scelte_salvate()[gruppo])
                 _salva(imp, corrente, [{**g, "gruppo": nuovo} if g["gruppo"] == gruppo else g for g in gruppi],
                        f"Gruppo rinominato in «{nuovo}» (la rosa resta).", {f"opz_gruppo_{corrente}": nuovo})
         if st.button(f"🗑️ Elimina «{gruppo}» e le sue competizioni", key="opz_elimina_gruppo"):
@@ -113,6 +116,26 @@ def render_opzioni_campionati():
                 _salva(imp, corrente, con_competizioni([c for c in competizioni if c != scelta]), f"«{scelta}» eliminata.",
                        {f"opz_competizione_{corrente}_{gruppo}": None})
     _riepilogo(gruppi)
+    _nomi_pubblici(gruppi)
+
+
+def _nomi_pubblici(gruppi):
+    """Per ogni gruppo: come compaiono i giocatori nella distinta e nella diretta della pagina live."""
+    st.markdown("---")
+    st.markdown("**🌐 Nomi dei giocatori sulla pagina live**")
+    st.caption("Per le giovanili meglio cognome e iniziale: niente anni di nascita e niente PDF online. Chi in "
+               "👦 Anagrafica ha detto No al nome compare solo col numero. Nell'app e nel PDF per l'arbitro i nomi "
+               "restano completi.")
+    scelte = scelte_salvate()
+    for g in gruppi:
+        attuale = modo_gruppo(g["gruppo"], scelte)
+        nuovo = st.selectbox(g["gruppo"], list(MODI), index=list(MODI).index(attuale), format_func=MODI.get,
+                             key=f"opz_nomi_{g['gruppo']}")
+        if nuovo != attuale:
+            salva_scelta(g["gruppo"], nuovo)
+            st.session_state["stagioni_messaggi"] = [("success", f"{g['gruppo']}: {MODI[nuovo]} sulla pagina live. "
+                                                      "Vale dalla prossima pubblicazione.")]
+            st.rerun()
 
 
 def _pulito(testo):

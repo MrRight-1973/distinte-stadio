@@ -35,7 +35,7 @@ CALCIATORE = "Calciatore"
 TIPI_PERSONA = [CALCIATORE, "Dirigente", "Allenatore", "Staff sanitario", "Altro staff"]
 GIORNI_AVVISO = 30  # scadenze segnalate con un mese di anticipo
 CAMPI_TESTO = ("cognome", "nome", "matricola", "documento_tipo", "documento_numero", "documento_rilascio",
-               "ruolo", "genitore", "telefono", "tipo", "qualifica", "consenso_foto")
+               "ruolo", "genitore", "telefono", "tipo", "qualifica", "consenso_foto", "consenso_nome")
 CAMPI_DATA = ("nascita", "documento_scadenza", "certificato_scadenza")
 
 
@@ -88,6 +88,7 @@ def pulisci_scheda(scheda):
     pulita["cognome"], pulita["nome"] = pulita["cognome"].upper(), pulita["nome"].upper()
     pulita["tipo"] = pulita["tipo"] if pulita["tipo"] in TIPI_PERSONA else CALCIATORE
     pulita["consenso_foto"] = consenso(pulita["consenso_foto"])
+    pulita["consenso_nome"] = consenso(pulita["consenso_nome"])
     pulita["matricola"] = re.sub(r"\s+", "", pulita["matricola"]).upper()
     pulita["documento_numero"] = re.sub(r"\s+", "", pulita["documento_numero"]).upper()
     pulita.update({k: data_iso(scheda.get(k)) for k in CAMPI_DATA})

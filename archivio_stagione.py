@@ -24,7 +24,7 @@ CAMPI_CSV = [("cognome", "Cognome"), ("nome", "Nome"), ("nascita", "Data di nasc
              ("ruolo", "Ruolo"), ("documento_tipo", "Tipo documento"), ("documento_numero", "Numero documento"),
              ("documento_rilascio", "Rilasciato da"), ("documento_scadenza", "Scadenza documento"),
              ("certificato_scadenza", "Scadenza certificato"), ("genitore", "Genitore"), ("telefono", "Telefono"),
-             ("consenso_foto", "Consenso foto")]
+             ("consenso_foto", "Consenso foto"), ("consenso_nome", "Consenso nome sulla pagina pubblica")]
 
 
 def _file(nome):

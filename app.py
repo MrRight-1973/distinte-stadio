@@ -57,6 +57,8 @@ from stagioni import campionati_correnti, gruppi_correnti
 from diretta import url_diretta
 from rose import correggi_con_rosa, lato_nostro, rosa_squadra
 from ui_rose import render_opzioni_rose
+from nomi_pubblici import (COMPLETI, MODI, leggi_distinta_completa, modo_partita, persone_anagrafica,
+                           salva_distinta_completa, squadra_pubblica)
 from ui_stagioni import render_opzioni_campionati
 from ui_components import render_download_buttons, render_info_match
 from ui_anagrafica import render_anagrafica
@@ -346,19 +348,32 @@ def pubblica_distinta(info_gara, dati_c, dati_o):
     if visite:  # contatore anonimo delle aperture della pagina
         pacchetto["visite"] = visite
     st.session_state["ultima_distinta"] = pacchetto  # la usa anche la cronaca della partita
-    file_da_pubblicare = {
-        "distinta.json": json.dumps(pacchetto, ensure_ascii=False, indent=2).encode("utf-8"),
-        "distinta.pdf": pdf_bytes,
-    }
+    salva_distinta_completa(pacchetto)  # per la cronaca dopo un riavvio: in pubblico i nomi possono essere ridotti
+    # In pubblico i nomi come scelto per la squadra in ⚙️ Opzioni (giovanili: cognome e iniziale, senza PDF)
+    modo = modo_partita(info_gara)
+    persone = persone_anagrafica()
+    pubblico = {**pacchetto, "casa": squadra_pubblica(dati_c, modo, persone),
+                "ospite": squadra_pubblica(dati_o, modo, persone), "pdf": modo == COMPLETI}
+    json_pubblico = json.dumps(pubblico, ensure_ascii=False, indent=2).encode("utf-8")
+    if modo == COMPLETI:
+        tentativi = [{"distinta.json": json_pubblico, "distinta.pdf": pdf_bytes}]
+    else:  # il PDF con i nomi completi non va online: si toglie quello della partita prima, se c'è
+        tentativi = [{"distinta.json": json_pubblico, "distinta.pdf": None}, {"distinta.json": json_pubblico}]
 
     try:
-        pubblica_su_github(
-            token=leggi_secret("GITHUB_TOKEN"),
-            repo=leggi_secret("GITHUB_REPO"),
-            file_da_pubblicare=file_da_pubblicare,
-            messaggio=f"Distinta {dati_c.get('squadra') or 'casa'} - {dati_o.get('squadra') or 'ospite'}",
-            branch=leggi_secret("GITHUB_BRANCH"),  # se assente: ramo principale del repository
-        )
+        for i, file_da_pubblicare in enumerate(tentativi):
+            try:
+                pubblica_su_github(
+                    token=leggi_secret("GITHUB_TOKEN"),
+                    repo=leggi_secret("GITHUB_REPO"),
+                    file_da_pubblicare=file_da_pubblicare,
+                    messaggio=f"Distinta {dati_c.get('squadra') or 'casa'} - {dati_o.get('squadra') or 'ospite'}",
+                    branch=leggi_secret("GITHUB_BRANCH"),  # se assente: ramo principale del repository
+                )
+                break
+            except PubblicazioneErrore:
+                if i == len(tentativi) - 1:
+                    raise
     except PubblicazioneErrore as e:
         st.error(f"❌ Pubblicazione online non riuscita: {e}")
         st.info("Il PDF è comunque pronto qui sotto. Puoi riprovare a pubblicare.")
@@ -368,6 +383,9 @@ def pubblica_distinta(info_gara, dati_c, dati_o):
         "🎉 Distinta inviata a GitHub. La pagina spettatori si aggiorna entro circa 1-2 minuti"
         + (f": {link}" if link else ".")
     )
+    if modo != COMPLETI:
+        st.caption(f"🔒 Sulla pagina pubblica: {MODI[modo].split(' ', 1)[1].lower()}, senza anni di nascita né "
+                   "PDF (si cambia in ⚙️ Opzioni → 🏆 Campionati). Il PDF completo è qui sotto.")
 
 
 def pubblica_attesa():
@@ -519,6 +537,10 @@ def distinta_pubblicata():
         return None
     dati = leggi_file(leggi_secret("GITHUB_TOKEN"), leggi_secret("GITHUB_REPO"), "distinta.json", leggi_secret("GITHUB_BRANCH"))
     distinta = json.loads(dati) if dati else None
+    if distinta and distinta.get("pdf") is False:  # in pubblico i nomi ridotti: quelli completi sono nel privato
+        completa = leggi_distinta_completa()
+        if completa and completa.get("aggiornato") == distinta.get("aggiornato"):
+            return completa
     return distinta if distinta and distinta.get("casa") else None  # "in attesa": nessuna distinta
 
 
