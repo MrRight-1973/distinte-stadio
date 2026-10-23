@@ -209,10 +209,11 @@ def _scheda(r, stagione, gruppi_ammessi, staff, n, nuova=False):
         consenso_nome = c2.selectbox(
             "🌐 Nome sulla pagina pubblica", CONSENSI_FOTO,
             index=CONSENSI_FOTO.index(r.get("consenso_nome", "")) if r.get("consenso_nome", "") in CONSENSI_FOTO else 0,
-            format_func=lambda x: {"": "❔ Non ancora chiesto", CONSENSO_SI: "✅ Sì",
+            format_func=lambda x: {"": "❔ Non ancora chiesto", CONSENSO_SI: "✅ Sì, firmato: nome completo",
                                    CONSENSO_NO: "🚫 No, solo il numero"}[x],
-            help="Con No, nella distinta e nella diretta della pagina live compare solo il numero di maglia. "
-                 "Il nome resta nell'app e nel PDF per l'arbitro.")
+            help="Nella distinta e nella diretta della pagina live. Non chiesto: come scelto per la squadra in "
+                 "⚙️ Opzioni (giovanili: cognome e iniziale). Sì: nome completo, senza anno di nascita. No: solo il "
+                 "numero di maglia. Nell'app e nel PDF per l'arbitro il nome resta sempre completo.")
         salva, annulla = st.columns(2)
         premuto = salva.form_submit_button("💾 Salva", type="primary", width="stretch")
         chiudi = annulla.form_submit_button("✖️ Chiudi", width="stretch")

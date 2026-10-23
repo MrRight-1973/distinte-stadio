@@ -1,7 +1,7 @@
 """Come compaiono i giocatori sulla pagina pubblica (distinta e diretta): la scelta per gruppo squadra.
 
-Per le giovanili si mostrano solo cognome e iniziale del nome, senza anno di nascita e senza il PDF; chi ha
-detto No al nome in pubblico (consenso in 👦 Anagrafica) compare solo col numero. I nomi completi restano
+Per le giovanili si mostrano solo cognome e iniziale del nome, senza anno di nascita e senza il PDF; il consenso
+al nome in 👦 Anagrafica vale più della squadra: con No solo il numero, con Sì il nome completo (senza anno). I nomi completi restano
 nell'app, nel PDF per la segreteria e su Supabase privato: nei file pubblici va solo la versione ridotta.
 Salvato in impostazioni/nomi_pubblici.json (disco dell'app e Supabase), uguale per tutti i dispositivi.
 """
@@ -67,9 +67,10 @@ def nome_ridotto(nome, modo, persone=()):
     """"ROSSI MARIO (C)" -> "ROSSI M. (C)" con INIZIALE; "" con NUMERI o senza consenso."""
     testo = str(nome or "").strip()
     persona = _persona(testo, persone) if testo else None
-    if not testo or modo == NUMERI or (persona and persona.get("consenso_nome") == "No"):
+    consenso = (persona or {}).get("consenso_nome")
+    if not testo or consenso == "No" or (modo == NUMERI and consenso != "Sì"):
         return ""
-    if modo == COMPLETI:
+    if modo == COMPLETI or consenso == "Sì":  # i genitori hanno firmato: nome completo (l'anno resta fuori)
         return testo
     fascia = _FASCIA.search(testo)
     base = testo[:fascia.start()] if fascia else testo
