@@ -5,6 +5,7 @@ import re
 from datetime import date
 
 import archivio_cloud
+import girone
 import loghi
 from classifica import classifiche, nome_fonte, nostra_riga
 from distinta_ufficiale import distinte_stagione
@@ -117,9 +118,41 @@ def classifiche_attesa(nome_societa=""):
     return {g: _classifica_pubblica(g, c, stemmi, nome_societa) for g, c in _classifiche_stagione(stagione).items()}
 
 
+def _gg_mm_aaaa(iso):
+    """"2026-10-19" -> "19/10/2026", come le date dell'archivio."""
+    parti = str(iso or "").split("-")
+    return f"{parti[2]}/{parti[1]}/{parti[0]}" if len(parti) == 3 else ""
+
+
+def _aggiungi_dal_girone(sezione, giornate, oggi, nome_societa):
+    """Completa la sezione di una squadra con il calendario LND letto dall'Action "Classifiche": le partite in
+    programma che non hanno ancora una distinta e i risultati che non sono in archivio (stessa data = stessa
+    partita)."""
+    squadre = girone.squadre_del_girone(giornate)
+    pos = nostra_riga([{"pos": i, "squadra": n} for i, n in enumerate(squadre)], nome_societa)
+    if pos is None:
+        return
+    noi = squadre[pos]
+    date_prossime = {p["data"] for p in sezione["prossime"]}
+    date_risultati = {data_ordinabile(r["data"]) for r in sezione["risultati"]}
+    for k, p in girone.partite_di(giornate, noi):
+        if p.get("gol_casa") is None:
+            if p.get("data", "") >= oggi and p.get("data") not in date_prossime:
+                sezione["prossime"].append({"data": p.get("data", ""), "ora": p.get("ora", ""), "casa": p["casa"],
+                                            "ospite": p["ospite"], "competizione": "", "giornata": girone.etichetta(k),
+                                            "campo": p.get("campo", ""), "localita": ""})
+        elif data_ordinabile(_gg_mm_aaaa(p.get("data"))) not in date_risultati:
+            sezione["risultati"].append({"data": _gg_mm_aaaa(p.get("data")), "casa": p["casa"], "ospite": p["ospite"],
+                                         "gol_casa": p["gol_casa"], "gol_ospite": p["gol_ospite"], "competizione": ""})
+    sezione["prossime"] = sorted(sezione["prossime"], key=lambda x: (x["data"], x["ora"]))[:PROSSIME]
+    sezione["risultati"] = sorted(sezione["risultati"], key=lambda x: data_ordinabile(x["data"]),
+                                  reverse=True)[:RISULTATI]
+
+
 def squadre_attesa(oggi=None, nome_societa=""):
     """Una sezione per squadra della società: [{"gruppo", "prossime", "risultati", "classifica"}], prima le
-    squadre che giocano prima. Solo le squadre che hanno qualcosa da mostrare."""
+    squadre che giocano prima. Prossime partite dalle distinte preparate e dal calendario LND, risultati
+    dall'archivio e dalla LND. Solo le squadre che hanno qualcosa da mostrare."""
     oggi = (oggi or date.today()).isoformat()
     stagione, gruppi = gruppi_correnti()
     stagione = stagione or stagione_di_oggi()
@@ -145,6 +178,13 @@ def squadre_attesa(oggi=None, nome_societa=""):
         gruppo = gruppo_di(p.get("campionato"), stagione)
         if gruppo and len(sezione(gruppo)["risultati"]) < RISULTATI:
             sezioni[gruppo]["risultati"].append(_risultato(p))
+    try:
+        dal_girone = girone.tutti()
+    except Exception:  # noqa: BLE001 - senza calendario LND restano distinte e archivio
+        dal_girone = {}
+    for g, dati in dal_girone.items():
+        if dati.get("stagione") == stagione and dati.get("giornate"):
+            _aggiungi_dal_girone(sezione(g), dati["giornate"], oggi, nome_societa)
     try:
         for g, c in classifiche_attesa(nome_societa).items():
             sezione(g)["classifica"] = c
