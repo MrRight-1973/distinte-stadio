@@ -118,6 +118,25 @@ def classifiche_attesa(nome_societa=""):
     return {g: _classifica_pubblica(g, c, stemmi, nome_societa) for g, c in _classifiche_stagione(stagione).items()}
 
 
+_SIGLE = {"ASD", "SSD", "SSDARL", "ARL", "SRL", "AC", "AS", "US", "USD", "FC", "SC", "GS", "ACD", "APD", "ASDC",
+          "CF", "CS", "PD", "VE", "VI", "TV", "VR", "RO", "BL", "II", "III"}
+
+
+def leggibile(nome):
+    """"A.S.D. AZZURRA DUE CARRARE" -> "A.S.D. Azzurra Due Carrare", come scrive la LND; i nomi già scritti
+    con maiuscole e minuscole restano come sono."""
+    nome = str(nome or "")
+    if not nome.isupper():
+        return nome
+    parole = []
+    for w in nome.split():
+        if w.replace(".", "") in _SIGLE or re.fullmatch(r"(?:[A-Z]\.)+[A-Z]?\.?", w):
+            parole.append(w)
+        else:
+            parole.append(re.sub(r"[^\W\d_]+", lambda m: m[0].capitalize(), w))
+    return " ".join(parole)
+
+
 def _gg_mm_aaaa(iso):
     """"2026-10-19" -> "19/10/2026", come le date dell'archivio."""
     parti = str(iso or "").split("-")
@@ -133,17 +152,27 @@ def _aggiungi_dal_girone(sezione, giornate, oggi, nome_societa):
     if pos is None:
         return
     noi = squadre[pos]
-    date_prossime = {p["data"] for p in sezione["prossime"]}
-    date_risultati = {data_ordinabile(r["data"]) for r in sezione["risultati"]}
+    prossime = {p["data"]: p for p in sezione["prossime"]}
+    risultati = {data_ordinabile(r["data"]): r for r in sezione["risultati"]}
     for k, p in girone.partite_di(giornate, noi):
         if p.get("gol_casa") is None:
-            if p.get("data", "") >= oggi and p.get("data") not in date_prossime:
+            gia = prossime.get(p.get("data"))
+            if gia:  # la stessa partita della distinta: i nomi come li scrive la LND, e i dati che mancano
+                gia.update(casa=p["casa"], ospite=p["ospite"])
+                gia["giornata"] = gia.get("giornata") or girone.etichetta(k)
+                gia["campo"] = gia.get("campo") or p.get("campo", "")
+            elif p.get("data", "") >= oggi:
                 sezione["prossime"].append({"data": p.get("data", ""), "ora": p.get("ora", ""), "casa": p["casa"],
                                             "ospite": p["ospite"], "competizione": "", "giornata": girone.etichetta(k),
                                             "campo": p.get("campo", ""), "localita": ""})
-        elif data_ordinabile(_gg_mm_aaaa(p.get("data"))) not in date_risultati:
-            sezione["risultati"].append({"data": _gg_mm_aaaa(p.get("data")), "casa": p["casa"], "ospite": p["ospite"],
-                                         "gol_casa": p["gol_casa"], "gol_ospite": p["gol_ospite"], "competizione": ""})
+        else:
+            gia = risultati.get(data_ordinabile(_gg_mm_aaaa(p.get("data"))))
+            if gia:
+                gia.update(casa=p["casa"], ospite=p["ospite"])
+            else:
+                sezione["risultati"].append({"data": _gg_mm_aaaa(p.get("data")), "casa": p["casa"],
+                                             "ospite": p["ospite"], "gol_casa": p["gol_casa"],
+                                             "gol_ospite": p["gol_ospite"], "competizione": ""})
     sezione["prossime"] = sorted(sezione["prossime"], key=lambda x: (x["data"], x["ora"]))[:PROSSIME]
     sezione["risultati"] = sorted(sezione["risultati"], key=lambda x: data_ordinabile(x["data"]),
                                   reverse=True)[:RISULTATI]
@@ -190,6 +219,11 @@ def squadre_attesa(oggi=None, nome_societa=""):
             sezione(g)["classifica"] = c
     except Exception:  # noqa: BLE001 - senza classifiche le sezioni restano
         pass
+    for sez in sezioni.values():  # le partite senza LND (coppe, amichevoli): niente nomi tutti maiuscoli
+        for p in sez["prossime"] + sez["risultati"]:
+            for k in ("casa", "ospite", "campo", "localita"):
+                if k in p:
+                    p[k] = leggibile(p[k])
     piene = [sezioni[g] for g in ordine if sezioni[g]["prossime"] or sezioni[g]["risultati"] or sezioni[g]["classifica"]]
     # prima chi gioca prima; le squadre senza partite in programma restano nell'ordine dei gruppi
     return sorted(piene, key=lambda s: (s["prossime"][0]["data"] + s["prossime"][0]["ora"]) if s["prossime"] else "~")
