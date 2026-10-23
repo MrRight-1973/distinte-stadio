@@ -13,7 +13,7 @@ Nel log solo il nome della squadra e quante righe o partite ha letto (sono dati 
 """
 import os
 import sys
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
 from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
 import json
@@ -71,14 +71,22 @@ def aggiorna_loghi(browser, gruppo, immagini, righe):
 
 
 def pubblica_classifica_attesa():
-    """classifica.json nello spazio pubblico: la legge la pagina spettatori in attesa della prossima partita."""
-    from pagina_attesa import classifica_attesa, classifiche_attesa
+    """classifica.json nello spazio pubblico: la legge la pagina spettatori in attesa della prossima partita.
+    Contiene anche le schede delle squadre (prossime partite, risultati, classifica), così la pagina si
+    aggiorna dopo ogni lettura della LND senza aspettare che l'app pubblichi."""
+    from pagina_attesa import classifica_attesa, classifiche_attesa, squadre_attesa
     nome = os.environ.get("NOME_SOCIETA", "")
-    dati = classifica_attesa(nome_societa=nome)
+    dati = classifica_attesa(nome_societa=nome) or {}
     if dati:
         dati["per_gruppo"] = classifiche_attesa(nome)  # una per squadra: la pagina ha una scheda per squadra
-    if dati and cloud.carica_pubblico("classifica.json", json.dumps(dati, ensure_ascii=False).encode("utf-8")):
-        print(f"Pagina spettatori: classifica di {dati['gruppo']} pubblicata")
+    try:
+        dati["squadre"] = squadre_attesa(nome_societa=nome)
+    except Exception as e:  # noqa: BLE001 - senza schede resta la classifica
+        print(f"Schede squadre non calcolate: {type(e).__name__}")
+    dati["generato"] = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    if (dati.get("righe") or dati.get("squadre")) and \
+            cloud.carica_pubblico("classifica.json", json.dumps(dati, ensure_ascii=False).encode("utf-8")):
+        print(f"Pagina spettatori: classifica e {len(dati.get('squadre') or [])} schede squadra pubblicate")
 
 
 def link_giornata(link, numero, fase):
