@@ -72,6 +72,26 @@ def stato(s, giocate, giorno):
                           f"{'resta questa' if n == 1 else f'restano {n}'}")
 
 
+def descrivi(s, date_giocate, giorno, tipo=None):
+    """(durata, esito) da mostrare: "3 giornate in campionato" e quante ne restano alla partita del giorno
+    (tipo: la competizione della partita, per dire quando la squalifica vale per l'altra)."""
+    if s.get("fino_al"):
+        durata = f"fino al {_gg_mm(s['fino_al'])}"
+    else:
+        n = int(s.get("giornate") or 0)
+        durata = f"{n} giornat{'a' if n == 1 else 'e'} in {s.get('tipo', 'campionato')}"
+    if tipo and s.get("tipo") != tipo and not s.get("fino_al"):
+        return durata, "vale per l'altra competizione"
+    if _data_iso(s.get("data_cu")) >= _data_iso(giorno):
+        return durata, "Comunicato dopo questa partita"
+    n = restano(s, date_giocate, giorno)
+    if not n:
+        return durata, "✅ scontata"
+    if s.get("fino_al"):
+        return durata, "⛔ squalificato"
+    return durata, f"⛔ {'resta 1 giornata' if n == 1 else f'restano {n} giornate'}"
+
+
 def per_partita(squalifiche, stagione, gruppo, tipo, giocate, giorno):
     """{id anagrafica: (SQUALIFICATO, motivo)} per la partita del giorno: le squalifiche a giornate della
     stessa squadra e competizione, e quelle a tempo di qualsiasi squadra."""
