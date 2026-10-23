@@ -3,8 +3,7 @@ import pandas as pd
 import streamlit as st
 
 from anagrafica import rosa_da_anagrafica
-from rose import griglia_convocati, pulisci_rosa, rosa_squadra, salva_rosa, ultima_lista
-from squadra_manager import NUM_RIGHE
+from rose import pulisci_rosa, rosa_squadra, salva_rosa, ultima_lista
 from stagioni import gruppi_correnti
 
 COLONNE_ROSA = {"giocatore": "Giocatore", "anno": "Anno", "numero": "N° abituale"}
@@ -72,52 +71,3 @@ def render_opzioni_rose(nome_societa, partite):
         st.caption("Modifiche non ancora salvate.")
     else:
         st.caption(f"{len(rosa)} giocatori. Con ➕ in fondo alla tabella se ne aggiunge uno; per toglierlo selezionalo e 🗑️.")
-
-
-def render_prepara_da_rosa():
-    """Nella Distinta: la nostra lista dalla rosa, spuntando convocati e titolari.
-    Restituisce (lato, griglia, campionato) quando si preme «Metti nella distinta», altrimenti None."""
-    stagione, gruppi = gruppi_correnti()
-    con_rosa = {g["gruppo"]: g["competizioni"] for g in gruppi if rosa_squadra(stagione, g["gruppo"])}
-    if not con_rosa:
-        return None
-    with st.expander("👕 Prepara la nostra lista dalla rosa (senza scansione)"):
-        c1, c2, c3 = st.columns([2, 3, 2])
-        gruppo = c1.selectbox("Squadra", list(con_rosa), key="conv_gruppo")
-        campionato = c2.selectbox("Competizione", con_rosa[gruppo], key=f"conv_campionato_{gruppo}")
-        lato = c3.radio("Giochiamo", ["casa", "ospite"], horizontal=True, key="conv_lato",
-                        format_func={"casa": "🏠 In casa", "ospite": "🚌 In trasferta"}.get)
-        rosa = rosa_squadra(stagione, gruppo)
-        df = pd.DataFrame([{"Conv.": False, "Tit.": False, "N°": g.get("numero"), "Giocatore": g["giocatore"],
-                            "Anno": g.get("anno") or ""} for g in rosa])
-        df["N°"] = pd.array(df["N°"], dtype="Int64")
-        scelta = st.data_editor(df, hide_index=True, width="stretch", key=f"conv_tabella_{gruppo}",
-                                disabled=["Giocatore", "Anno"],
-                                column_config={"Conv.": st.column_config.CheckboxColumn(help="Convocato"),
-                                               "Tit.": st.column_config.CheckboxColumn(help="Titolare (gli 11 in alto)"),
-                                               "N°": st.column_config.NumberColumn(min_value=1, max_value=99, step=1)})
-        convocati = scelta[scelta["Conv."] | scelta["Tit."]]
-        titolari = convocati[convocati["Tit."]]
-        st.caption(f"Convocati {len(convocati)} su {NUM_RIGHE} · titolari {len(titolari)} su 11. "
-                   "Il numero si può cambiare qui per questa partita.")
-        numeri = [int(x) for x in convocati["N°"].dropna()]
-        problemi = []
-        if len(convocati) > NUM_RIGHE:
-            problemi.append(f"Al massimo {NUM_RIGHE} convocati.")
-        if len(numeri) != len(set(numeri)):
-            problemi.append("Due giocatori hanno lo stesso numero.")
-        for p in problemi:
-            st.error(p)
-        if len(titolari) not in (0, 11) and not problemi:
-            st.warning(f"Titolari spuntati: {len(titolari)} (di solito 11). Puoi comunque proseguire.")
-        if st.button("✅ Metti nella distinta", type="primary", width="stretch",
-                     disabled=bool(problemi) or convocati.empty):
-            def giocatori(righe):
-                return [{"giocatore": r["Giocatore"], "anno": r["Anno"],
-                         "numero": None if pd.isna(r["N°"]) else int(r["N°"])} for _, r in righe.iterrows()]
-            if titolari.empty:  # nessun titolare spuntato: l'ordine è quello dei numeri
-                griglia = griglia_convocati(giocatori(convocati), [])
-            else:
-                griglia = griglia_convocati(giocatori(titolari), giocatori(convocati[~convocati["Tit."]]))
-            return lato, griglia, campionato
-    return None

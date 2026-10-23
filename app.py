@@ -56,7 +56,7 @@ from squadra_manager import (
 from stagioni import campionati_correnti, gruppi_correnti
 from diretta import url_diretta
 from rose import correggi_con_rosa, lato_nostro, rosa_squadra
-from ui_rose import render_opzioni_rose, render_prepara_da_rosa
+from ui_rose import render_opzioni_rose
 from ui_stagioni import render_opzioni_campionati
 from ui_components import render_download_buttons, render_info_match
 from ui_anagrafica import render_anagrafica
@@ -850,9 +850,6 @@ def render_sezione_distinta():
             reset_solo_dati_ai()
 
     firma_correnti = f"{firma_file(file_casa)}__{firma_file(file_ospite)}"
-    dalla_rosa = render_prepara_da_rosa()
-    if dalla_rosa:
-        lista_dalla_rosa(*dalla_rosa, firma_correnti)
     da_crea_distinta = render_prendi_da_crea_distinta()
     if da_crea_distinta:
         lista_dalla_rosa(*da_crea_distinta[:3], firma_correnti, da_crea_distinta[3])
@@ -910,11 +907,13 @@ def render_sezione_distinta():
                             st.rerun()
 
     if "dati_mappati" not in st.session_state:
-        if st.button("✍️ Compila le liste a mano o da CSV (senza scansione)", width="stretch"):
-            st.session_state["macro_info"] = unisci_scansioni({}, {})
-            st.session_state["dati_mappati"] = True
-            st.session_state["firma_scansione_attiva"] = firma_correnti
-            st.rerun()
+        with st.expander("✍️ Compila le liste a mano o da CSV (senza scansione)"):
+            st.caption("Apre le due liste vuote: si scrivono a mano o si carica un CSV per ogni squadra.")
+            if st.button("✅ Apri le liste vuote", type="primary", width="stretch", key="liste_a_mano"):
+                st.session_state["macro_info"] = unisci_scansioni({}, {})
+                st.session_state["dati_mappati"] = True
+                st.session_state["firma_scansione_attiva"] = firma_correnti
+                st.rerun()
 
     if "dati_mappati" in st.session_state:
         st.markdown("---")
