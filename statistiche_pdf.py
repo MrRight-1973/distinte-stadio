@@ -99,14 +99,15 @@ def genera_pdf_statistiche(squadra, campionato, riepilogo, per_partita, risultat
         story += [Paragraph(PARTI["riepilogo"], s_sezione), tab]
 
     if "risultati" in parti and risultati:
-        dati = [["Giornata", "Data", "Avversario", "", "Fatti", "Subiti"]]
+        dati = [["Giornata", "Data", "Competizione", "Avversario", "", "Fatti", "Subiti"]]
         for r in risultati:
-            dati.append([etichetta_giornata(r["giornata"]), r["data"], Paragraph(_esc(r["avversario"]), s_cella),
+            dati.append([etichetta_giornata(r["giornata"]), r["data"], Paragraph(_esc(r.get("competizione", "")), s_cella),
+                         Paragraph(_esc(r["avversario"]), s_cella),
                          "Casa" if r["in_casa"] else "Trasferta", r["fatti"], r["subiti"]])
-        dati.append(["", "", Paragraph("<b>Totale</b>", s_cella), "",
+        dati.append(["", "", "", Paragraph("<b>Totale</b>", s_cella), "",
                      sum(r["fatti"] for r in risultati), sum(r["subiti"] for r in risultati)])
-        tab = Table(dati, colWidths=[70, 70, larghezza - 290, 60, 45, 45], repeatRows=1)
-        stile = _stile_tabella(3)
+        tab = Table(dati, colWidths=[62, 62, 115, larghezza - 389, 60, 45, 45], repeatRows=1)
+        stile = _stile_tabella(4)
         stile.add("FONTNAME", (0, -1), (-1, -1), "Helvetica-Bold")
         tab.setStyle(stile)
         story += [Paragraph(PARTI["risultati"], s_sezione), tab]

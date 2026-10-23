@@ -149,7 +149,8 @@ def render_statistiche(nome_societa=""):
 
     with st.expander(f"📅 Risultati: {fatti} gol fatti, {subiti} subiti"):
         st.dataframe(pd.DataFrame([{
-            "Giornata": etichetta_giornata(r["giornata"]), "Data": r["data"], "Avversario": r["avversario"],
+            "Giornata": etichetta_giornata(r["giornata"]), "Data": r["data"],
+            "Competizione": r.get("competizione", ""), "Avversario": r["avversario"],
             "": "🏠 Casa" if r["in_casa"] else "🚌 Trasferta", "Fatti": r["fatti"], "Subiti": r["subiti"],
         } for r in reversed(risultati)]), hide_index=True, width="stretch")
 

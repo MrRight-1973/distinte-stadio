@@ -175,7 +175,8 @@ def statistiche_squadra(partite, chiave):
 
 
 def risultati_squadra(partite, chiave):
-    """Le partite giocate dalla squadra, dalla più vecchia: [{giornata, data, avversario, in_casa, fatti, subiti}]."""
+    """Le partite giocate dalla squadra, dalla più vecchia:
+    [{giornata, data, competizione, avversario, in_casa, fatti, subiti}]."""
     risultati = []
     for c in sorted(partite, key=data_ordinabile):
         lato = lato_della_squadra(c, chiave)
@@ -185,6 +186,6 @@ def risultati_squadra(partite, chiave):
         gol = dict(zip(("casa", "ospite"), punteggio(c)))
         altro = "ospite" if lato == "casa" else "casa"
         risultati.append({"giornata": p.get("giornata") or "", "data": str(p.get("data") or "").split(" ore")[0],
-                          "avversario": p.get(altro) or "?", "in_casa": lato == "casa",
+                          "competizione": p.get("campionato") or "", "avversario": p.get(altro) or "?", "in_casa": lato == "casa",
                           "fatti": gol[lato], "subiti": gol[altro]})
     return risultati
