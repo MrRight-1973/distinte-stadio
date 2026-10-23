@@ -110,7 +110,8 @@ def _elenco(dello_staff, stagione, gruppi, nomi_gruppi, miei, staff, ruolo):
     elif dello_staff:
         righe = [{"Nome": nome_completo(r), "Tipo": r.get("tipo", ""), "Qualifica": r.get("qualifica", ""),
                   "Squadra": squadra_di[r["id"]], "Tessera FIGC": r.get("matricola", ""),
-                  "Documento": _con_segno(r.get("documento_scadenza"))} for r in elenco]
+                  "Documento": _con_segno(r.get("documento_scadenza")),
+                  "Foto": SEGNI_FOTO[r.get("consenso_foto", "")]} for r in elenco]
         scelta = st.dataframe(pd.DataFrame(righe), hide_index=True, width="stretch", on_select="rerun",
                               selection_mode="single-row", key=f"anag_staff_{filtro}_{cerca}_{n}",
                               height=min(35 * len(righe) + 40, 460))
@@ -123,13 +124,14 @@ def _elenco(dello_staff, stagione, gruppi, nomi_gruppi, miei, staff, ruolo):
                   "Squadra": squadra_di[r["id"]], "Ruolo": r.get("ruolo", ""), "Matricola": r.get("matricola", ""),
                   "Certificato": _con_segno(r.get("certificato_scadenza")),
                   "Documento": _con_segno(r.get("documento_scadenza")),
-                  "Foto": SEGNI_FOTO[r.get("consenso_foto", "")]} for r in elenco]
+                  "Foto": SEGNI_FOTO[r.get("consenso_foto", "")],
+                  "Nome online": SEGNI_FOTO[r.get("consenso_nome", "")]} for r in elenco]
         tabella = pd.DataFrame(righe)
         scelta = st.dataframe(tabella, hide_index=True, width="stretch", on_select="rerun",
                               selection_mode="single-row", key=f"anag_tabella_{filtro}_{cerca}_{n}",
                               height=min(35 * len(righe) + 40, 460))
         st.caption(f"{len(elenco)} ragazzi. Seleziona una riga per aprire la scheda. Foto = consenso a foto e "
-                   "video sui canali della società (❔ non ancora chiesto).")
+                   "video sui canali della società; Nome online = nome sulla pagina live (❔ non ancora chiesto).")
         no_foto = [r for r in elenco if r.get("consenso_foto") == CONSENSO_NO]
         if no_foto:
             with st.expander(f"🚫 Senza consenso foto ({len(no_foto)}): da non pubblicare"):
@@ -196,16 +198,21 @@ def _scheda(r, stagione, gruppi_ammessi, staff, n, nuova=False):
                                       format="DD/MM/YYYY", min_value=date(2000, 1, 1), max_value=date(2100, 1, 1))
             genitore = c2.text_input("Genitore di riferimento", value=r.get("genitore", ""))
             telefono = c3.text_input("Telefono", value=r.get("telefono", ""))
-        if persona_staff:
-            consenso_foto = r.get("consenso_foto", "")
-        else:
-            consenso_foto = st.selectbox(
-                "📷 Consenso a foto e video", CONSENSI_FOTO,
-                index=CONSENSI_FOTO.index(r.get("consenso_foto", "")) if r.get("consenso_foto", "") in CONSENSI_FOTO else 0,
-                format_func=lambda x: {"": "❔ Non ancora chiesto", CONSENSO_SI: "✅ Sì, firmato",
-                                       CONSENSO_NO: "🚫 No"}[x],
-                help="Il modulo firmato dai genitori (o dal giocatore maggiorenne) resta in segreteria: qui si "
-                     "segna solo la risposta.")
+        chi = "dalla persona" if persona_staff else "dai genitori (o dal giocatore maggiorenne)"
+        c1, c2 = st.columns(2)
+        consenso_foto = c1.selectbox(
+            "📷 Consenso a foto e video", CONSENSI_FOTO,
+            index=CONSENSI_FOTO.index(r.get("consenso_foto", "")) if r.get("consenso_foto", "") in CONSENSI_FOTO else 0,
+            format_func=lambda x: {"": "❔ Non ancora chiesto", CONSENSO_SI: "✅ Sì, firmato",
+                                   CONSENSO_NO: "🚫 No"}[x],
+            help=f"Il modulo firmato {chi} resta in segreteria: qui si segna solo la risposta.")
+        consenso_nome = c2.selectbox(
+            "🌐 Nome sulla pagina pubblica", CONSENSI_FOTO,
+            index=CONSENSI_FOTO.index(r.get("consenso_nome", "")) if r.get("consenso_nome", "") in CONSENSI_FOTO else 0,
+            format_func=lambda x: {"": "❔ Non ancora chiesto", CONSENSO_SI: "✅ Sì",
+                                   CONSENSO_NO: "🚫 No, solo il numero"}[x],
+            help="Con No, nella distinta e nella diretta della pagina live compare solo il numero di maglia. "
+                 "Il nome resta nell'app e nel PDF per l'arbitro.")
         salva, annulla = st.columns(2)
         premuto = salva.form_submit_button("💾 Salva", type="primary", width="stretch")
         chiudi = annulla.form_submit_button("✖️ Chiudi", width="stretch")
@@ -223,7 +230,7 @@ def _scheda(r, stagione, gruppi_ammessi, staff, n, nuova=False):
                   "ruolo": ruolo, "matricola": matricola, "documento_tipo": tipo, "documento_numero": numero_doc,
                   "documento_rilascio": rilascio,
                   "documento_scadenza": scad_doc, "certificato_scadenza": scad_cert, "genitore": genitore,
-                  "telefono": telefono, "consenso_foto": consenso_foto, "gruppi": gruppi}
+                  "telefono": telefono, "consenso_foto": consenso_foto, "consenso_nome": consenso_nome, "gruppi": gruppi}
         uguale = doppione({**scheda, "cognome": cognome.upper(), "nome": nome.upper(),
                            "nascita": nascita.strftime("%Y-%m-%d") if nascita else ""}, elenco_ragazzi())
         if uguale:

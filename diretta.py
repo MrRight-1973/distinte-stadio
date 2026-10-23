@@ -26,6 +26,10 @@ def dati_diretta(cronaca):
     fase = fase_in_corso(cronaca)
     # I commenti scritti nelle note non vanno in pubblico: senza giocatore scelto dal menu resta vuoto
     senza_testo = {**cronaca, "note": [{**n, "testo": ""} for n in cronaca.get("note") or []]}
+    # I nomi come nella distinta pubblica (giovanili: cognome e iniziale; senza consenso: niente nome)
+    from nomi_pubblici import evento_pubblico, modo_partita, persone_anagrafica
+    modo = modo_partita(distinta.get("info_gara"))
+    persone = persone_anagrafica()
     eventi = []
     for e in eventi_correnti(senza_testo):
         if e.get("tipo") not in ("gol", "ammonizione", "espulsione", "sostituzione"):
@@ -33,7 +37,7 @@ def dati_diretta(cronaca):
         if e.get("squadra") not in ("casa", "ospite"):
             continue
         eventi.append({"tipo": e["tipo"], "squadra": e["squadra"], "minuto": str(e.get("minuto") or ""),
-                       "giocatore": str(e.get("giocatore") or "")[:80], "nota": str(e.get("nota") or "")[:40]})
+                       "giocatore": evento_pubblico(e.get("giocatore"), modo, persone)[:80], "nota": str(e.get("nota") or "")[:40]})
     gol = punteggio(cronaca)
     return {
         "distinta": distinta.get("aggiornato"),
