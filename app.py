@@ -196,7 +196,7 @@ def render_opzioni_lettura():
         salva_impostazioni_lettura(modello, ingrandita)
         st.success("Impostazione salvata: vale dalla prossima scansione, anche dagli altri dispositivi.")
     st.caption("Per confrontare: fai la scansione, poi «🗑️ Svuota Liste e Ripristina Scansione», cambia qui "
-               "l'impostazione e rifai la scansione con le stesse foto. La lettura ingrandita e i modelli più "
+               "l'impostazione, ricarica le stesse foto e rifai la scansione. La lettura ingrandita e i modelli più "
                "nuovi costano un po' di più; GPT-5 impiega molto più tempo.")
     render_costi_letture(dettaglio=True)
 
@@ -289,10 +289,15 @@ def salva_liste_se_cambiate(info_gara, dati_c, dati_o):
 
 
 def reset_solo_dati_ai():
+    """Svuota le liste e toglie anche le foto caricate (da tutti i dispositivi): si ricomincia da zero."""
     togli_liste_in_lavorazione()
+    togli_distinte_caricate(["casa", "ospite"])
     st.session_state.pop("liste_salvate", None)
-    for chiave in ["dati_mappati", "macro_info", "firma_scansione_attiva", "pdf_interattivo_pronto", "letto_un_lato"]:
+    for chiave in ["dati_mappati", "macro_info", "firma_scansione_attiva", "pdf_interattivo_pronto", "letto_un_lato",
+                   "uploader_file_casa", "uploader_file_ospite"]:
         st.session_state.pop(chiave, None)
+    # None e non pop: altrimenti al giro dopo l'app rilegge la foto salvata
+    st.session_state["distinta_caricata_casa"] = st.session_state["distinta_caricata_ospite"] = None
     reset_stato_squadra("griglia_casa")
     reset_stato_squadra("griglia_ospite")
     st.rerun()
