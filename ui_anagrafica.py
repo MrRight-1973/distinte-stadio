@@ -14,6 +14,7 @@ from anagrafica import (CALCIATORE, CONSENSI_FOTO, CONSENSO_NO, CONSENSO_SI, GIO
                         e_calciatore, elenco_ragazzi, elimina_scheda, importa_rose, importa_schede, nome_completo, salva_scheda, scadenze,
                         stato_scadenza)
 from import_csv import CsvErrore, schede_da_csv
+from moduli_consenso import genera_moduli
 from stagioni import gruppi_correnti
 from tabulato import leggi_tabulato
 from utenti import gruppi_utente
@@ -38,8 +39,9 @@ def _messaggio(tipo, testo):
     st.session_state["anag_messaggi"] = [(tipo, testo)]
 
 
-def render_anagrafica(utente, ruolo):
+def render_anagrafica(utente, ruolo, nome_societa=""):
     st.subheader("👦 Anagrafica")
+    st.session_state["anag_societa"] = nome_societa  # intestazione dei moduli privacy
     st.caption("Dati di minori: si scrive solo quello che serve al tesseramento. Del documento e del certificato "
                "medico si salvano tipo, numero e scadenza, mai la foto. Niente di questa pagina va sulla pagina "
                "pubblica.")
@@ -140,11 +142,34 @@ def _elenco(dello_staff, stagione, gruppi, nomi_gruppi, miei, staff, ruolo):
         if scelta.selection.rows:
             _scheda(elenco[scelta.selection.rows[0]], stagione, miei if not staff else nomi_gruppi, staff, n)
 
+    if elenco:
+        _moduli_elenco(elenco, stagione, squadra_di, lato)
     if staff and not dello_staff:
         _importa_tabulato(stagione, gruppi)
         _importa_csv(stagione, gruppi)
     if ruolo == "admin" and not dello_staff:
         _importa(stagione, nomi_gruppi)
+
+
+def _moduli_elenco(elenco, stagione, squadra_di, lato):
+    """Tutti i moduli privacy delle persone in elenco, una pagina ciascuno, da stampare insieme."""
+    with st.expander(f"📄 Moduli privacy e consensi da far firmare ({len(elenco)})"):
+        st.caption("Una pagina per persona, già compilata con i dati della scheda e con le caselle dei consensi "
+                   "vuote: le risposte firmate si riportano poi nella scheda (📷 foto e 🌐 nome). Il testo "
+                   "dell'informativa è un'impostazione di partenza: fallo controllare a chi segue la privacy "
+                   "per la società e completa sede ed email.")
+        senza = [r for r in elenco if not r.get("consenso_foto") or not r.get("consenso_nome")]
+        solo = st.checkbox(f"Solo chi non ha ancora risposto ({len(senza)})", key=f"anag_moduli_senza_{lato}")
+        scelti = senza if solo else elenco
+        firma = tuple(r["id"] for r in scelti)  # il PDF pronto vale solo per l'elenco con cui è stato fatto
+        if st.button("Prepara il PDF", width="stretch", key=f"anag_moduli_prepara_{lato}", disabled=not scelti):
+            st.session_state[f"anag_moduli_{lato}"] = (firma, genera_moduli(
+                scelti, stagione, st.session_state.get("anag_societa", ""), squadra_di))
+        pronto, pdf = st.session_state.get(f"anag_moduli_{lato}") or (None, None)
+        if pdf and pronto == firma:
+            st.download_button("⬇️ Scarica i moduli", data=pdf, file_name="moduli_privacy_consensi.pdf",
+                               mime="application/pdf", type="primary", width="stretch",
+                               key=f"anag_moduli_scarica_{lato}")
 
 
 def _scheda(r, stagione, gruppi_ammessi, staff, n, nuova=False):
@@ -243,6 +268,12 @@ def _scheda(r, stagione, gruppi_ammessi, staff, n, nuova=False):
         _messaggio("success", f"Scheda di {nome_completo(salvata)} salvata.")
         st.rerun()
 
+    if not nuova:
+        st.download_button("📄 Modulo privacy e consensi da far firmare (PDF)", width="stretch",
+                           data=genera_moduli([r], stagione, st.session_state.get("anag_societa", ""),
+                                              {r.get("id"): squadra}),
+                           file_name=f"consensi_{nome_completo(r).replace(' ', '_')}.pdf", mime="application/pdf",
+                           key=f"anag_modulo_{r['id']}")
     if staff and not nuova:
         if st.session_state.get("anag_elimina") == r["id"]:
             st.warning(f"Eliminare la scheda di {nome_completo(r)}? Non si può annullare.")
