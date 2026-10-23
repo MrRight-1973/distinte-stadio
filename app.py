@@ -375,7 +375,7 @@ def pubblica_distinta(info_gara, dati_c, dati_o):
     except PubblicazioneErrore as e:
         st.error(f"❌ Pubblicazione online non riuscita: {e}")
         st.info("Il PDF è comunque pronto qui sotto. Puoi riprovare a pubblicare.")
-        return
+        return False
 
     st.success(
         "🎉 Distinta inviata a GitHub. La pagina spettatori si aggiorna entro circa 1-2 minuti"
@@ -387,6 +387,7 @@ def pubblica_distinta(info_gara, dati_c, dati_o):
     elif not completa:
         st.caption("🔒 In distinta ci sono minorenni: sulla pagina pubblica e nel suo PDF hanno cognome e iniziale "
                    "(o il nome completo, se autorizzati), senza anno. Il PDF completo per l'arbitro è qui sotto.")
+    return True
 
 
 def pubblica_attesa():
@@ -848,7 +849,7 @@ def render_segreteria():
                 render_sezione_distinta()
             else:
                 render_cronaca(leggi_secret("OPENAI_API_KEY"), st.session_state.get("macro_info"), loghi_sponsor_pdf,
-                               distinta_pubblicata)
+                               distinta_pubblicata, pubblica_distinta)
 
 
 def render_sezione_distinta():
