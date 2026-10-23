@@ -236,7 +236,8 @@ def render_crea_distinta(utente, ruolo, nome_societa):
         if not i:
             return "—"
         r = persone[i]
-        return f"{nome_completo(r)} ({r.get('qualifica') or tipo_di(r)})"
+        return f"{nome_completo(r)} ({r.get('qualifica') or tipo_di(r)})" + \
+            (" · ⛔ squalificato" if i in disciplina and disciplina[i][0] != DIFFIDATO else "")
 
     # una distinta salvata con la panchina vuota (🧹 Svuota) resta vuota: la proposta vale solo per le nuove
     ruoli_base = base["ruoli"] if "ruoli" in base else _proposta_ruoli(staff, gruppo, stagione)
@@ -273,6 +274,8 @@ def render_crea_distinta(utente, ruolo, nome_societa):
             for p in problemi:
                 st.markdown(f"- {p}")
     in_distinta = [(persone[g["id"]], disciplina[g["id"]]) for g in giocatori if g["id"] in disciplina]
+    in_distinta += [(persone[i], disciplina[i]) for i in dict.fromkeys(list(ruoli.values()) + panchina)
+                    if i in disciplina and i in persone]
     squalificati = [(r, d) for r, d in in_distinta if d[0] != DIFFIDATO]
     if squalificati:
         st.error("⛔ Squalificati per questa partita:\n" + "\n".join(f"- **{nome_completo(r)}**: {d[1]}"

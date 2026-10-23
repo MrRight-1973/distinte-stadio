@@ -43,7 +43,8 @@ def render_squalifiche(stagione, miei, nome_societa, utente):
     """La scheda ⚖️ Squalifiche di 👦 Anagrafica: l'elenco delle squadre visibili e il modulo per segnarne una."""
     st.caption("Quando il Giudice Sportivo dà più giornate (o una squalifica a tempo), segnala qui: le giornate si "
                "contano sulle partite della squadra e competizione segnate in 🎙️ Cronaca dopo la data del "
-               "Comunicato. In 📝 Crea distinta il giocatore compare come squalificato finché non le ha scontate.")
+               "Comunicato. Vale anche per dirigenti e staff (inibizioni). In 📝 Crea distinta la persona compare come "
+               "squalificata finché non l'ha scontata.")
     persone = {r["id"]: r for r in elenco_ragazzi()}
     if st.session_state.get("anag_sq_msg"):
         st.success(st.session_state.pop("anag_sq_msg"))
@@ -64,11 +65,15 @@ def render_squalifiche(stagione, miei, nome_societa, utente):
         st.info("Nessuna squalifica segnata per questa squadra.")
 
     st.markdown("**➕ Segna una squalifica**")
-    giocatori = sorted((r for r in persone.values() if e_calciatore(r)),
-                       key=lambda r: ((r.get("gruppi") or {}).get(stagione, "") != gruppo, nome_completo(r)))
-    nomi = {r["id"]: nome_completo(r) for r in giocatori}
-    chi = st.selectbox("Giocatore", list(nomi), format_func=nomi.get, index=None,
-                       placeholder="Scegli il giocatore", key="anag_sq_chi")
+    squadra_di = {i: (r.get("gruppi") or {}).get(stagione, "") for i, r in persone.items()}
+    altre = st.toggle("Anche chi è di altre squadre (es. un Juniores che gioca in questa)", key="anag_sq_altre")
+    scelti = sorted((r for r in persone.values() if altre or squadra_di[r["id"]] == gruppo),
+                    key=lambda r: (not e_calciatore(r), squadra_di[r["id"]] != gruppo, nome_completo(r)))
+    nomi = {r["id"]: nome_completo(r) + ("" if e_calciatore(r) else f" ({r.get('qualifica') or r.get('tipo')})")
+            + ("" if squadra_di[r["id"]] == gruppo else f" · {squadra_di[r['id']] or 'senza squadra'}")
+            for r in scelti}
+    chi = st.selectbox("Calciatore, dirigente o staff", list(nomi), format_func=nomi.get, index=None,
+                       placeholder="Scegli la persona", key="anag_sq_chi")
     c1, c2 = st.columns(2)
     data_cu = c1.date_input("Data del Comunicato", value=date.today(), format="DD/MM/YYYY", key="anag_sq_cu")
     modo = c2.segmented_control("Squalifica", ["📅 A giornate", "⏳ A tempo"], default="📅 A giornate",
