@@ -57,8 +57,8 @@ from stagioni import campionati_correnti, gruppi_correnti
 from diretta import url_diretta
 from rose import correggi_con_rosa, lato_nostro, rosa_squadra
 from ui_rose import render_opzioni_rose
-from nomi_pubblici import (COMPLETI, MODI, leggi_distinta_completa, modo_partita, persone_anagrafica,
-                           salva_distinta_completa, squadra_pubblica)
+from nomi_pubblici import (COMPLETI, MODI, ci_sono_minorenni, giorno_partita, leggi_distinta_completa, modo_partita,
+                           persone_anagrafica, salva_distinta_completa, squadra_pubblica)
 from ui_stagioni import render_opzioni_campionati
 from ui_components import render_download_buttons, render_info_match
 from ui_anagrafica import render_anagrafica
@@ -352,10 +352,13 @@ def pubblica_distinta(info_gara, dati_c, dati_o):
     # In pubblico i nomi come scelto per la squadra in ⚙️ Opzioni (giovanili: cognome e iniziale, senza PDF)
     modo = modo_partita(info_gara)
     persone = persone_anagrafica()
-    pubblico = {**pacchetto, "casa": squadra_pubblica(dati_c, modo, persone),
-                "ospite": squadra_pubblica(dati_o, modo, persone), "pdf": modo == COMPLETI}
+    giorno = giorno_partita(info_gara)
+    # il PDF ha nomi e anni completi: online solo se non c'è nessun minorenne (es. un Allievo in prima squadra)
+    con_pdf = modo == COMPLETI and not ci_sono_minorenni([dati_c, dati_o], giorno, persone)
+    pubblico = {**pacchetto, "casa": squadra_pubblica(dati_c, modo, persone, giorno),
+                "ospite": squadra_pubblica(dati_o, modo, persone, giorno), "pdf": con_pdf}
     json_pubblico = json.dumps(pubblico, ensure_ascii=False, indent=2).encode("utf-8")
-    if modo == COMPLETI:
+    if con_pdf:
         tentativi = [{"distinta.json": json_pubblico, "distinta.pdf": pdf_bytes}]
     else:  # il PDF con i nomi completi non va online: si toglie quello della partita prima, se c'è
         tentativi = [{"distinta.json": json_pubblico, "distinta.pdf": None}, {"distinta.json": json_pubblico}]
@@ -386,6 +389,9 @@ def pubblica_distinta(info_gara, dati_c, dati_o):
     if modo != COMPLETI:
         st.caption(f"🔒 Sulla pagina pubblica: {MODI[modo].split(' ', 1)[1].lower()}, senza anni di nascita né "
                    "PDF (si cambia in ⚙️ Opzioni → 🏆 Campionati). Il PDF completo è qui sotto.")
+    elif not con_pdf:
+        st.caption("🔒 In distinta ci sono minorenni: sulla pagina pubblica hanno cognome e iniziale, senza anno, "
+                   "e il PDF non va online. Il PDF completo è qui sotto.")
 
 
 def pubblica_attesa():
