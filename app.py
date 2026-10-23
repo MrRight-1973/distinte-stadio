@@ -349,34 +349,29 @@ def pubblica_distinta(info_gara, dati_c, dati_o):
         pacchetto["visite"] = visite
     st.session_state["ultima_distinta"] = pacchetto  # la usa anche la cronaca della partita
     salva_distinta_completa(pacchetto)  # per la cronaca dopo un riavvio: in pubblico i nomi possono essere ridotti
-    # In pubblico i nomi come scelto per la squadra in ⚙️ Opzioni (giovanili: cognome e iniziale, senza PDF)
+    # In pubblico i nomi come scelto per la squadra in ⚙️ Opzioni (giovanili: cognome e iniziale, senza anni)
     modo = modo_partita(info_gara)
     persone = persone_anagrafica()
     giorno = giorno_partita(info_gara)
-    # il PDF ha nomi e anni completi: online solo se non c'è nessun minorenne (es. un Allievo in prima squadra)
-    con_pdf = modo == COMPLETI and not ci_sono_minorenni([dati_c, dati_o], giorno, persone)
+    completa = modo == COMPLETI and not ci_sono_minorenni([dati_c, dati_o], giorno, persone)
     pubblico = {**pacchetto, "casa": squadra_pubblica(dati_c, modo, persone, giorno),
-                "ospite": squadra_pubblica(dati_o, modo, persone, giorno), "pdf": con_pdf}
-    json_pubblico = json.dumps(pubblico, ensure_ascii=False, indent=2).encode("utf-8")
-    if con_pdf:
-        tentativi = [{"distinta.json": json_pubblico, "distinta.pdf": pdf_bytes}]
-    else:  # il PDF con i nomi completi non va online: si toglie quello della partita prima, se c'è
-        tentativi = [{"distinta.json": json_pubblico, "distinta.pdf": None}, {"distinta.json": json_pubblico}]
+                "ospite": squadra_pubblica(dati_o, modo, persone, giorno), "nomi_ridotti": not completa}
+    # Con minorenni il PDF online è un secondo PDF con le liste della pagina; quello completo resta nell'app
+    pdf_pubblico = pdf_bytes if completa else genera_pdf(pubblico["casa"], pubblico["ospite"], info_gara, qr_bytes,
+                                                         sponsor_loghi=loghi)
+    file_da_pubblicare = {
+        "distinta.json": json.dumps(pubblico, ensure_ascii=False, indent=2).encode("utf-8"),
+        "distinta.pdf": pdf_pubblico,
+    }
 
     try:
-        for i, file_da_pubblicare in enumerate(tentativi):
-            try:
-                pubblica_su_github(
-                    token=leggi_secret("GITHUB_TOKEN"),
-                    repo=leggi_secret("GITHUB_REPO"),
-                    file_da_pubblicare=file_da_pubblicare,
-                    messaggio=f"Distinta {dati_c.get('squadra') or 'casa'} - {dati_o.get('squadra') or 'ospite'}",
-                    branch=leggi_secret("GITHUB_BRANCH"),  # se assente: ramo principale del repository
-                )
-                break
-            except PubblicazioneErrore:
-                if i == len(tentativi) - 1:
-                    raise
+        pubblica_su_github(
+            token=leggi_secret("GITHUB_TOKEN"),
+            repo=leggi_secret("GITHUB_REPO"),
+            file_da_pubblicare=file_da_pubblicare,
+            messaggio=f"Distinta {dati_c.get('squadra') or 'casa'} - {dati_o.get('squadra') or 'ospite'}",
+            branch=leggi_secret("GITHUB_BRANCH"),  # se assente: ramo principale del repository
+        )
     except PubblicazioneErrore as e:
         st.error(f"❌ Pubblicazione online non riuscita: {e}")
         st.info("Il PDF è comunque pronto qui sotto. Puoi riprovare a pubblicare.")
@@ -387,11 +382,11 @@ def pubblica_distinta(info_gara, dati_c, dati_o):
         + (f": {link}" if link else ".")
     )
     if modo != COMPLETI:
-        st.caption(f"🔒 Sulla pagina pubblica: {MODI[modo].split(' ', 1)[1].lower()}, senza anni di nascita né "
-                   "PDF (si cambia in ⚙️ Opzioni → 🏆 Campionati). Il PDF completo è qui sotto.")
-    elif not con_pdf:
-        st.caption("🔒 In distinta ci sono minorenni: sulla pagina pubblica hanno cognome e iniziale, senza anno, "
-                   "e il PDF non va online. Il PDF completo è qui sotto.")
+        st.caption(f"🔒 Sulla pagina pubblica e nel suo PDF: {MODI[modo].split(' ', 1)[1].lower()}, senza anni di "
+                   "nascita (si cambia in ⚙️ Opzioni → 🏆 Campionati). Il PDF completo per l'arbitro è qui sotto.")
+    elif not completa:
+        st.caption("🔒 In distinta ci sono minorenni: sulla pagina pubblica e nel suo PDF hanno cognome e iniziale "
+                   "(o il nome completo, se autorizzati), senza anno. Il PDF completo per l'arbitro è qui sotto.")
 
 
 def pubblica_attesa():
@@ -543,7 +538,7 @@ def distinta_pubblicata():
         return None
     dati = leggi_file(leggi_secret("GITHUB_TOKEN"), leggi_secret("GITHUB_REPO"), "distinta.json", leggi_secret("GITHUB_BRANCH"))
     distinta = json.loads(dati) if dati else None
-    if distinta and distinta.get("pdf") is False:  # in pubblico i nomi ridotti: quelli completi sono nel privato
+    if distinta and distinta.get("nomi_ridotti"):  # in pubblico i nomi ridotti: quelli completi sono nel privato
         completa = leggi_distinta_completa()
         if completa and completa.get("aggiornato") == distinta.get("aggiornato"):
             return completa
