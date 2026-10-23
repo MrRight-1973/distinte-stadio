@@ -288,3 +288,21 @@ def dati_attesa(oggi=None, nome_societa=""):
         except Exception:
             dati[chiave] = {} if chiave == "classifica" else []
     return dati
+
+
+def partita_pubblicata(data, casa, ospite, nome_societa=""):
+    """Ora, campo, località e giornata della partita della distinta pubblicata, presi dalle partite in programma
+    (Crea distinta e calendario LND) dello stesso giorno: la pagina spettatori li mostra sotto il titolo con il
+    pulsante «Come arrivare». {} se quel giorno non c'è niente in programma."""
+    a, m, g = data_ordinabile(data)
+    if not a:
+        return {}
+    giorno = date(a, m, g)
+    candidate = [p for s in squadre_attesa(giorno, nome_societa) for p in s["prossime"]
+                 if p.get("data") == giorno.isoformat()]
+    if not candidate:
+        return {}
+    nomi = _parole(casa) | _parole(ospite)
+    # più squadre della società lo stesso giorno: quella con più parole in comune con i nomi della distinta
+    p = max(candidate, key=lambda x: len(nomi & (_parole(x.get("casa")) | _parole(x.get("ospite")))))
+    return {k: p.get(k, "") for k in ("ora", "campo", "localita", "giornata")}

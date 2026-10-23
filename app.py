@@ -333,6 +333,14 @@ def pubblica_distinta(info_gara, dati_c, dati_o):
     }
     if url_diretta():  # la pagina spettatori legge da qui risultato ed eventi in tempo reale
         pacchetto["live"] = url_diretta()
+    try:  # ora, campo e giornata dal calendario: la pagina li mostra sotto il titolo con «Come arrivare»
+        from pagina_attesa import partita_pubblicata
+        partita = partita_pubblicata(info_gara.get("data"), dati_c.get("squadra"), dati_o.get("squadra"),
+                                     nome_societa())
+    except Exception:  # noqa: BLE001 - senza calendario la distinta si pubblica lo stesso
+        partita = {}
+    if partita:
+        pacchetto["partita"] = partita
     visite = dati_visite(leggi_secret("SUPABASE_PUBBLICA"), " · ".join(
         x for x in (info_gara.get("data"), f"{dati_c.get('squadra') or 'Casa'} - {dati_o.get('squadra') or 'Ospite'}") if x))
     if visite:  # contatore anonimo delle aperture della pagina
