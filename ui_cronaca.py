@@ -551,8 +551,10 @@ def _resoconto(cronaca, api_key, giocatori, loghi_sponsor, leggi_distinta):
     )
 
 
-def _gestione_partita(cronaca):
+def _gestione_partita(cronaca, pubblica=None):
     """Ricarica della distinta, archiviazione e cancellazione della partita aperta."""
+    if pubblica and cronaca.get("archivio_id") and (cronaca.get("distinta") or {}).get("casa"):
+        _ripubblica(cronaca, pubblica)
     b1, b2, b3 = st.columns(3)
     if b1.button("🔄 Ricarica la distinta pubblicata", width="stretch"):
         st.session_state["cronaca_ricarica_distinta"] = True
@@ -587,9 +589,30 @@ def _gestione_partita(cronaca):
         st.rerun()
 
 
-def render_cronaca(api_key, macro_info=None, loghi_sponsor=lambda: None, leggi_distinta=lambda: None):
+def _ripubblica(cronaca, pubblica):
+    """Partita riaperta dall'archivio: la rimette sulla pagina live con la sua distinta (per provare come
+    appare, es. i nomi dei ragazzi) e collega la diretta alla nuova pubblicazione."""
+    if not st.button("🌐 Rimetti questa partita sulla pagina live", width="stretch",
+                     help="Pubblica di nuovo la distinta di questa partita, come la Fase 3: la pagina live mostra lei "
+                          "al posto di quella attuale. Per tornare all'attesa: archivia la partita."):
+        return
+    distinta = cronaca["distinta"]
+    p = cronaca.get("partita") or {}
+    # la competizione scelta in Cronaca decide come appaiono i nomi (giovanili ridotti)
+    info = {**(distinta.get("info_gara") or {}), **{k: p[k] for k in ("campionato", "data") if p.get(k)}}
+    with st.spinner("Pubblicazione sulla pagina live..."):
+        fatto = pubblica(info, distinta.get("casa") or {}, distinta.get("ospite") or {})
+    nuova = st.session_state.get("ultima_distinta")
+    if fatto and nuova:
+        cronaca["distinta"] = nuova  # la diretta (risultato ed eventi) si aggancia alla distinta appena pubblicata
+        salva_cronaca(cronaca)
+
+
+def render_cronaca(api_key, macro_info=None, loghi_sponsor=lambda: None, leggi_distinta=lambda: None,
+                   pubblica=None):
     """loghi_sponsor: funzione che restituisce i loghi (bytes) da stampare nel PDF.
-    leggi_distinta: funzione che restituisce l'ultima distinta pubblicata (info_gara, casa, ospite)."""
+    leggi_distinta: funzione che restituisce l'ultima distinta pubblicata (info_gara, casa, ospite).
+    pubblica: pubblica(info_gara, casa, ospite) come la Fase 3, per rimettere online una partita riaperta."""
     cronaca = carica_cronaca()
     info = macro_info or {}
 
@@ -652,7 +675,7 @@ def render_cronaca(api_key, macro_info=None, loghi_sponsor=lambda: None, leggi_d
         if d:
             st.caption(f"Liste giocatori dalla distinta pubblicata: {(d.get('casa') or {}).get('squadra', '')} – "
                        f"{(d.get('ospite') or {}).get('squadra', '')}")
-        _gestione_partita(cronaca)
+        _gestione_partita(cronaca, pubblica)
         if stato_archivio_online() is not None:
             st.caption("Le partite chiuse si ritrovano nella sezione 📚 Archivio.")
 
