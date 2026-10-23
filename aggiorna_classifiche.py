@@ -72,8 +72,11 @@ def aggiorna_loghi(browser, gruppo, immagini, righe):
 
 def pubblica_classifica_attesa():
     """classifica.json nello spazio pubblico: la legge la pagina spettatori in attesa della prossima partita."""
-    from pagina_attesa import classifica_attesa
-    dati = classifica_attesa(nome_societa=os.environ.get("NOME_SOCIETA", ""))
+    from pagina_attesa import classifica_attesa, classifiche_attesa
+    nome = os.environ.get("NOME_SOCIETA", "")
+    dati = classifica_attesa(nome_societa=nome)
+    if dati:
+        dati["per_gruppo"] = classifiche_attesa(nome)  # una per squadra: la pagina ha una scheda per squadra
     if dati and cloud.carica_pubblico("classifica.json", json.dumps(dati, ensure_ascii=False).encode("utf-8")):
         print(f"Pagina spettatori: classifica di {dati['gruppo']} pubblicata")
 
