@@ -55,9 +55,17 @@ def render_anagrafica(utente, ruolo):
                 "⚙️ Opzioni → 👥 Utenti.")
         return
 
-    vista = st.segmented_control("Chi", [RAGAZZI, STAFF], default=RAGAZZI, required=True, key="anag_vista",
-                                 label_visibility="collapsed") or RAGAZZI
-    dello_staff = vista == STAFF
+    tab_ragazzi, tab_staff = st.tabs([RAGAZZI, STAFF])  # come i sottomenu di Allenamenti e Statistiche
+    with tab_ragazzi:
+        _elenco(False, stagione, gruppi, nomi_gruppi, miei, staff, ruolo)
+    with tab_staff:
+        _elenco(True, stagione, gruppi, nomi_gruppi, miei, staff, ruolo)
+
+
+def _elenco(dello_staff, stagione, gruppi, nomi_gruppi, miei, staff, ruolo):
+    """L'elenco dei calciatori o di dirigenti e staff, con i filtri e la scheda della riga scelta."""
+    lato = "staff" if dello_staff else "ragazzi"  # chiavi diverse: le due schede sono sulla pagina insieme
+
     tutti = [r for r in elenco_ragazzi() if e_calciatore(r) != dello_staff]
     squadra_di = {r["id"]: (r.get("gruppi") or {}).get(stagione, "") for r in tutti}
     visibili = tutti if staff else [r for r in tutti if squadra_di[r["id"]] in miei]
@@ -72,8 +80,8 @@ def render_anagrafica(utente, ruolo):
 
     c1, c2 = st.columns([2, 3])
     scelte = ([TUTTI] + nomi_gruppi + [SENZA]) if staff else miei
-    filtro = c1.selectbox(f"👥 Squadra ({stagione})", scelte, key="anag_filtro")
-    cerca = c2.text_input("🔍 Cerca", key="anag_cerca", placeholder="Cognome, nome o matricola")
+    filtro = c1.selectbox(f"👥 Squadra ({stagione})", scelte, key=f"anag_filtro_{lato}")
+    cerca = c2.text_input("🔍 Cerca", key=f"anag_cerca_{lato}", placeholder="Cognome, nome o matricola")
     if filtro == SENZA:
         elenco = [r for r in visibili if not squadra_di[r["id"]]]
     elif filtro != TUTTI:
@@ -85,14 +93,14 @@ def render_anagrafica(utente, ruolo):
         elenco = [r for r in elenco if all(p in f"{nome_completo(r)} {r.get('matricola', '')}" for p in parole)]
 
     n = st.session_state.get("anag_n", 0)
-    if st.session_state.get("anag_nuovo"):
+    if st.session_state.get("anag_nuovo") == lato:
         _scheda({"tipo": "Dirigente"} if dello_staff else {}, stagione, miei if not staff else nomi_gruppi, staff, n,
                 nuova=True)
         return
 
     if st.button("➕ Nuovo dirigente, allenatore o staff" if dello_staff else "➕ Nuovo ragazzo",
-                 width="stretch"):
-        st.session_state["anag_nuovo"] = True
+                 width="stretch", key=f"anag_nuovo_btn_{lato}"):
+        st.session_state["anag_nuovo"] = lato
         st.rerun()
 
     if not elenco:
@@ -148,7 +156,7 @@ def _scheda(r, stagione, gruppi_ammessi, staff, n, nuova=False):
     if squadra and squadra not in squadre:
         squadre.append(squadra)
     oggi = date.today()
-    with st.form(f"anag_scheda_{r.get('id', 'nuova')}_{n}"):
+    with st.form(f"anag_scheda_{r.get('id') or ('nuova_staff' if persona_staff else 'nuova')}_{n}"):
         c1, c2 = st.columns(2)
         cognome = c1.text_input("Cognome *", value=r.get("cognome", ""))
         nome = c2.text_input("Nome *", value=r.get("nome", ""))
@@ -231,16 +239,16 @@ def _scheda(r, stagione, gruppi_ammessi, staff, n, nuova=False):
         if st.session_state.get("anag_elimina") == r["id"]:
             st.warning(f"Eliminare la scheda di {nome_completo(r)}? Non si può annullare.")
             c1, c2 = st.columns(2)
-            if c1.button("🗑️ Sì, elimina", type="primary", width="stretch", key="anag_elimina_si"):
+            if c1.button("🗑️ Sì, elimina", type="primary", width="stretch", key=f"anag_elimina_si_{r['id']}"):
                 elimina_scheda(r["id"])
                 st.session_state.pop("anag_elimina", None)
                 st.session_state["anag_n"] = n + 1
                 _messaggio("success", f"Scheda di {nome_completo(r)} eliminata.")
                 st.rerun()
-            if c2.button("Annulla", width="stretch", key="anag_elimina_no"):
+            if c2.button("Annulla", width="stretch", key=f"anag_elimina_no_{r['id']}"):
                 st.session_state.pop("anag_elimina", None)
                 st.rerun()
-        elif st.button("🗑️ Elimina la scheda", key="anag_elimina_btn"):
+        elif st.button("🗑️ Elimina la scheda", key=f"anag_elimina_btn_{r['id']}"):
             st.session_state["anag_elimina"] = r["id"]
             st.rerun()
 
