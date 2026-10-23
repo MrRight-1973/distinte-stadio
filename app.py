@@ -802,7 +802,7 @@ def render_segreteria():
         render_crea_distinta(st.session_state.get("utente", ""), st.session_state.get("ruolo"), nome_societa())
         return
     if sezione == "👦 Anagrafica":
-        render_anagrafica(st.session_state.get("utente", ""), st.session_state.get("ruolo"))
+        render_anagrafica(st.session_state.get("utente", ""), st.session_state.get("ruolo"), nome_societa())
         return
     if sezione == "🏃 Allenamenti":
         render_presenze(st.session_state.get("utente", ""), st.session_state.get("ruolo"))
