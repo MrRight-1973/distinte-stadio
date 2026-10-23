@@ -743,31 +743,28 @@ def render_segreteria():
     if "👦 Anagrafica" in sezioni and sezione != "👦 Anagrafica":
         promemoria_scadenze()
     if sezione == "⚙️ Opzioni":
-        if st.session_state.get("sottosezione_opzioni") not in pagine_opzioni:
-            st.session_state.pop("sottosezione_opzioni", None)
-        sotto = st.segmented_control("Opzioni", pagine_opzioni, key="sottosezione_opzioni",
-                                     default=pagine_opzioni[0], label_visibility="collapsed")
-        sotto = sotto or pagine_opzioni[0]  # un secondo clic sul pulsante scelto lo deseleziona
-        if sotto == "🏆 Campionati":
-            render_opzioni_campionati()
-            return
-        if sotto == "👕 Rose":
-            render_opzioni_rose(nome_societa(), tutte_le_partite)
-            return
-        if sotto == "🤖 Lettura AI":
-            render_opzioni_lettura()
-            return
-        if sotto == "🌐 Dati LND":
-            render_opzioni_dati_lnd()
-            return
-        if sotto == "👥 Utenti":
-            render_gestione_utenti()
-            return
-        if sotto == "🗂️ Registro e backup":
-            render_registro_e_backup()
-            return
-        st.subheader("🏷️ Sponsor")
-        render_gestione_sponsor(leggi_secret("GITHUB_TOKEN"), leggi_secret("GITHUB_REPO"), leggi_secret("GITHUB_BRANCH"))
+        # Schede nello stesso stile di Allenamenti e Statistiche; si disegna solo quella aperta
+        if st.session_state.get("opzioni_scheda") not in pagine_opzioni:
+            st.session_state.pop("opzioni_scheda", None)
+        schede = st.tabs(pagine_opzioni, key="opzioni_scheda", on_change="rerun")
+        sotto = next((p for p, t in zip(pagine_opzioni, schede) if t.open), pagine_opzioni[0])
+        with schede[pagine_opzioni.index(sotto)]:
+            if sotto == "🏆 Campionati":
+                render_opzioni_campionati()
+            elif sotto == "👕 Rose":
+                render_opzioni_rose(nome_societa(), tutte_le_partite)
+            elif sotto == "🤖 Lettura AI":
+                render_opzioni_lettura()
+            elif sotto == "🌐 Dati LND":
+                render_opzioni_dati_lnd()
+            elif sotto == "👥 Utenti":
+                render_gestione_utenti()
+            elif sotto == "🗂️ Registro e backup":
+                render_registro_e_backup()
+            else:
+                st.subheader("🏷️ Sponsor")
+                render_gestione_sponsor(leggi_secret("GITHUB_TOKEN"), leggi_secret("GITHUB_REPO"),
+                                        leggi_secret("GITHUB_BRANCH"))
         return
     if sezione == "📝 Crea distinta":
         render_crea_distinta(st.session_state.get("utente", ""), st.session_state.get("ruolo"), nome_societa())
