@@ -69,6 +69,8 @@ from ui_classifica import render_classifica
 from ui_dati_lnd import render_aggiornamento, render_opzioni_dati_lnd
 from ui_girone import render_avversari, render_risultati
 from ui_statistiche import render_statistiche
+from ui_visite import render_visite
+from visite import dati_visite
 
 # Deve essere il PRIMO comando Streamlit
 LOGO_SOCIETA = os.path.join(os.path.dirname(os.path.abspath(__file__)), "logo_azzurra.png")
@@ -331,6 +333,10 @@ def pubblica_distinta(info_gara, dati_c, dati_o):
     }
     if url_diretta():  # la pagina spettatori legge da qui risultato ed eventi in tempo reale
         pacchetto["live"] = url_diretta()
+    visite = dati_visite(leggi_secret("SUPABASE_PUBBLICA"), " · ".join(
+        x for x in (info_gara.get("data"), f"{dati_c.get('squadra') or 'Casa'} - {dati_o.get('squadra') or 'Ospite'}") if x))
+    if visite:  # contatore anonimo delle aperture della pagina
+        pacchetto["visite"] = visite
     st.session_state["ultima_distinta"] = pacchetto  # la usa anche la cronaca della partita
     file_da_pubblicare = {
         "distinta.json": json.dumps(pacchetto, ensure_ascii=False, indent=2).encode("utf-8"),
@@ -364,7 +370,9 @@ def pubblica_attesa():
         return False
     from pagina_attesa import dati_attesa  # prossime partite e ultimi risultati: solo dati pubblici
     attesa = json.dumps({"stato": "in_attesa", "aggiornato": datetime.now(timezone.utc).isoformat(timespec="seconds"),
-                         **dati_attesa(nome_societa=nome_societa())}, ensure_ascii=False, indent=2).encode("utf-8")
+                         **dati_attesa(nome_societa=nome_societa()),
+                         "visite": dati_visite(leggi_secret("SUPABASE_PUBBLICA"), "In attesa della prossima partita")},
+                        ensure_ascii=False, indent=2).encode("utf-8")
     for file in ({"distinta.json": attesa, "distinta.pdf": None}, {"distinta.json": attesa}):
         try:  # il PDF potrebbe non esserci già più: allora si aggiorna solo distinta.json
             pubblica_su_github(token=token, repo=repo, file_da_pubblicare=file,
@@ -773,8 +781,8 @@ def render_segreteria():
     if sezione == "📊 Statistiche":
         render_aggiornamento(leggi_secret("GITHUB_TOKEN_AZIONI") or leggi_secret("GITHUB_TOKEN"),
                              leggi_secret("GITHUB_REPO_APP"))
-        giocatori, tab_classifica, risultati, avversari = st.tabs(
-            ["📊 Giocatori", "🏆 Classifica", "📅 Risultati", "🔍 Avversari"])
+        giocatori, tab_classifica, risultati, avversari, tab_visite = st.tabs(
+            ["📊 Giocatori", "🏆 Classifica", "📅 Risultati", "🔍 Avversari", "👀 Pagina live"])
         with giocatori:
             render_statistiche(nome_societa())
         with tab_classifica:
@@ -783,6 +791,8 @@ def render_segreteria():
             render_risultati(nome_societa())
         with avversari:
             render_avversari(nome_societa())
+        with tab_visite:
+            render_visite(bool(leggi_secret("SUPABASE_PUBBLICA")))
         return
     if sezione == ARCHIVIO:
         # Chi ha solo la sola lettura guarda le partite senza cambiarle; un allenatore vede le sue squadre
