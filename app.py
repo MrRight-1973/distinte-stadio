@@ -808,16 +808,20 @@ def render_segreteria():
             # chi riapre l'app a partita iniziata (distinta già pubblicata) torna sulla cronaca
             st.session_state["partita_vista"] = CRONACA if CRONACA in viste and carica_cronaca().get("distinta") \
                 else viste[0]
-        vista = st.segmented_control("Partita", viste, key="partita_vista", label_visibility="collapsed",
-                                     format_func=lambda v: "📋 Distinta" if v == DISTINTA else "🎙️ Cronaca") \
-            if len(viste) > 1 else viste[0]
-        if (vista or st.session_state.get("partita_vista_ultima", viste[0])) == DISTINTA:
-            st.session_state["partita_vista_ultima"] = DISTINTA
-            render_sezione_distinta()
-            return
-        st.session_state["partita_vista_ultima"] = CRONACA
-        render_cronaca(leggi_secret("OPENAI_API_KEY"), st.session_state.get("macro_info"), loghi_sponsor_pdf,
-                       distinta_pubblicata)
+        if len(viste) > 1:
+            # schede come in Allenamenti e Statistiche; con on_change="rerun" gira solo quella aperta
+            schede = st.tabs(viste, key="partita_vista", on_change="rerun")
+            vista = next((v for v, t in zip(viste, schede) if t.open), viste[0])
+            contenitore = schede[viste.index(vista)]
+        else:
+            vista, contenitore = viste[0], st.container()
+        with contenitore:
+            if vista == DISTINTA:
+                render_sezione_distinta()
+            else:
+                render_cronaca(leggi_secret("OPENAI_API_KEY"), st.session_state.get("macro_info"), loghi_sponsor_pdf,
+                               distinta_pubblicata)
+
 
 def render_sezione_distinta():
     """📋 Distinta (dentro 🎙️ Cronaca partita): foto, scansione o liste preparate, poi pubblicazione."""
