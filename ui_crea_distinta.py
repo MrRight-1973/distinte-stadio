@@ -3,7 +3,6 @@ distinta ufficiale sul modello della società. Le distinte si salvano per riapri
 nuova riparte dall'ultima della stessa squadra (stessi giocatori, numeri e dirigenti). Dal calendario
 del Comitato si preparano in un colpo le distinte vuote di tutte le partite.
 """
-import time
 from datetime import date
 
 import streamlit as st
@@ -17,6 +16,7 @@ from disciplina import DIFFIDATO, partite_della_competizione, per_persona, situa
 from presenze import nel_periodo, presenze_gruppo, statistiche
 from nomi_file import nome_file_gara
 import squalifiche
+from ui_squalifiche import mostra, partite_giocate
 from stagioni import gruppi_correnti
 from utenti import gruppi_utente
 
@@ -26,16 +26,6 @@ ALTRA = "✏️ Altra competizione..."
 NESSUNO = ""
 VUOTA = "—"  # cella senza giocatore (o senza C/VC) nella tabella delle 20 righe
 ULTIMI_ALLENAMENTI = 12  # la % accanto ai nomi: gli ultimi allenamenti prima della partita (circa 4 settimane)
-
-
-def _partite_giocate():
-    """Le partite della Cronaca (archivio e aperta), rilette al massimo ogni 5 minuti: servono per i cartellini."""
-    salvate = st.session_state.get("cd_partite")
-    if not salvate or time.time() - salvate[0] > 300:
-        from ui_statistiche import _partite
-        salvate = (time.time(), _partite())
-        st.session_state["cd_partite"] = salvate
-    return salvate[1]
 
 
 def _messaggio(tipo, testo):
@@ -152,7 +142,7 @@ def render_crea_distinta(utente, ruolo, nome_societa):
     ultimi = nel_periodo(allenamenti, al=giorno.isoformat() if giorno else None)[-ULTIMI_ALLENAMENTI:]
     allenato = statistiche({s: allenamenti[s] for s in ultimi})
     # Diffidati e squalificati per questa partita, dai cartellini segnati in Cronaca nella stessa competizione
-    giocate = partite_della_competizione(_partite_giocate(), (squadra, nome_societa), stagione, gruppo, comp,
+    giocate = partite_della_competizione(partite_giocate(), (squadra, nome_societa), stagione, gruppo, comp,
                                          giorno.isoformat() if giorno else "")
     disciplina = per_persona(situazione(giocate), {r["id"]: r for r in giocabili})
     # Le squalifiche segnate dal Comunicato valgono più del conto dai cartellini
@@ -295,7 +285,7 @@ def render_crea_distinta(utente, ruolo, nome_societa):
     if in_distinta:
         st.caption("Calcolati dai cartellini segnati in 🎙️ Cronaca nella stessa competizione e dalle squalifiche "
                    "segnate dal Comunicato: fa fede il Comunicato Ufficiale.")
-    _render_squalifiche(elenco_squalifiche, persone, giocabili, stagione, gruppo, comp, giocate, giorno_iso, utente)
+    _render_squalifiche(elenco_squalifiche, persone, stagione, gruppo, comp, giocate, giorno_iso)
     avvisi = in_scadenza(distinta, persone)
     if avvisi:
         with st.expander(f"⏰ Da rinnovare a breve ({len(avvisi)})"):
@@ -344,65 +334,22 @@ def render_crea_distinta(utente, ruolo, nome_societa):
             st.rerun()
 
 
-def _render_squalifiche(elenco, persone, giocabili, stagione, gruppo, comp, giocate, giorno, utente):
-    """⚖️ Le squalifiche del Comunicato per questa squadra: quante giornate restano a questa partita, e il modulo
-    per segnarne una nuova (a giornate o a tempo)."""
+def _render_squalifiche(elenco, persone, stagione, gruppo, comp, giocate, giorno):
+    """⚖️ Le squalifiche del Comunicato per questa squadra, con le giornate che restano a questa partita (si
+    segnano in 👦 Anagrafica → ⚖️ Squalifiche)."""
     tipo = tipo_competizione(comp)
     date_giocate = [d for d, _ in giocate]
     mie = [s for s in elenco if s.get("stagione") == stagione and s["persona"] in persone
            and (s.get("gruppo") == gruppo or s.get("fino_al"))]
+    if not mie:
+        return
     attive = [s for s in mie if (s.get("fino_al") or s.get("tipo") == tipo)
               and squalifiche._data_iso(s.get("data_cu")) < squalifiche._data_iso(giorno)
               and squalifiche.restano(s, date_giocate, giorno)]
     with st.expander(f"⚖️ Squalifiche dal Comunicato ({len(attive)} da scontare)" if attive
                      else "⚖️ Squalifiche dal Comunicato"):
-        st.caption("Quando il Giudice Sportivo dà più giornate (o una squalifica a tempo), segnala qui: le giornate "
-                   "si contano sulle partite di questa squadra e competizione segnate in 🎙️ Cronaca dopo la data "
-                   "del Comunicato.")
-        for s in sorted(mie, key=lambda s: s.get("data_cu", ""), reverse=True):
-            r = persone[s["persona"]]
-            if s.get("fino_al"):
-                durata = f"fino al {squalifiche._gg_mm(s['fino_al'])}"
-            else:
-                durata = f"{s['giornate']} giornat{'a' if s['giornate'] == 1 else 'e'} in {s.get('tipo', 'campionato')}"
-            if s.get("tipo") != tipo and not s.get("fino_al"):
-                esito = "vale per l'altra competizione"
-            elif squalifiche._data_iso(s.get("data_cu")) >= squalifiche._data_iso(giorno):
-                esito = "Comunicato dopo questa partita"
-            else:
-                n = squalifiche.restano(s, date_giocate, giorno)
-                esito = (f"⛔ resta da scontare questa{' e altre ' + str(n - 1) if n > 1 else ''}"
-                         if n and not s.get("fino_al") else "⛔ squalificato" if n else "✅ scontata")
-            c1, c2 = st.columns([5, 1])
-            c1.markdown(f"**{nome_completo(r)}**: {durata}, Comunicato del {squalifiche._gg_mm(s['data_cu'])} · {esito}")
-            if c2.button("🗑️", key=f"cd_sq_del_{s['id']}", help="Elimina questa squalifica"):
-                squalifiche.elimina(s["id"])
-                st.rerun()
-        st.markdown("**➕ Segna una squalifica**")
-        nomi = {r["id"]: nome_completo(r) for r in giocabili}
-        chi = st.selectbox("Giocatore", list(nomi), format_func=nomi.get, index=None,
-                           placeholder="Scegli il giocatore", key="cd_sq_chi")
-        c1, c2 = st.columns(2)
-        data_cu = c1.date_input("Data del Comunicato", value=date.today(), format="DD/MM/YYYY", key="cd_sq_cu")
-        modo = c2.segmented_control("Squalifica", ["📅 A giornate", "⏳ A tempo"], default="📅 A giornate",
-                                    required=True, key="cd_sq_modo")
-        c1, c2 = st.columns(2)
-        if modo == "⏳ A tempo":
-            fino = c1.date_input("Fino al (compreso)", value=None, format="DD/MM/YYYY", key="cd_sq_fino")
-            giornate = 0
-        else:
-            fino = None
-            giornate = c1.number_input("Giornate", min_value=1, max_value=50, value=1, step=1, key="cd_sq_gg")
-            tipo = c2.selectbox("Competizione", ["campionato", "coppa"], index=0 if tipo == "campionato" else 1,
-                                format_func=str.capitalize, key="cd_sq_tipo")
-        if st.button("⚖️ Segna squalifica", key="cd_sq_salva",
-                     disabled=not chi or not data_cu or (modo == "⏳ A tempo" and not fino)):
-            squalifiche.aggiungi(chi, stagione, gruppo, tipo, data_cu.isoformat(), giornate,
-                                 fino.isoformat() if fino else "", utente)
-            st.session_state["cd_messaggi"] = [("success", f"⚖️ Squalifica di {nomi[chi]} segnata.")]
-            for chiave in ("cd_sq_chi", "cd_sq_fino"):
-                st.session_state.pop(chiave, None)
-            st.rerun()
+        mostra(mie, persone, lambda s: date_giocate, giorno, tipo)
+        st.caption("Si segnano e si cancellano in 👦 Anagrafica → ⚖️ Squalifiche.")
 
 
 def _render_calendario(stagione, gruppi, miei, distinte, staff, utente, nome_societa):

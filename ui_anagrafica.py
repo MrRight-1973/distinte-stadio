@@ -17,10 +17,11 @@ from import_csv import CsvErrore, schede_da_csv
 from moduli_consenso import genera_moduli
 from stagioni import gruppi_correnti
 from tabulato import leggi_tabulato
+from ui_squalifiche import render_squalifiche
 from utenti import gruppi_utente
 
 TUTTI, SENZA = "Tutti", "Senza squadra quest'anno"
-RAGAZZI, STAFF = "👦 Calciatori", "👔 Dirigenti e staff"
+RAGAZZI, STAFF, SQUALIFICHE = "👦 Calciatori", "👔 Dirigenti e staff", "⚖️ Squalifiche"
 SEGNI = {"scaduto": "🔴", "in scadenza": "🟠", "ok": "🟢", "": ""}
 SEGNI_FOTO = {CONSENSO_SI: "✅ Sì", CONSENSO_NO: "🚫 No", "": "❔"}
 
@@ -57,11 +58,13 @@ def render_anagrafica(utente, ruolo, nome_societa=""):
                 "⚙️ Opzioni → 👥 Utenti.")
         return
 
-    tab_ragazzi, tab_staff = st.tabs([RAGAZZI, STAFF])  # come i sottomenu di Allenamenti e Statistiche
+    tab_ragazzi, tab_staff, tab_squalifiche = st.tabs([RAGAZZI, STAFF, SQUALIFICHE])  # come i sottomenu di Allenamenti e Statistiche
     with tab_ragazzi:
         _elenco(False, stagione, gruppi, nomi_gruppi, miei, staff, ruolo)
     with tab_staff:
         _elenco(True, stagione, gruppi, nomi_gruppi, miei, staff, ruolo)
+    with tab_squalifiche:
+        render_squalifiche(stagione, miei, nome_societa, utente)
 
 
 def _elenco(dello_staff, stagione, gruppi, nomi_gruppi, miei, staff, ruolo):
